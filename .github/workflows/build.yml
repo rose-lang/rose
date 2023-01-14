@@ -15,6 +15,13 @@ jobs:
 
   pages:
     needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/deploy-pages@v1
+      - id: deploy
+        uses: actions/deploy-pages@v1
