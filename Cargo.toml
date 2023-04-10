@@ -1,6 +1,7 @@
 [package]
 name = "rosebush"
 version = "0.0.0"
-description = "Autodiff on thorny graphs"
+edition = "2021"
+description = "Extensible interactive autodiff."
 license = "MIT"
 include = ["src/lib.rs"]
