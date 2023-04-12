@@ -1,4 +1,5 @@
 use logos::Logos;
+use std::num::ParseIntError;
 
 #[derive(Debug)]
 pub enum Unop {
@@ -24,7 +25,7 @@ pub enum Binop {
 }
 
 #[derive(Copy, Clone, Debug, Logos)]
-#[logos(skip r"(\s|#[^\n]*)+")]
+#[logos(error = Option<ParseIntError>, skip r"(\s|#[^\n]*)+")]
 pub enum Token<'input> {
     #[token("=")]
     Bind,
@@ -100,6 +101,6 @@ pub enum Token<'input> {
     #[regex(r"[A-Za-z][0-9A-Za-z]*")]
     Id(&'input str),
 
-    #[regex(r"-?\d+")]
-    Int(&'input str),
+    #[regex(r"\d+", |lex| lex.slice().parse())]
+    Int(u32),
 }

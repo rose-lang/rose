@@ -2,6 +2,7 @@ use crate::{
     ast::{Bind, Def, Expr, Module},
     lexer::LexicalError, tokens::{Binop, Token, Unop},
 };
+use std::ops::Range;
 
 grammar<'input>(input: &'input str);
 
@@ -23,7 +24,7 @@ Binary<L, T, R>: Expr<'input> = {
     },
 }
 
-Int: &'input str = { "INT" }
+Int: u32 = { "INT" }
 
 Id: &'input str = { "ID" }
 
@@ -138,7 +139,7 @@ pub Module: Module<'input> = {
 
 extern {
     type Location = usize;
-    type Error = LexicalError;
+    type Error = (Range<usize>, LexicalError);
 
     enum Token<'input> {
         "=" => Token::Bind,
@@ -181,6 +182,6 @@ extern {
 
         "ID" => Token::Id(<&'input str>),
 
-        "INT" => Token::Int(<&'input str>),
+        "INT" => Token::Int(<u32>),
     }
 }

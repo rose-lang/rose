@@ -534,7 +534,6 @@ name = "rosebush-cli"
 version = "0.0.0"
 dependencies = [
  "clap",
- "lalrpop-util",
  "rosebush-frontend",
 ]
 

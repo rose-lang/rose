@@ -13,7 +13,7 @@ pub enum Expr<'input> {
         name: &'input str,
     },
     Int {
-        val: &'input str,
+        val: u32,
     },
     Vector {
         elems: Vec<Expr<'input>>,
