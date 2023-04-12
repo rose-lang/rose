@@ -10,19 +10,13 @@
       "include": "#keywords"
     },
     {
-      "include": "#constants"
+      "include": "#identifiers"
     },
     {
-      "include": "#functions"
+      "include": "#literals"
     },
     {
-      "include": "#types"
-    },
-    {
-      "include": "#variables"
-    },
-    {
-      "include": "#numbers"
+      "include": "#operators"
     }
   ],
   "repository": {
@@ -41,48 +35,56 @@
           "match": "(?<![0-9A-Za-z])(else|for|if|then)(?![0-9A-Za-z])"
         },
         {
+          "name": "keyword.operator.rosebush",
+          "match": "(?<![0-9A-Za-z])(and|mod|not|or)(?![0-9A-Za-z])"
+        },
+        {
           "name": "keyword.other.rosebush",
-          "match": "(?<![0-9A-Za-z])(and|def|in|let|mod|not|or|type)(?![0-9A-Za-z])"
-        }
-      ]
-    },
-    "constants": {
-      "patterns": [
+          "match": "(?<![0-9A-Za-z])(in)(?![0-9A-Za-z])"
+        },
         {
-          "name": "constant.language.rosebush",
-          "match": "(?<![0-9A-Za-z])(infinity)(?![0-9A-Za-z])"
+          "name": "storage.type.rosebush",
+          "match": "(?<![0-9A-Za-z])(def|let|type)(?![0-9A-Za-z])"
         }
       ]
     },
-    "functions": {
-      "patterns": [
-        {
-          "name": "entity.name.function.rosebush",
-          "match": "(?<![0-9A-Za-z])([A-Za-z][0-9A-Za-z]*)(?=\\s*\\()"
-        }
-      ]
-    },
-    "types": {
+    "identifiers": {
       "patterns": [
         {
           "name": "entity.name.type.rosebush",
-          "match": "(?<=:\\s*)([A-Za-z][0-9A-Za-z]*)(?![0-9A-Za-z])"
-        }
-      ]
-    },
-    "variables": {
-      "patterns": [
+          "match": "(?<![0-9A-Za-z])([A-Z][0-9A-Za-z]*)(?![0-9A-Za-z])"
+        },
         {
-          "name": "variable.parameter.rosebush",
-          "match": "(?<![0-9A-Za-z])([A-Za-z][0-9A-Za-z]*)(?![0-9A-Za-z])"
+          "name": "constant.language.rosebush",
+          "match": "(?<![0-9A-Za-z])(infinity)(?![0-9A-Za-z])"
+        },
+        {
+          "name": "entity.name.function.rosebush",
+          "match": "(?<![0-9A-Za-z])([a-z][0-9A-Za-z]*)(?=\\s*\\()"
+        },
+        {
+          "name": "variable.other.rosebush",
+          "match": "(?<![0-9A-Za-z])([a-z][0-9A-Za-z]*)(?![0-9A-Za-z])"
         }
       ]
     },
-    "numbers": {
+    "literals": {
       "patterns": [
         {
           "name": "constant.numeric.rosebush",
           "match": "(?<![0-9A-Za-z])[0-9]+(?![0-9A-Za-z])"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.rosebush",
+          "match": "!=|\\*|\\+|-|/|<=|==|>="
+        },
+        {
+          "name": "keyword.operator.rosebush",
+          "match": "(<|=|>)(?!=)"
         }
       ]
     }
