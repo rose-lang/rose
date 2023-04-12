@@ -9,7 +9,6 @@
     "typescript": "^5"
   },
   "scripts": {
-    "site": "cp resources/logo.svg site/",
     "vscode": "yarn workspace rosebush-vscode package",
     "wasm": "cargo build --package=rosebush-web --target=wasm32-unknown-unknown --release && wasm-bindgen --target=web --out-dir=wbg target/wasm32-unknown-unknown/release/rosebush_web.wasm"
   }

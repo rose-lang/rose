@@ -1,7 +1,6 @@
 .DS_Store
 *.tgz
 *.vsix
-/site/logo.svg
 /target/
 /wbg/
 node_modules/

@@ -46,6 +46,6 @@
   },
   "scripts": {
     "package": "vsce package --yarn",
-    "vscode:prepublish": "svgexport ../../resources/logo.svg logo.png"
+    "vscode:prepublish": "svgexport ../../site/logo.svg logo.png"
   }
 }
