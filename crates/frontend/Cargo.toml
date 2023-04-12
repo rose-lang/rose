@@ -1,0 +1,12 @@
+[package]
+name = "rosebush-frontend"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+lalrpop-util = "0.19"
+logos = "0.13"
+
+[build-dependencies]
+lalrpop = { version = "0.19", default-features = false }

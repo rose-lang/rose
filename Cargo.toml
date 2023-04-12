@@ -1,7 +1,2 @@
-[package]
-name = "rosebush"
-version = "0.0.0"
-edition = "2021"
-description = "Extensible interactive autodiff."
-license = "MIT"
-include = ["src/lib.rs"]
+[workspace]
+members = ["crates/cli", "crates/core", "crates/frontend", "crates/web"]

@@ -1,5 +1,15 @@
 {
-  "name": "rosebush",
-  "version": "0.0.0",
-  "files": []
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "prettier": "^2",
+    "prettier-plugin-organize-imports": "^3",
+    "typescript": "^5"
+  },
+  "scripts": {
+    "vscode": "yarn workspace rosebush-vscode package",
+    "wasm": "cargo build --package=rosebush-web --target=wasm32-unknown-unknown --release && wasm-bindgen --target=web --out-dir=wbg target/wasm32-unknown-unknown/release/rosebush_web.wasm"
+  }
 }

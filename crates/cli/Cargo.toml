@@ -1,0 +1,10 @@
+[package]
+name = "rosebush-cli"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+lalrpop-util = "0.19"
+rosebush-frontend = { path = "../frontend" }

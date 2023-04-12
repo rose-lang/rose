@@ -1,0 +1,186 @@
+use crate::{
+    ast::{Bind, Def, Expr, Module},
+    lexer::LexicalError, tokens::{Binop, Token, Unop},
+};
+
+grammar<'input>(input: &'input str);
+
+Comma<T>: Vec<T> = {
+    <mut v:(<T> ",")*> <e:T?> => match e {
+        None => v,
+        Some(e) => {
+            v.push(e);
+            v
+        }
+    }
+}
+
+Binary<L, T, R>: Expr<'input> = {
+    <left:L> <op:T> <right:R> => Expr::Binary {
+        op,
+        left: Box::new(left),
+        right: Box::new(right),
+    },
+}
+
+Int: &'input str = { "INT" }
+
+Id: &'input str = { "ID" }
+
+Type: &'input str = { Id }
+
+Bind: Bind<'input> = {
+    Id => Bind::Id { name: <> },
+    "[" <Comma<Bind>> "]" => Bind::Vector { elems: <> },
+    "{" <Comma<Id>> "}" => Bind::Struct { members: <> },
+}
+
+Base: Expr<'input> = {
+    Id => Expr::Id { name: <> },
+    Int => Expr::Int { val: <> },
+    "[" <Comma<Expr>> "]" => Expr::Vector { elems: <> },
+    "{" <Comma<(<Id> "=" <Expr>)>> "}" => Expr::Struct { members: <> },
+    <func:Id> "(" <args:Comma<Expr>> ")" => Expr::Call { func, args },
+    "[" "for" <index:Id> "<" <limit:Expr> "," <body:Expr> "]" => Expr::For {
+        index,
+        limit: Box::new(limit),
+        body: Box::new(body),
+    },
+    "(" <Expr> ")",
+}
+
+Index: Expr<'input> = {
+    <val:Index> "." <member:Id> => Expr::Member {
+        val: Box::new(val),
+        member,
+    },
+    <val:Index> "_" <index:Base> => Expr::Index {
+        val: Box::new(val),
+        index: Box::new(index),
+    },
+    Base,
+}
+
+Unary: Expr<'input> = {
+    "-" <Unary> => Expr::Unary { op: Unop::Neg, arg: Box::new(<>) },
+    "not" <Unary> => Expr::Unary { op: Unop::Not, arg: Box::new(<>) },
+    Index,
+}
+
+Mul: Binop = { "*" => Binop::Mul }
+Div: Binop = { "/" => Binop::Div }
+Mod: Binop = { "mod" => Binop::Mod }
+Factor: Expr<'input> = {
+    Binary<Factor, Mul, Unary>,
+    Binary<Factor, Div, Unary>,
+    Binary<Factor, Mod, Unary>,
+    Unary,
+}
+
+Add: Binop = { "+" => Binop::Add }
+Sub: Binop = { "-" => Binop::Sub }
+Term: Expr<'input> = {
+    Binary<Term, Add, Factor>,
+    Binary<Term, Sub, Factor>,
+    Factor,
+}
+
+Eq: Binop = { "==" => Binop::Eq }
+Neq: Binop = { "!=" => Binop::Neq }
+Lt: Binop = { "<" => Binop::Lt }
+Gt: Binop = { ">" => Binop::Gt }
+Leq: Binop = { "<=" => Binop::Leq }
+Geq: Binop = { ">=" => Binop::Geq }
+Comp: Expr<'input> = {
+    Binary<Comp, Eq, Term>,
+    Binary<Comp, Neq, Term>,
+    Binary<Comp, Lt, Term>,
+    Binary<Comp, Gt, Term>,
+    Binary<Comp, Leq, Term>,
+    Binary<Comp, Geq, Term>,
+    Term,
+}
+
+And: Binop = { "and" => Binop::And }
+Conj: Expr<'input> = {
+    Binary<Conj, And, Comp>,
+    Comp,
+}
+
+Or: Binop = { "or" => Binop::Or }
+Disj: Expr<'input> = {
+    Binary<Disj, Or, Conj>,
+    Conj,
+}
+
+Expr: Expr<'input> = {
+    "if" <cond:Expr> "then" <then:Expr> "else" <els:Expr> => Expr::If {
+        cond: Box::new(cond),
+        then: Box::new(then),
+        els: Box::new(els),
+    },
+    "let" <bind:Bind> "=" <val:Expr> "in" <body:Expr> => Expr::Let {
+        bind,
+        val: Box::new(val),
+        body: Box::new(body),
+    },
+    Disj,
+}
+
+Def: Def<'input> = {
+    "type" <name:Id> "{" <members:Comma<(<Id> ":" <Type>)>> "}" => Def::Type { <> },
+    "def" <name:Id> "(" <params:Comma<(<Bind> ":" <Type>)>> ")" ":" <typ:Type> "=" <body:Expr> => Def::Func { <> },
+}
+
+pub Module: Module<'input> = {
+    Def* => Module { defs: <> },
+};
+
+extern {
+    type Location = usize;
+    type Error = LexicalError;
+
+    enum Token<'input> {
+        "=" => Token::Bind,
+        ":" => Token::Colon,
+        "," => Token::Comma,
+        "." => Token::Member,
+        "_" => Token::Index,
+
+        "(" => Token::LParen,
+        ")" => Token::RParen,
+        "[" => Token::LBracket,
+        "]" => Token::RBracket,
+        "{" => Token::LBrace,
+        "}" => Token::RBrace,
+
+        "+" => Token::Add,
+        "-" => Token::Sub,
+        "*" => Token::Mul,
+        "/" => Token::Div,
+
+        "==" => Token::Eq,
+        "!=" => Token::Neq,
+        "<" => Token::Lt,
+        ">" => Token::Gt,
+        "<=" => Token::Leq,
+        ">=" => Token::Geq,
+
+        "and" => Token::And,
+        "def" => Token::Def,
+        "else" => Token::Else,
+        "for" => Token::For,
+        "if" => Token::If,
+        "in" => Token::In,
+        "let" => Token::Let,
+        "mod" => Token::Mod,
+        "not" => Token::Not,
+        "or" => Token::Or,
+        "then" => Token::Then,
+        "type" => Token::Type,
+
+        "ID" => Token::Id(<&'input str>),
+
+        "INT" => Token::Int(<&'input str>),
+    }
+}

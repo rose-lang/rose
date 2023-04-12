@@ -1,0 +1,90 @@
+{
+  "name": "Rosebush",
+  "scopeName": "source.rosebush",
+  "fileTypes": [".rose"],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#variables"
+    },
+    {
+      "include": "#numbers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.rosebush",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.rosebush",
+          "match": "(?<![0-9A-Za-z])(else|for|if|then)(?![0-9A-Za-z])"
+        },
+        {
+          "name": "keyword.other.rosebush",
+          "match": "(?<![0-9A-Za-z])(and|def|in|let|mod|not|or|type)(?![0-9A-Za-z])"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.rosebush",
+          "match": "(?<![0-9A-Za-z])(infinity)(?![0-9A-Za-z])"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.rosebush",
+          "match": "(?<![0-9A-Za-z])([A-Za-z][0-9A-Za-z]*)(?=\\s*\\()"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "entity.name.type.rosebush",
+          "match": "(?<=:\\s*)([A-Za-z][0-9A-Za-z]*)(?![0-9A-Za-z])"
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.parameter.rosebush",
+          "match": "(?<![0-9A-Za-z])([A-Za-z][0-9A-Za-z]*)(?![0-9A-Za-z])"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.rosebush",
+          "match": "(?<![0-9A-Za-z])[0-9]+(?![0-9A-Za-z])"
+        }
+      ]
+    }
+  }
+}

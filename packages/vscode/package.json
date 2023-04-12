@@ -1,0 +1,43 @@
+{
+  "name": "rosebush-vscode",
+  "displayName": "Rosebush",
+  "version": "0.0.0",
+  "publisher": "rosebush",
+  "license": "MIT",
+  "repository": "rosebush-ad/rosebush",
+  "private": true,
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "rosebush",
+        "aliases": [
+          "Rosebush",
+          "rosebush"
+        ],
+        "extensions": [
+          ".rose"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "rosebush",
+        "scopeName": "source.rosebush",
+        "path": "./syntaxes/rosebush.tmLanguage.json"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^2"
+  },
+  "scripts": {
+    "package": "vsce package --yarn"
+  }
+}
