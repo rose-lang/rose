@@ -35,12 +35,8 @@
           "match": "(?<![0-9A-Za-z])(else|for|if|then)(?![0-9A-Za-z])"
         },
         {
-          "name": "keyword.operator.rosebush",
-          "match": "(?<![0-9A-Za-z])(and|mod|not|or)(?![0-9A-Za-z])"
-        },
-        {
           "name": "keyword.other.rosebush",
-          "match": "(?<![0-9A-Za-z])(in)(?![0-9A-Za-z])"
+          "match": "(?<![0-9A-Za-z])(and|in|mod|not|or)(?![0-9A-Za-z])"
         },
         {
           "name": "storage.type.rosebush",
