@@ -2,9 +2,15 @@
   "name": "rosebush-vscode",
   "displayName": "Rosebush",
   "version": "0.0.0",
-  "publisher": "rosebush",
+  "publisher": "samestep",
+  "description": "Syntax highlighting for Rosebush.",
   "license": "MIT",
-  "repository": "rosebush-ad/rosebush",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rosebush-ad/rosebush",
+    "directory": "packages/vscode"
+  },
+  "icon": "logo.png",
   "private": true,
   "engines": {
     "vscode": "^1.75.0"
@@ -35,9 +41,11 @@
     ]
   },
   "devDependencies": {
-    "@vscode/vsce": "^2"
+    "@vscode/vsce": "^2",
+    "svgexport": "^0.4"
   },
   "scripts": {
-    "package": "vsce package --yarn"
+    "package": "vsce package --yarn",
+    "vscode:prepublish": "svgexport ../../resources/logo.svg logo.png"
   }
 }
