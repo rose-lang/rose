@@ -18,6 +18,7 @@ jobs:
       - run: yarn
       - run: npx prettier --check .
       - run: yarn wasm
+      - run: yarn build
       - run: yarn vscode
       - uses: actions/upload-pages-artifact@v1
         with:
