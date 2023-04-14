@@ -40,10 +40,6 @@
       }
     ]
   },
-  "devDependencies": {
-    "@vscode/vsce": "^2",
-    "svgexport": "^0.4"
-  },
   "scripts": {
     "package": "vsce package --yarn",
     "vscode:prepublish": "svgexport ../../site/logo.svg logo.png"

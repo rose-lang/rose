@@ -9,9 +9,6 @@
     "dist",
     "src"
   ],
-  "devDependencies": {
-    "rimraf": "^5"
-  },
   "scripts": {
     "build": "rimraf dist && tsc"
   }

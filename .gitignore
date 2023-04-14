@@ -2,5 +2,4 @@
 *.tgz
 *.vsix
 /target/
-/wbg/
 node_modules/
