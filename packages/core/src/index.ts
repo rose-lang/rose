@@ -67,7 +67,7 @@ export const fn = (<T>(types: Type[], f: (...args: any[]) => T): Fn<T> => {
 
 export { and, eq, geq, gt, iff, leq, lt, neq, not, or, xor } from "./bool";
 export { mod } from "./int";
-export { abs, add, div, max, min, mul, neg, sub } from "./overload";
-export { prod, sqrt, sum } from "./real";
-export { get } from "./val";
+export { abs, add, div, mul, neg, sub } from "./overload";
+export { max, min, prod, sqrt, sum } from "./real";
+export { cond, get } from "./val";
 export { vec } from "./vec";

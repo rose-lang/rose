@@ -27,6 +27,11 @@ export interface Val<T> {
   val: symbol | Call<T> | Index<T> | If<T>;
 }
 
+export const cond = <T>(cond: Bool, then: T, els: T): Val<T> => ({
+  tag: "val",
+  val: { tag: "if", cond, then, els },
+});
+
 export const get = <T>(v: Vec<T>, i: Int): Val<T> => ({
   tag: "val",
   val: { tag: "index", vec: v, index: i },

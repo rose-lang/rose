@@ -8,7 +8,7 @@ interface Unary {
 
 interface Binary {
   tag: "binary";
-  op: "*" | "+" | "-" | "/" | "max" | "min" | "mod";
+  op: "*" | "+" | "-" | "/" | "mod";
   left: Int;
   right: Int;
 }

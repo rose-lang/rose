@@ -51,7 +51,7 @@ def convexPolygonOriginSignedDistance(p: Rnx2): R =
     let next = segments_((i + 1) mod n) in
     if goodLeft then
       if goodRight then edgeSignedDist
-      else if goodLeft then -infinity
+      else if next.goodLeft then -infinity
       else next.fromStart
     else -infinity
   ])

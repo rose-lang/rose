@@ -30,13 +30,3 @@ export const div: {
   (a: Int, b: Int): Int;
   (a: Real, b: Real): Real;
 } = (a: any, b: any) => ({ tag: "binary", op: "/", left: a, right: b });
-
-export const max: {
-  (a: Int, b: Int): Int;
-  (a: Real, b: Real): Real;
-} = (a: any, b: any) => ({ tag: "binary", op: "max", left: a, right: b });
-
-export const min: {
-  (a: Int, b: Int): Int;
-  (a: Real, b: Real): Real;
-} = (a: any, b: any) => ({ tag: "binary", op: "min", left: a, right: b });
