@@ -544,6 +544,8 @@ dependencies = [
  "lalrpop",
  "lalrpop-util",
  "logos",
+ "rosebush",
+ "thiserror",
 ]
 
 [[package]]
@@ -552,7 +554,6 @@ version = "0.0.0"
 dependencies = [
  "console_error_panic_hook",
  "rosebush",
- "rosebush-frontend",
  "wasm-bindgen",
 ]
 
