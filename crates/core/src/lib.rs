@@ -24,7 +24,9 @@ pub struct Local(pub usize);
 
 #[derive(Clone, Copy, Debug)]
 pub enum Size {
-    Const(usize),
+    Const {
+        val: usize,
+    },
     /// Index of a generic size parameter in the current context.
     Generic {
         id: Generic,
@@ -36,7 +38,7 @@ pub enum Type {
     Bool,
     Int, // TODO: introduce a `Size`-bounded natural number type
     Real,
-    Vector { elem: Box<Type>, size: Size },
+    Vector { elem: Box<Type>, size: Size }, // should this be `Rc` instead, since I'm using `clone`?
     Struct { id: Struct, params: Vec<Size> },
 }
 
@@ -113,60 +115,25 @@ pub enum Binop {
 }
 
 #[derive(Debug)]
-pub enum Expr {
-    Generic {
-        id: Generic,
-    },
-    Param {
-        id: Param,
-    },
-    Bool(bool),
-    Int(u32),
-    Real(f64),
-    Vector {
-        elems: Vec<Local>,
-    },
-    Struct {
-        members: Vec<Local>,
-    },
-    Index {
-        val: Local,
-        index: Local,
-    },
-    Member {
-        val: Local,
-        member: Member,
-    },
-    Call {
-        func: Func,
-        generics: Vec<Size>,
-        args: Vec<Local>,
-    },
-    Unary {
-        op: Unop,
-        arg: Local,
-    },
-    Binary {
-        op: Binop,
-        left: Local,
-        right: Local,
-    },
-    If {
-        cond: Local,
-        then: Vec<Instr>,
-        els: Vec<Instr>,
-    },
-    For {
-        index: Local,
-        limit: Size,
-        body: Vec<Instr>,
-    },
-}
-
-#[derive(Debug)]
-pub struct Instr {
-    pub target: Local,
-    pub value: Expr,
+pub enum Instr {
+    Generic { id: Generic },
+    Param { id: Param },
+    Get { id: Local },
+    Set { id: Local },
+    Bool { val: bool },
+    Int { val: u32 },
+    Real { val: f64 },
+    Vector { dim: usize },
+    Struct { id: Struct },
+    Index,
+    Member { id: Member },
+    Call { id: Func, generics: Vec<Size> },
+    Unary { op: Unop },
+    Binary { op: Binop },
+    If,
+    Else,
+    End,
+    For { limit: Size },
 }
 
 #[derive(Debug)]
@@ -174,8 +141,8 @@ pub struct Function {
     /// Number of generic size parameters.
     pub generics: usize,
     pub params: Vec<Type>,
-    pub ret: Type,
-    pub locals: Vec<Type>, // TODO: pull all the types out into a `Vec` and use indices
+    pub ret: Vec<Type>,
+    pub locals: Vec<Type>,
     /// Ordered sequence of assignments to locals.
     pub body: Vec<Instr>,
 }
