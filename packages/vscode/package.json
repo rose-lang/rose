@@ -2,7 +2,7 @@
   "name": "rose",
   "displayName": "Rose",
   "version": "0.0.0",
-  "publisher": "samestep",
+  "publisher": "rose-lang",
   "description": "Syntax highlighting for Rose.",
   "license": "MIT",
   "repository": {
