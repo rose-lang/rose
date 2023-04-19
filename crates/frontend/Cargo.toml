@@ -1,5 +1,5 @@
 [package]
-name = "rosebush-frontend"
+name = "rose-frontend"
 version = "0.0.0"
 publish = false
 edition = "2021"
@@ -7,7 +7,7 @@ edition = "2021"
 [dependencies]
 lalrpop-util = "0.19"
 logos = "0.13"
-rosebush = { path = "../core" }
+rose = { path = "../core" }
 thiserror = "1"
 
 [build-dependencies]

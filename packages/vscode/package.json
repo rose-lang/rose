@@ -1,16 +1,16 @@
 {
-  "name": "rosebush-vscode",
-  "displayName": "Rosebush",
+  "name": "rose",
+  "displayName": "Rose",
   "version": "0.0.0",
   "publisher": "samestep",
-  "description": "Syntax highlighting for Rosebush.",
+  "description": "Syntax highlighting for Rose.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rosebush-ad/rosebush",
+    "url": "https://github.com/rose-lang/rose",
     "directory": "packages/vscode"
   },
-  "icon": "logo.png",
+  "icon": "encircled-rose.png",
   "private": true,
   "engines": {
     "vscode": "^1.75.0"
@@ -21,27 +21,33 @@
   "contributes": {
     "languages": [
       {
-        "id": "rosebush",
+        "id": "rose",
         "aliases": [
-          "Rosebush",
-          "rosebush"
+          "Rose",
+          "rose"
         ],
         "extensions": [
           ".rose"
         ],
+        "icon": {
+          "light": "./plain-rose.png",
+          "dark": "./plain-rose.png"
+        },
         "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "rosebush",
-        "scopeName": "source.rosebush",
-        "path": "./syntaxes/rosebush.tmLanguage.json"
+        "language": "rose",
+        "scopeName": "source.rose",
+        "path": "./syntaxes/rose.tmLanguage.json"
       }
     ]
   },
   "scripts": {
     "package": "vsce package --yarn",
-    "vscode:prepublish": "svgexport ../../site/logo.svg logo.png"
+    "vscode:prepublish": "yarn wget-encircled && yarn wget-plain",
+    "wget-encircled": "wget -nc https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/encircled-rose.png",
+    "wget-plain": "wget -nc https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/plain-rose.png"
   }
 }

@@ -8,12 +8,11 @@
     "prettier": "^2",
     "prettier-plugin-organize-imports": "^3",
     "rimraf": "^5",
-    "svgexport": "^0.4",
     "typescript": "^5"
   },
   "scripts": {
-    "build": "yarn workspace rosebush build",
-    "vscode": "yarn workspace rosebush-vscode package",
-    "wasm": "rimraf packages/core/wbg && cargo build --package=rosebush-web --target=wasm32-unknown-unknown --release && wasm-bindgen --target=web --out-dir=packages/core/wbg target/wasm32-unknown-unknown/release/rosebush_web.wasm"
+    "build": "yarn workspace @rose-lang/core build",
+    "vscode": "yarn workspace rose package",
+    "wasm": "rimraf packages/core/wbg && cargo build --package=rose-web --target=wasm32-unknown-unknown --release && wasm-bindgen --target=web --out-dir=packages/core/wbg target/wasm32-unknown-unknown/release/rose_web.wasm"
   }
 }

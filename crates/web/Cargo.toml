@@ -1,5 +1,5 @@
 [package]
-name = "rosebush-web"
+name = "rose-web"
 version = "0.0.0"
 publish = false
 edition = "2021"
@@ -9,6 +9,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 console_error_panic_hook = "0.1"
-rosebush = { path = "../core" }
-rosebush-frontend = { path = "../frontend" }
+rose = { path = "../core" }
 wasm-bindgen = "=0.2.84"

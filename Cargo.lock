@@ -526,34 +526,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
 
 [[package]]
-name = "rosebush"
+name = "rose"
 version = "0.0.0"
 
 [[package]]
-name = "rosebush-cli"
+name = "rose-cli"
 version = "0.0.0"
 dependencies = [
  "clap",
- "rosebush-frontend",
+ "rose-frontend",
 ]
 
 [[package]]
-name = "rosebush-frontend"
+name = "rose-frontend"
 version = "0.0.0"
 dependencies = [
  "lalrpop",
  "lalrpop-util",
  "logos",
- "rosebush",
+ "rose",
  "thiserror",
 ]
 
 [[package]]
-name = "rosebush-web"
+name = "rose-web"
 version = "0.0.0"
 dependencies = [
  "console_error_panic_hook",
- "rosebush",
+ "rose",
  "wasm-bindgen",
 ]
 

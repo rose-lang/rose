@@ -1,5 +1,5 @@
 [package]
-name = "rosebush"
+name = "rose"
 version = "0.0.0"
 edition = "2021"
 description = "Extensible interactive autodiff."

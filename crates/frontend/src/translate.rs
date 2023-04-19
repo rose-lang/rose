@@ -1,5 +1,5 @@
 use crate::ast;
-use rosebush as ir;
+use rose as ir;
 use std::collections::HashMap;
 
 // TODO: give source locations

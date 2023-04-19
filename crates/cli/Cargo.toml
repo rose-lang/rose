@@ -1,9 +1,9 @@
 [package]
-name = "rosebush-cli"
+name = "rose-cli"
 version = "0.0.0"
 publish = false
 edition = "2021"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-rosebush-frontend = { path = "../frontend" }
+rose-frontend = { path = "../frontend" }

@@ -3,6 +3,7 @@
     // basic stuff, or everything breaks
     "module": "ESNext",
     "moduleResolution": "node",
+    "lib": ["ESNext"],
     "skipLibCheck": true,
 
     // build config
