@@ -1,52 +1,70 @@
-/// Index of a struct typedef in the module context.
+/// Index of a typedef in the module context.
 #[derive(Clone, Copy, Debug)]
-pub struct Struct(pub usize);
-
-/// Index of a generic parameter for a struct or function.
-#[derive(Clone, Copy, Debug)]
-pub struct Generic(pub usize);
+pub struct Typedef(pub usize);
 
 /// Index of a function in the module context.
 #[derive(Clone, Copy, Debug)]
+pub struct Funcdef(pub usize);
+
+/// Index of a typevar in a definition context.
+#[derive(Clone, Copy, Debug)]
+pub struct Var(pub usize);
+
+/// Index of a function instantiation in a definition context.
+#[derive(Clone, Copy, Debug)]
 pub struct Func(pub usize);
 
-/// Index of a member in a struct.
+/// Index of a generic parameter in a definition context.
+#[derive(Clone, Copy, Debug)]
+pub struct Generic(pub usize);
+
+/// Index of a member in a tuple.
 #[derive(Clone, Copy, Debug)]
 pub struct Member(pub usize);
 
-/// Index of a parameter for a function.
+/// Index of a parameter in a function context.
 #[derive(Clone, Copy, Debug)]
 pub struct Param(pub usize);
 
-/// Index of a local variable of a function context.
+/// Index of a local variable in a function context.
 #[derive(Clone, Copy, Debug)]
 pub struct Local(pub usize);
 
 #[derive(Clone, Copy, Debug)]
 pub enum Size {
-    Const {
-        val: usize,
-    },
-    /// Index of a generic size parameter in the current context.
-    Generic {
-        id: Generic,
-    },
+    Const { val: usize },
+    Generic { id: Generic },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Type {
     Bool,
-    Int, // TODO: introduce a `Size`-bounded natural number type
+    Int,
     Real,
-    Vector { elem: Box<Type>, size: Size }, // should this be `Rc` instead, since I'm using `clone`?
-    Struct { id: Struct, params: Vec<Size> },
+    Nat { bound: Size },
+    Var { id: Var },
 }
 
 #[derive(Debug)]
-pub struct Typedef {
+pub enum Typexpr {
+    Vector { elem: Type, size: Size },
+    Tuple { members: Vec<Type> },
+    Typedef { id: Typedef, params: Vec<Size> },
+}
+
+#[derive(Debug)]
+pub struct Inst {
+    pub id: Funcdef,
+    /// Generic size parameters.
+    pub params: Vec<Size>,
+}
+
+#[derive(Debug)]
+pub struct Def<T> {
     /// Number of generic size parameters.
     pub generics: usize,
-    pub fields: Vec<Type>,
+    pub types: Vec<Typexpr>,
+    pub def: T,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -114,7 +132,7 @@ pub enum Binop {
     DivReal,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Instr {
     Generic { id: Generic },
     Param { id: Param },
@@ -124,10 +142,10 @@ pub enum Instr {
     Int { val: u32 },
     Real { val: f64 },
     Vector { dim: usize },
-    Struct { id: Struct },
+    Tuple { id: Var },
     Index,
     Member { id: Member },
-    Call { id: Func, generics: Vec<Size> },
+    Call { id: Func },
     Unary { op: Unop },
     Binary { op: Binop },
     If,
@@ -138,17 +156,15 @@ pub enum Instr {
 
 #[derive(Debug)]
 pub struct Function {
-    /// Number of generic size parameters.
-    pub generics: usize,
     pub params: Vec<Type>,
     pub ret: Vec<Type>,
     pub locals: Vec<Type>,
-    /// Ordered sequence of assignments to locals.
+    pub funcs: Vec<Inst>,
     pub body: Vec<Instr>,
 }
 
 #[derive(Debug)]
 pub struct Module {
-    pub types: Vec<Typedef>,
-    pub funcs: Vec<Function>,
+    pub types: Vec<Def<Typexpr>>,
+    pub funcs: Vec<Def<Function>>,
 }

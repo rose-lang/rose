@@ -20,21 +20,32 @@ pub enum TypeError {
 }
 
 fn parse_types<'input>(
-    lookup: impl Fn(&'input str) -> Option<ir::Struct>,
-    types: impl Iterator<Item = &'input str>,
-) -> Result<(HashMap<&'input str, ir::Generic>, Vec<ir::Type>), TypeError> {
+    lookup: impl Fn(&'input str) -> Option<ir::Typedef>,
+    typenames: impl Iterator<Item = &'input str>,
+) -> Result<
+    (
+        HashMap<&'input str, ir::Generic>,
+        Vec<ir::Typexpr>,
+        Vec<ir::Type>,
+    ),
+    TypeError,
+> {
     let mut generics = HashMap::new();
-    let mut fields = vec![];
-    for typ in types {
-        fields.push(if let Some(id) = lookup(typ) {
-            ir::Type::Struct { id, params: vec![] }
+    let mut typevars = vec![];
+    let mut types = vec![];
+    for typ in typenames {
+        types.push(if let Some(id) = lookup(typ) {
+            let typexpr = ir::Typexpr::Typedef { id, params: vec![] };
+            let id = ir::Var(typevars.len());
+            typevars.push(typexpr);
+            ir::Type::Var { id }
         } else {
             let mut t = ir::Type::Real;
             let dims = typ.strip_prefix("R").ok_or(TypeError::UnknownType)?;
             if !dims.is_empty() {
                 for dim in dims.rsplit("x") {
-                    t = ir::Type::Vector {
-                        elem: Box::new(t),
+                    let typexpr = ir::Typexpr::Vector {
+                        elem: t,
                         size: if let Ok(n) = dim.parse() {
                             ir::Size::Const { val: n }
                         } else if dim.is_empty() {
@@ -52,31 +63,28 @@ fn parse_types<'input>(
                             }
                         },
                     };
+                    let id = ir::Var(typevars.len());
+                    typevars.push(typexpr);
+                    t = ir::Type::Var { id };
                 }
             }
             t
         });
     }
-    Ok((generics, fields))
-}
-
-// TODO: structurally unify structs
-fn unify(params: &[ir::Type], args: &[ir::Type]) -> Result<Vec<ir::Size>, TypeError> {
-    todo!()
-}
-
-fn rewrite(typ: &ir::Type, generics: &[ir::Size]) -> ir::Type {
-    todo!()
+    Ok((generics, typevars, types))
 }
 
 struct Context<'a> {
-    typenames: &'a HashMap<&'a str, (ir::Struct, HashMap<&'a str, ir::Member>)>,
-    types: &'a [ir::Typedef],
+    typenames: &'a HashMap<&'a str, (ir::Typedef, Vec<&'a str>)>,
+    types: &'a [ir::Def<ir::Typexpr>],
 
-    funcnames: &'a HashMap<&'a str, ir::Func>,
-    funcs: &'a [ir::Function],
+    funcnames: &'a HashMap<&'a str, ir::Funcdef>,
+    funcs: &'a [ir::Def<ir::Function>],
 
     genericnames: HashMap<&'a str, ir::Generic>,
+
+    typevars: Vec<ir::Typexpr>,
+    funcinsts: Vec<ir::Inst>,
 
     localnames: HashMap<&'a str, ir::Local>,
     locals: Vec<ir::Type>,
@@ -84,13 +92,21 @@ struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
+    fn unify(
+        &mut self,
+        f: ir::Funcdef,
+        args: &[ir::Type],
+    ) -> Result<(Vec<ir::Size>, ir::Type), TypeError> {
+        todo!()
+    }
+
     fn typecheck(&mut self, expr: ast::Expr<'a>) -> Result<ir::Type, TypeError> {
         // TODO: don't let variable names escape their scope
         match expr {
             ast::Expr::Id { name } => {
                 if let Some(&id) = self.localnames.get(name) {
                     self.body.push(ir::Instr::Get { id });
-                    Ok(self.locals[id.0].clone())
+                    Ok(self.locals[id.0])
                 } else if let Some(&id) = self.genericnames.get(name) {
                     self.body.push(ir::Instr::Generic { id });
                     Ok(ir::Type::Int)
@@ -110,10 +126,14 @@ impl<'a> Context<'a> {
                     t = Some(self.typecheck(elem)?);
                 }
                 match t {
-                    Some(elem) => Ok(ir::Type::Vector {
-                        elem: Box::new(elem),
-                        size: ir::Size::Const { val: n },
-                    }),
+                    Some(elem) => {
+                        let id = ir::Var(self.typevars.len());
+                        self.typevars.push(ir::Typexpr::Vector {
+                            elem,
+                            size: ir::Size::Const { val: n },
+                        });
+                        Ok(ir::Type::Var { id })
+                    }
                     None => Err(TypeError::EmptyVec),
                 }
             }
@@ -123,7 +143,10 @@ impl<'a> Context<'a> {
                 self.typecheck(*index)?; // TODO: ensure this is `Int` and bounded by `val` size
                 self.body.push(ir::Instr::Index);
                 match v {
-                    ir::Type::Vector { elem, size: _ } => Ok(*elem),
+                    ir::Type::Var { id } => match &self.typevars[id.0] {
+                        ir::Typexpr::Vector { elem, .. } => Ok(*elem),
+                        _ => return Err(TypeError::IndexNonVector),
+                    },
                     _ => Err(TypeError::IndexNonVector),
                 }
             }
@@ -148,11 +171,11 @@ impl<'a> Context<'a> {
                     types.push(self.typecheck(arg)?);
                 }
                 if let Some(&id) = self.funcnames.get(func) {
-                    let ir::Function { params, ret, .. } = &self.funcs[id.0];
-                    let generics = unify(params, &types)?;
-                    let t = rewrite(&ret[0], &generics); // TODO: assert only one return value
-                    self.body.push(ir::Instr::Call { id, generics });
-                    Ok(t)
+                    let (params, ret) = self.unify(id, &types)?;
+                    let f = ir::Func(self.funcinsts.len());
+                    self.funcinsts.push(ir::Inst { id, params });
+                    self.body.push(ir::Instr::Call { id: f });
+                    Ok(ret)
                 } else {
                     match func {
                         "abs" => todo!(),
@@ -190,25 +213,27 @@ pub fn translate(ast: ast::Module) -> Result<ir::Module, TypeError> {
 
     for def in ast.defs {
         match def {
-            ast::Def::Type { name, members } => {
-                let (genericnames, fields) = parse_types(
+            ast::Def::Type { name, mut members } => {
+                // TODO: check for duplicate field names
+                members.sort(); // easiest way to ignore field order in literals
+                let (genericnames, typevars, fields) = parse_types(
                     |s| typenames.get(s).map(|&(i, _)| i),
                     members.iter().map(|&(_, t)| t),
                 )?;
                 typenames.insert(
                     name,
                     (
-                        ir::Struct(types.len()),
+                        ir::Typedef(types.len()),
                         members
                             .into_iter()
-                            .enumerate()
-                            .map(|(i, (name, _))| (name, ir::Member(i)))
-                            .collect::<HashMap<_, _>>(),
+                            .map(|(name, _)| name)
+                            .collect::<Vec<_>>(),
                     ),
                 );
-                types.push(ir::Typedef {
+                types.push(ir::Def {
                     generics: genericnames.len(),
-                    fields,
+                    types: typevars,
+                    def: ir::Typexpr::Tuple { members: fields },
                 });
             }
             ast::Def::Func {
@@ -217,7 +242,7 @@ pub fn translate(ast: ast::Module) -> Result<ir::Module, TypeError> {
                 typ,
                 body,
             } => {
-                let (genericnames, mut paramtypes) = parse_types(
+                let (genericnames, typevars, mut paramtypes) = parse_types(
                     |s| typenames.get(s).map(|&(i, _)| i),
                     // TODO: handle return type separately from params w.r.t. generics
                     params.iter().map(|&(_, t)| t).chain([typ]),
@@ -234,6 +259,9 @@ pub fn translate(ast: ast::Module) -> Result<ir::Module, TypeError> {
 
                     genericnames,
 
+                    typevars,
+                    funcinsts: vec![],
+
                     localnames: HashMap::new(),
                     locals: vec![],
                     body: vec![],
@@ -241,17 +269,23 @@ pub fn translate(ast: ast::Module) -> Result<ir::Module, TypeError> {
                 ctx.typecheck(body)?;
                 let Context {
                     locals,
+                    typevars,
+                    funcinsts,
                     body: instrs,
                     ..
                 } = ctx;
 
-                funcnames.insert(name, ir::Func(funcs.len()));
-                funcs.push(ir::Function {
+                funcnames.insert(name, ir::Funcdef(funcs.len()));
+                funcs.push(ir::Def {
                     generics,
-                    params: paramtypes,
-                    ret: vec![ret],
-                    locals,
-                    body: instrs,
+                    types: typevars,
+                    def: ir::Function {
+                        params: paramtypes,
+                        ret: vec![ret],
+                        locals,
+                        funcs: funcinsts,
+                        body: instrs,
+                    },
                 });
             }
         }
