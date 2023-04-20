@@ -89,6 +89,32 @@ struct FunCtx<'input, 'a> {
 }
 
 impl<'input, 'a> FunCtx<'input, 'a> {
+    fn newtype(&mut self, t: ir::Typexpr) -> ir::Var {
+        let id = ir::Var(self.t.len());
+        self.t.push(t);
+        id
+    }
+
+    fn newlocal(&mut self, t: ir::Type) -> ir::Local {
+        let id = ir::Local(self.f.locals.len());
+        self.f.locals.push(t);
+        id
+    }
+
+    fn newfunc(&mut self, f: ir::Inst) -> ir::Func {
+        let id = ir::Func(self.f.funcs.len());
+        self.f.funcs.push(f);
+        id
+    }
+
+    fn gettype(&self, id: ir::Var) -> &ir::Typexpr {
+        &self.t[id.0]
+    }
+
+    fn getlocal(&self, id: ir::Local) -> ir::Type {
+        self.f.locals[id.0]
+    }
+
     fn unify(
         &mut self,
         f: ir::Defn,
@@ -98,12 +124,12 @@ impl<'input, 'a> FunCtx<'input, 'a> {
     }
 
     fn typecheck(&mut self, expr: ast::Expr<'input>) -> Result<ir::Type, TypeError> {
-        // TODO: don't let variable names escape their scope
+        // TODO: prevent clobbering and don't let variable names escape their scope
         match expr {
             ast::Expr::Id { name } => {
                 if let Some(&id) = self.l.get(name) {
                     self.f.body.push(ir::Instr::Get { id });
-                    Ok(self.f.locals[id.0])
+                    Ok(self.getlocal(id))
                 } else if let Some(&id) = self.g.get(name) {
                     self.f.body.push(ir::Instr::Generic { id });
                     Ok(ir::Type::Int)
@@ -123,14 +149,12 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                     t = Some(self.typecheck(elem)?);
                 }
                 match t {
-                    Some(elem) => {
-                        let id = ir::Var(self.t.len());
-                        self.t.push(ir::Typexpr::Vector {
+                    Some(elem) => Ok(ir::Type::Var {
+                        id: self.newtype(ir::Typexpr::Vector {
                             elem,
                             size: ir::Size::Const { val: n },
-                        });
-                        Ok(ir::Type::Var { id })
-                    }
+                        }),
+                    }),
                     None => Err(TypeError::EmptyVec),
                 }
             }
@@ -140,7 +164,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                 self.typecheck(*index)?; // TODO: ensure this is `Int` and bounded by `val` size
                 self.f.body.push(ir::Instr::Index);
                 match v {
-                    ir::Type::Var { id } => match &self.t[id.0] {
+                    ir::Type::Var { id } => match self.gettype(id) {
                         ir::Typexpr::Vector { elem, .. } => Ok(*elem),
                         _ => return Err(TypeError::IndexNonVector),
                     },
@@ -150,8 +174,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
             ast::Expr::Member { val, member } => todo!(),
             ast::Expr::Let { bind, val, body } => {
                 let t = self.typecheck(*val)?;
-                let id = ir::Local(self.f.locals.len());
-                self.f.locals.push(t);
+                let id = self.newlocal(t);
                 self.f.body.push(ir::Instr::Set { id });
                 match bind {
                     ast::Bind::Id { name } => {
@@ -169,9 +192,8 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                 }
                 if let Some(&id) = self.ctx.f.get(func) {
                     let (params, ret) = self.unify(id, &types)?;
-                    let f = ir::Func(self.f.funcs.len());
-                    self.f.funcs.push(ir::Inst { id, params });
-                    self.f.body.push(ir::Instr::Call { id: f });
+                    let id = self.newfunc(ir::Inst { id, params });
+                    self.f.body.push(ir::Instr::Call { id });
                     Ok(ret)
                 } else {
                     match func {
@@ -202,6 +224,18 @@ impl<'input, 'a> FunCtx<'input, 'a> {
 }
 
 impl<'input> ModCtx<'input> {
+    fn newtype(&mut self, t: ir::Def<ir::Typexpr>) -> ir::Typedef {
+        let id = ir::Typedef(self.m.types.len());
+        self.m.types.push(t);
+        id
+    }
+
+    fn newfunc(&mut self, f: ir::Def<ir::Function>) -> ir::Defn {
+        let id = ir::Defn(self.m.funcs.len());
+        self.m.funcs.push(f);
+        id
+    }
+
     fn define(&mut self, def: ast::Def<'input>) -> Result<(), TypeError> {
         match def {
             ast::Def::Type { name, mut members } => {
@@ -211,21 +245,22 @@ impl<'input> ModCtx<'input> {
                     |s| self.t.get(s).map(|&(i, _)| i),
                     members.iter().map(|&(_, t)| t),
                 )?;
+                let t = self.newtype(ir::Def {
+                    generics: genericnames.len(),
+                    types: typevars,
+                    def: ir::Typexpr::Tuple { members: fields },
+                });
+                // TODO: check for duplicate type names
                 self.t.insert(
                     name,
                     (
-                        ir::Typedef(self.m.types.len()),
+                        t,
                         members
                             .into_iter()
                             .map(|(name, _)| name)
                             .collect::<Vec<_>>(),
                     ),
                 );
-                self.m.types.push(ir::Def {
-                    generics: genericnames.len(),
-                    types: typevars,
-                    def: ir::Typexpr::Tuple { members: fields },
-                });
             }
             ast::Def::Func {
                 name,
@@ -253,13 +288,13 @@ impl<'input> ModCtx<'input> {
                     l: HashMap::new(),
                 };
                 ctx.typecheck(body)?; // TODO: ensure this matches `ret`
-                let def = ir::Def {
+                let f = self.newfunc(ir::Def {
                     generics: ctx.g.len(),
                     types: ctx.t,
                     def: ctx.f,
-                };
-                self.f.insert(name, ir::Defn(self.m.funcs.len()));
-                self.m.funcs.push(def);
+                });
+                // TODO: check for duplicate function names
+                self.f.insert(name, f);
             }
         }
         Ok(())
