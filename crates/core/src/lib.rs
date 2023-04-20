@@ -4,7 +4,7 @@ pub struct Typedef(pub usize);
 
 /// Index of a function in the module context.
 #[derive(Clone, Copy, Debug)]
-pub struct Funcdef(pub usize);
+pub struct Defn(pub usize);
 
 /// Index of a typevar in a definition context.
 #[derive(Clone, Copy, Debug)]
@@ -54,7 +54,7 @@ pub enum Typexpr {
 
 #[derive(Debug)]
 pub struct Inst {
-    pub id: Funcdef,
+    pub id: Defn,
     /// Generic size parameters.
     pub params: Vec<Size>,
 }
