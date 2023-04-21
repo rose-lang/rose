@@ -109,6 +109,7 @@ struct FunCtx<'input, 'a> {
     f: ir::Function,
     t: Vec<ir::Typexpr>,
     g: HashMap<&'input str, ir::Generic>,
+    p: HashMap<&'input str, ir::Param>,
     l: HashMap<&'input str, ir::Local>,
 }
 
@@ -135,6 +136,10 @@ impl<'input, 'a> FunCtx<'input, 'a> {
         &self.t[id.0]
     }
 
+    fn getparam(&self, id: ir::Param) -> ir::Type {
+        self.f.params[id.0]
+    }
+
     fn getlocal(&self, id: ir::Local) -> ir::Type {
         self.f.locals[id.0]
     }
@@ -142,6 +147,8 @@ impl<'input, 'a> FunCtx<'input, 'a> {
     fn lookup(&self, name: &'input str) -> Option<(ir::Type, ir::Instr)> {
         if let Some(&id) = self.l.get(name) {
             Some((self.getlocal(id), ir::Instr::Get { id }))
+        } else if let Some(&id) = self.p.get(name) {
+            Some((self.getparam(id), ir::Instr::Param { id }))
         } else if let Some(&id) = self.g.get(name) {
             Some((
                 ir::Type::Size {
@@ -416,16 +423,16 @@ impl<'input> ModCtx<'input> {
                 typ,
                 body,
             } => {
-                let (genericnames, typevars, mut params) = parse_types(
+                let (genericnames, typevars, mut paramtypes) = parse_types(
                     |s| self.t.get(s).map(|&(i, _)| i),
                     // TODO: handle return type separately from params w.r.t. generics
                     params.iter().map(|&(_, t)| t).chain([typ]),
                 )?;
-                let ret = params.pop().expect("`parse_types` should preserve len");
+                let ret = paramtypes.pop().expect("`parse_types` should preserve len");
                 let mut ctx = FunCtx {
                     ctx: self,
                     f: ir::Function {
-                        params,
+                        params: paramtypes,
                         ret: vec![ret],
                         locals: vec![],
                         funcs: vec![],
@@ -433,6 +440,15 @@ impl<'input> ModCtx<'input> {
                     },
                     t: typevars,
                     g: genericnames,
+                    p: params // TODO: check for duplicate parameter names
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, (bind, _))| match bind {
+                            ast::Bind::Id { name } => (name, ir::Param(i)),
+                            ast::Bind::Vector { .. } => todo!(),
+                            ast::Bind::Struct { .. } => todo!(),
+                        })
+                        .collect(),
                     l: HashMap::new(),
                 };
                 ctx.typecheck(body)?; // TODO: ensure this matches `ret`
