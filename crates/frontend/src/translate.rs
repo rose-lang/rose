@@ -115,7 +115,6 @@ struct FunCtx<'input, 'a> {
     f: ir::Function,
     t: Vec<ir::Typexpr>,
     g: HashMap<&'input str, ir::Generic>,
-    p: HashMap<&'input str, ir::Param>,
     l: HashMap<&'input str, ir::Local>,
 }
 
@@ -142,10 +141,6 @@ impl<'input, 'a> FunCtx<'input, 'a> {
         &self.t[id.0]
     }
 
-    fn getparam(&self, id: ir::Param) -> ir::Type {
-        self.f.params[id.0]
-    }
-
     fn getlocal(&self, id: ir::Local) -> ir::Type {
         self.f.locals[id.0]
     }
@@ -153,8 +148,6 @@ impl<'input, 'a> FunCtx<'input, 'a> {
     fn lookup(&self, name: &'input str) -> Option<(ir::Type, ir::Instr)> {
         if let Some(&id) = self.l.get(name) {
             Some((self.getlocal(id), ir::Instr::Get { id }))
-        } else if let Some(&id) = self.p.get(name) {
-            Some((self.getparam(id), ir::Instr::Param { id }))
         } else if let Some(&id) = self.g.get(name) {
             Some((
                 ir::Type::Size {
@@ -164,6 +157,18 @@ impl<'input, 'a> FunCtx<'input, 'a> {
             ))
         } else {
             None
+        }
+    }
+
+    fn bind(&mut self, t: ir::Type, bind: ast::Bind<'input>) {
+        let id = self.newlocal(t);
+        self.f.body.push(ir::Instr::Set { id });
+        match bind {
+            ast::Bind::Id { name } => {
+                self.l.insert(name, id);
+            }
+            ast::Bind::Vector { elems } => todo!(),
+            ast::Bind::Struct { members } => todo!(),
         }
     }
 
@@ -255,15 +260,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
             }
             ast::Expr::Let { bind, val, body } => {
                 let t = self.typecheck(*val)?;
-                let id = self.newlocal(t);
-                self.f.body.push(ir::Instr::Set { id });
-                match bind {
-                    ast::Bind::Id { name } => {
-                        self.l.insert(name, id);
-                    }
-                    ast::Bind::Vector { elems } => todo!(),
-                    ast::Bind::Struct { members } => todo!(),
-                }
+                self.bind(t, bind);
                 self.typecheck(*body)
             }
             ast::Expr::Call { func, args } => {
@@ -494,7 +491,7 @@ impl<'input> ModCtx<'input> {
                 let mut ctx = FunCtx {
                     ctx: self,
                     f: ir::Function {
-                        params: paramtypes,
+                        params: paramtypes.clone(), // should be a way to do this without `clone`...
                         ret: vec![ret],
                         locals: vec![],
                         funcs: vec![],
@@ -502,17 +499,11 @@ impl<'input> ModCtx<'input> {
                     },
                     t: typevars,
                     g: genericnames,
-                    p: params // TODO: check for duplicate parameter names
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, (bind, _))| match bind {
-                            ast::Bind::Id { name } => (name, ir::Param(i)),
-                            ast::Bind::Vector { .. } => todo!(),
-                            ast::Bind::Struct { .. } => todo!(),
-                        })
-                        .collect(),
                     l: HashMap::new(),
                 };
+                for ((bind, _), t) in params.into_iter().zip(paramtypes).rev() {
+                    ctx.bind(t, bind);
+                }
                 ctx.typecheck(body)?; // TODO: ensure this matches `ret`
                 let f = self.newfunc(ir::Def {
                     generics: ctx.g.len(),

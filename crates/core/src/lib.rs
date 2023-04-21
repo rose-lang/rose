@@ -22,10 +22,6 @@ pub struct Generic(pub usize);
 #[derive(Clone, Copy, Debug)]
 pub struct Member(pub usize);
 
-/// Index of a parameter in a function context.
-#[derive(Clone, Copy, Debug)]
-pub struct Param(pub usize);
-
 /// Index of a local variable in a function context.
 #[derive(Clone, Copy, Debug)]
 pub struct Local(pub usize);
@@ -136,7 +132,6 @@ pub enum Binop {
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
     Generic { id: Generic },
-    Param { id: Param },
     Get { id: Local },
     Set { id: Local },
     Bool { val: bool },
