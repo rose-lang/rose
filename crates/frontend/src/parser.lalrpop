@@ -1,10 +1,12 @@
 use crate::{
-    ast::{Bind, Def, Expr, Module},
+    ast::{Bind, Def, Expr, Module, Spanned},
     lexer::LexicalError, tokens::{Binop, Token, Unop},
 };
 use std::ops::Range;
 
 grammar<'input>(input: &'input str);
+
+Spanned<T>: Spanned<T> = { <start:@L> <val:T> <end:@R> => Spanned { <> } }
 
 Comma<T>: Vec<T> = {
     <mut v:(<T> ",")*> <e:T?> => match e {
@@ -37,12 +39,12 @@ Bind: Bind<'input> = {
 }
 
 Base: Expr<'input> = {
-    Id => Expr::Id { name: <> },
+    Spanned<Id> => Expr::Id { name: <> },
     Int => Expr::Int { val: <> },
     "[" <Comma<Expr>> "]" => Expr::Vector { elems: <> },
     "{" <Comma<(<Id> "=" <Expr>)>> "}" => Expr::Struct { members: <> },
-    <func:Id> "(" <args:Comma<Expr>> ")" => Expr::Call { func, args },
-    "[" "for" <index:Id> "<" <limit:Id> "," <body:Expr> "]" => Expr::For {
+    <func:Spanned<Id>> "(" <args:Comma<Expr>> ")" => Expr::Call { func, args },
+    "[" "for" <index:Id> "<" <limit:Spanned<Id>> "," <body:Expr> "]" => Expr::For {
         index,
         limit,
         body: Box::new(body),
@@ -51,7 +53,7 @@ Base: Expr<'input> = {
 }
 
 Index: Expr<'input> = {
-    <val:Index> "." <member:Id> => Expr::Member {
+    <val:Index> "." <member:Spanned<Id>> => Expr::Member {
         val: Box::new(val),
         member,
     },
@@ -129,8 +131,8 @@ Expr: Expr<'input> = {
 }
 
 Def: Def<'input> = {
-    "type" <name:Id> "{" <members:Comma<(<Id> ":" <Type>)>> "}" => Def::Type { <> },
-    "def" <name:Id> "(" <params:Comma<(<Bind> ":" <Type>)>> ")" ":" <typ:Type> "=" <body:Expr> => Def::Func { <> },
+    "type" <name:Id> "{" <members:Comma<(<Id> ":" <Spanned<Type>>)>> "}" => Def::Type { <> },
+    "def" <name:Id> "(" <params:Comma<(<Bind> ":" <Spanned<Type>>)>> ")" ":" <typ:Spanned<Type>> "=" <body:Expr> => Def::Func { <> },
 }
 
 pub Module: Module<'input> = {

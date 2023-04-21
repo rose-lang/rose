@@ -1,24 +1,23 @@
 use crate::{ast, tokens};
 use rose as ir;
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
 
-// TODO: give source locations
 #[derive(Debug, thiserror::Error)]
 pub enum TypeError {
     #[error("")]
-    UnknownType { name: String },
+    UnknownType { name: Range<usize> },
 
     #[error("")]
-    BadTensorType { name: String },
+    BadTensorType { name: Range<usize> },
 
     #[error("")]
-    UnknownVar { name: String },
+    UnknownVar { name: Range<usize> },
 
     #[error("")]
     EmptyVec,
 
     #[error("")]
-    UnknownFunc { name: String },
+    UnknownFunc { name: Range<usize> },
 
     #[error("")]
     IndexPrimitive { t: ir::Type },
@@ -30,7 +29,7 @@ pub enum TypeError {
     MemberPrimitive { t: ir::Type },
 
     #[error("")]
-    BadSwizzle { swizzle: String },
+    BadSwizzle { swizzle: Range<usize> },
 
     #[error("")]
     ForNonSize,
@@ -45,7 +44,7 @@ pub enum TypeError {
 
 fn parse_types<'input>(
     lookup: impl Fn(&'input str) -> Option<ir::Typedef>,
-    typenames: impl Iterator<Item = &'input str>,
+    typenames: impl Iterator<Item = ast::Spanned<&'input str>>,
 ) -> Result<
     (
         HashMap<&'input str, ir::Generic>,
@@ -58,7 +57,7 @@ fn parse_types<'input>(
     let mut typevars = vec![];
     let mut types = vec![];
     for typ in typenames {
-        types.push(if let Some(id) = lookup(typ) {
+        types.push(if let Some(id) = lookup(typ.val) {
             let typexpr = ir::Typexpr::Typedef { id, params: vec![] };
             let id = ir::Var(typevars.len());
             typevars.push(typexpr);
@@ -66,10 +65,9 @@ fn parse_types<'input>(
         } else {
             let mut t = ir::Type::Real;
             let dims = typ
+                .val
                 .strip_prefix("R")
-                .ok_or_else(|| TypeError::UnknownType {
-                    name: typ.to_owned(),
-                })?;
+                .ok_or_else(|| TypeError::UnknownType { name: typ.span() })?;
             if !dims.is_empty() {
                 for dim in dims.rsplit("x") {
                     let typexpr = ir::Typexpr::Vector {
@@ -78,9 +76,7 @@ fn parse_types<'input>(
                             ir::Size::Const { val: n }
                         } else if dim.is_empty() {
                             // TODO: change this condition to check for valid identifiers
-                            return Err(TypeError::BadTensorType {
-                                name: typ.to_owned(),
-                            });
+                            return Err(TypeError::BadTensorType { name: typ.span() });
                         } else {
                             ir::Size::Generic {
                                 id: if let Some(&i) = generics.get(dim) {
@@ -184,9 +180,9 @@ impl<'input, 'a> FunCtx<'input, 'a> {
         // TODO: prevent clobbering and don't let variable names escape their scope
         match expr {
             ast::Expr::Id { name } => {
-                let (t, instr) = self.lookup(name).ok_or_else(|| TypeError::UnknownVar {
-                    name: name.to_owned(),
-                })?;
+                let (t, instr) = self
+                    .lookup(name.val)
+                    .ok_or_else(|| TypeError::UnknownVar { name: name.span() })?;
                 self.f.body.push(instr);
                 Ok(t)
             }
@@ -237,7 +233,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                     ir::Type::Var { id } => match self.gettype(id) {
                         ir::Typexpr::Vector { elem, size } => {
                             let t = *elem;
-                            let i = match member {
+                            let i = match member.val {
                                 // TODO: check against vector size
                                 "r" | "x" => Ok(0),
                                 "g" | "y" => Ok(1),
@@ -245,7 +241,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                                 "a" | "w" => Ok(3),
                                 // TODO: allow multi-character swizzles
                                 _ => Err(TypeError::BadSwizzle {
-                                    swizzle: member.to_owned(),
+                                    swizzle: member.span(),
                                 }),
                             }?;
                             self.f.body.push(ir::Instr::Int { val: i });
@@ -268,7 +264,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                 for arg in args {
                     types.push(self.typecheck(arg)?);
                 }
-                if let Some(&id) = self.ctx.f.get(func) {
+                if let Some(&id) = self.ctx.f.get(func.val) {
                     let (params, ret) = self.unify(id, &types)?;
                     let id = self.newfunc(ir::Inst { id, params });
                     self.f.body.push(ir::Instr::Call { id });
@@ -276,7 +272,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                 } else {
                     // TODO: validate argument types for builtin functions
                     // TODO: support builtin functions on integers
-                    match func {
+                    match func.val {
                         "abs" => {
                             self.f.body.push(ir::Instr::Unary {
                                 op: ir::Unop::AbsReal,
@@ -311,9 +307,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                             });
                             Ok(ir::Type::Real)
                         }
-                        _ => Err(TypeError::UnknownFunc {
-                            name: func.to_owned(),
-                        }),
+                        _ => Err(TypeError::UnknownFunc { name: func.span() }),
                     }
                 }
             }
@@ -326,7 +320,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                 self.f.body.push(ir::Instr::End);
                 Ok(t)
             }
-            ast::Expr::For { index, limit, body } => match self.lookup(limit) {
+            ast::Expr::For { index, limit, body } => match self.lookup(limit.val) {
                 Some((ir::Type::Size { val }, _)) => {
                     self.f.body.push(ir::Instr::For { limit: val });
                     let id = self.newlocal(ir::Type::Nat { bound: val });
@@ -338,9 +332,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                     Ok(ir::Type::Var { id })
                 }
                 Some(_) => Err(TypeError::ForNonSize),
-                None => Err(TypeError::UnknownVar {
-                    name: limit.to_owned(),
-                }),
+                None => Err(TypeError::UnknownVar { name: limit.span() }),
             },
             ast::Expr::Unary { op, arg } => todo!(),
             ast::Expr::Binary { op, left, right } => {
@@ -454,7 +446,7 @@ impl<'input> ModCtx<'input> {
         match def {
             ast::Def::Type { name, mut members } => {
                 // TODO: check for duplicate field names
-                members.sort(); // easiest way to ignore field order in literals
+                members.sort_by_key(|&(name, _)| name); // to ignore field order in literals
                 let (genericnames, typevars, fields) = parse_types(
                     |s| self.t.get(s).map(|&(i, _)| i),
                     members.iter().map(|&(_, t)| t),

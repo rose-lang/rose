@@ -1,4 +1,19 @@
 use crate::tokens::{Binop, Unop};
+use std::ops::Range;
+
+#[derive(Clone, Copy, Debug)]
+pub struct Spanned<T> {
+    pub start: usize,
+    pub val: T,
+    pub end: usize,
+}
+
+impl<T> Spanned<T> {
+    pub fn span(&self) -> Range<usize> {
+        let &Spanned { start, end, .. } = self;
+        Range { start, end }
+    }
+}
 
 #[derive(Debug)]
 pub enum Bind<'input> {
@@ -10,7 +25,7 @@ pub enum Bind<'input> {
 #[derive(Debug)]
 pub enum Expr<'input> {
     Id {
-        name: &'input str,
+        name: Spanned<&'input str>,
     },
     Int {
         val: u32,
@@ -27,7 +42,7 @@ pub enum Expr<'input> {
     },
     Member {
         val: Box<Expr<'input>>,
-        member: &'input str,
+        member: Spanned<&'input str>,
     },
     Let {
         bind: Bind<'input>,
@@ -35,7 +50,7 @@ pub enum Expr<'input> {
         body: Box<Expr<'input>>,
     },
     Call {
-        func: &'input str,
+        func: Spanned<&'input str>,
         args: Vec<Expr<'input>>,
     },
     If {
@@ -45,7 +60,7 @@ pub enum Expr<'input> {
     },
     For {
         index: &'input str,
-        limit: &'input str,
+        limit: Spanned<&'input str>,
         body: Box<Expr<'input>>,
     },
     Unary {
@@ -63,12 +78,12 @@ pub enum Expr<'input> {
 pub enum Def<'input> {
     Type {
         name: &'input str,
-        members: Vec<(&'input str, &'input str)>,
+        members: Vec<(&'input str, Spanned<&'input str>)>,
     },
     Func {
         name: &'input str,
-        params: Vec<(Bind<'input>, &'input str)>,
-        typ: &'input str,
+        params: Vec<(Bind<'input>, Spanned<&'input str>)>,
+        typ: Spanned<&'input str>,
         body: Expr<'input>,
     },
 }
