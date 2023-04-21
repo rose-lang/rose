@@ -6,22 +6,25 @@ use std::collections::HashMap;
 #[derive(Debug, thiserror::Error)]
 pub enum TypeError {
     #[error("")]
-    UnknownType,
+    UnknownType { name: String },
 
     #[error("")]
-    BadTensorType,
+    BadTensorType { name: String },
 
     #[error("")]
-    UnknownVar,
+    UnknownVar { name: String },
 
     #[error("")]
     EmptyVec,
 
     #[error("")]
-    UnknownFunc,
+    UnknownFunc { name: String },
 
     #[error("")]
-    IndexNonVector,
+    IndexPrimitive { t: ir::Type },
+
+    #[error("")]
+    IndexTuple,
 
     #[error("")]
     ForNonSize,
@@ -56,7 +59,11 @@ fn parse_types<'input>(
             ir::Type::Var { id }
         } else {
             let mut t = ir::Type::Real;
-            let dims = typ.strip_prefix("R").ok_or(TypeError::UnknownType)?;
+            let dims = typ
+                .strip_prefix("R")
+                .ok_or_else(|| TypeError::UnknownType {
+                    name: typ.to_owned(),
+                })?;
             if !dims.is_empty() {
                 for dim in dims.rsplit("x") {
                     let typexpr = ir::Typexpr::Vector {
@@ -65,7 +72,9 @@ fn parse_types<'input>(
                             ir::Size::Const { val: n }
                         } else if dim.is_empty() {
                             // TODO: change this condition to check for valid identifiers
-                            return Err(TypeError::BadTensorType);
+                            return Err(TypeError::BadTensorType {
+                                name: typ.to_owned(),
+                            });
                         } else {
                             ir::Size::Generic {
                                 id: if let Some(&i) = generics.get(dim) {
@@ -157,7 +166,9 @@ impl<'input, 'a> FunCtx<'input, 'a> {
         // TODO: prevent clobbering and don't let variable names escape their scope
         match expr {
             ast::Expr::Id { name } => {
-                let (t, instr) = self.lookup(name).ok_or(TypeError::UnknownVar)?;
+                let (t, instr) = self.lookup(name).ok_or_else(|| TypeError::UnknownVar {
+                    name: name.to_owned(),
+                })?;
                 self.f.body.push(instr);
                 Ok(t)
             }
@@ -190,15 +201,16 @@ impl<'input, 'a> FunCtx<'input, 'a> {
             }
             ast::Expr::Struct { members } => todo!(),
             ast::Expr::Index { val, index } => {
-                let v = self.typecheck(*val)?;
+                let t = self.typecheck(*val)?;
                 self.typecheck(*index)?; // TODO: ensure this is `Nat` and bounded by `val` size
                 self.f.body.push(ir::Instr::Index);
-                match v {
+                match t {
                     ir::Type::Var { id } => match self.gettype(id) {
                         ir::Typexpr::Vector { elem, .. } => Ok(*elem),
-                        _ => return Err(TypeError::IndexNonVector),
+                        ir::Typexpr::Tuple { .. } => Err(TypeError::IndexTuple),
+                        ir::Typexpr::Typedef { .. } => todo!(),
                     },
-                    _ => Err(TypeError::IndexNonVector),
+                    _ => Err(TypeError::IndexPrimitive { t }),
                 }
             }
             ast::Expr::Member { val, member } => todo!(),
@@ -233,7 +245,9 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                         "prod" => todo!(),
                         "sqrt" => todo!(),
                         "sum" => todo!(),
-                        _ => Err(TypeError::UnknownFunc),
+                        _ => Err(TypeError::UnknownFunc {
+                            name: func.to_owned(),
+                        }),
                     }
                 }
             }
@@ -258,7 +272,9 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                     Ok(ir::Type::Var { id })
                 }
                 Some(_) => Err(TypeError::ForNonSize),
-                None => Err(TypeError::UnknownVar),
+                None => Err(TypeError::UnknownVar {
+                    name: limit.to_owned(),
+                }),
             },
             ast::Expr::Unary { op, arg } => todo!(),
             ast::Expr::Binary { op, left, right } => {
@@ -294,7 +310,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                     // TODO: handle `mod` on other integer types
                     (ir::Type::Int, tokens::Binop::Mod, ir::Type::Size { val }) => {
                         self.f.body.push(ir::Instr::Binary { op: ir::Binop::Mod });
-                        return Ok(ir::Type::Nat { bound: val });
+                        Ok(ir::Type::Nat { bound: val })
                     }
 
                     // TODO: handle comparison on booleans and integers
