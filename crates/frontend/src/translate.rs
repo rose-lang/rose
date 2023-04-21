@@ -27,6 +27,12 @@ pub enum TypeError {
     IndexTuple,
 
     #[error("")]
+    MemberPrimitive { t: ir::Type },
+
+    #[error("")]
+    BadSwizzle { swizzle: String },
+
+    #[error("")]
     ForNonSize,
 
     #[error("")]
@@ -215,12 +221,38 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                     ir::Type::Var { id } => match self.gettype(id) {
                         ir::Typexpr::Vector { elem, .. } => Ok(*elem),
                         ir::Typexpr::Tuple { .. } => Err(TypeError::IndexTuple),
-                        ir::Typexpr::Typedef { .. } => todo!(),
+                        ir::Typexpr::Typedef { id, params } => todo!(),
                     },
                     _ => Err(TypeError::IndexPrimitive { t }),
                 }
             }
-            ast::Expr::Member { val, member } => todo!(),
+            ast::Expr::Member { val, member } => {
+                let t = self.typecheck(*val)?;
+                match t {
+                    ir::Type::Var { id } => match self.gettype(id) {
+                        ir::Typexpr::Vector { elem, size } => {
+                            let t = *elem;
+                            let i = match member {
+                                // TODO: check against vector size
+                                "r" | "x" => Ok(0),
+                                "g" | "y" => Ok(1),
+                                "b" | "z" => Ok(2),
+                                "a" | "w" => Ok(3),
+                                // TODO: allow multi-character swizzles
+                                _ => Err(TypeError::BadSwizzle {
+                                    swizzle: member.to_owned(),
+                                }),
+                            }?;
+                            self.f.body.push(ir::Instr::Int { val: i });
+                            self.f.body.push(ir::Instr::Index);
+                            Ok(t)
+                        }
+                        ir::Typexpr::Tuple { members } => todo!(),
+                        ir::Typexpr::Typedef { id, params } => todo!(),
+                    },
+                    _ => Err(TypeError::MemberPrimitive { t }),
+                }
+            }
             ast::Expr::Let { bind, val, body } => {
                 let t = self.typecheck(*val)?;
                 let id = self.newlocal(t);
