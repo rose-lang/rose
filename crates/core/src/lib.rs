@@ -41,6 +41,7 @@ pub enum Type {
     Bool,
     Int,
     Real,
+    Size { val: Size },
     Nat { bound: Size },
     Var { id: Var },
 }

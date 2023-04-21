@@ -1,13 +1,13 @@
 use logos::Logos;
 use std::num::ParseIntError;
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Unop {
     Neg,
     Not,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Binop {
     Add,
     Sub,

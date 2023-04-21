@@ -1,4 +1,4 @@
-use crate::ast;
+use crate::{ast, tokens};
 use rose as ir;
 use std::collections::HashMap;
 
@@ -7,16 +7,31 @@ use std::collections::HashMap;
 pub enum TypeError {
     #[error("")]
     UnknownType,
+
     #[error("")]
     BadTensorType,
+
     #[error("")]
     UnknownVar,
+
     #[error("")]
     EmptyVec,
+
     #[error("")]
     UnknownFunc,
+
     #[error("")]
     IndexNonVector,
+
+    #[error("")]
+    ForNonSize,
+
+    #[error("")]
+    BadBinaryArgs {
+        op: tokens::Binop,
+        left: ir::Type,
+        right: ir::Type,
+    },
 }
 
 fn parse_types<'input>(
@@ -115,6 +130,21 @@ impl<'input, 'a> FunCtx<'input, 'a> {
         self.f.locals[id.0]
     }
 
+    fn lookup(&self, name: &'input str) -> Option<(ir::Type, ir::Instr)> {
+        if let Some(&id) = self.l.get(name) {
+            Some((self.getlocal(id), ir::Instr::Get { id }))
+        } else if let Some(&id) = self.g.get(name) {
+            Some((
+                ir::Type::Size {
+                    val: ir::Size::Generic { id },
+                },
+                ir::Instr::Generic { id },
+            ))
+        } else {
+            None
+        }
+    }
+
     fn unify(
         &mut self,
         f: ir::Defn,
@@ -127,19 +157,19 @@ impl<'input, 'a> FunCtx<'input, 'a> {
         // TODO: prevent clobbering and don't let variable names escape their scope
         match expr {
             ast::Expr::Id { name } => {
-                if let Some(&id) = self.l.get(name) {
-                    self.f.body.push(ir::Instr::Get { id });
-                    Ok(self.getlocal(id))
-                } else if let Some(&id) = self.g.get(name) {
-                    self.f.body.push(ir::Instr::Generic { id });
-                    Ok(ir::Type::Int)
-                } else {
-                    Err(TypeError::UnknownVar)
-                }
+                let (t, instr) = self.lookup(name).ok_or(TypeError::UnknownVar)?;
+                self.f.body.push(instr);
+                Ok(t)
             }
             ast::Expr::Int { val } => {
                 self.f.body.push(ir::Instr::Int { val });
-                Ok(ir::Type::Int)
+                Ok(ir::Type::Size {
+                    val: ir::Size::Const {
+                        val: val
+                            .try_into()
+                            .expect("pointer sizes smaller than `u32` are not supported"),
+                    },
+                })
             }
             ast::Expr::Vector { elems } => {
                 let n = elems.len();
@@ -161,7 +191,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
             ast::Expr::Struct { members } => todo!(),
             ast::Expr::Index { val, index } => {
                 let v = self.typecheck(*val)?;
-                self.typecheck(*index)?; // TODO: ensure this is `Int` and bounded by `val` size
+                self.typecheck(*index)?; // TODO: ensure this is `Nat` and bounded by `val` size
                 self.f.body.push(ir::Instr::Index);
                 match v {
                     ir::Type::Var { id } => match self.gettype(id) {
@@ -216,9 +246,111 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                 self.f.body.push(ir::Instr::End);
                 Ok(t)
             }
-            ast::Expr::For { index, limit, body } => todo!(),
+            ast::Expr::For { index, limit, body } => match self.lookup(limit) {
+                Some((ir::Type::Size { val }, _)) => {
+                    self.f.body.push(ir::Instr::For { limit: val });
+                    let id = self.newlocal(ir::Type::Nat { bound: val });
+                    self.l.insert(index, id);
+                    self.f.body.push(ir::Instr::Set { id });
+                    let t = self.typecheck(*body)?;
+                    self.f.body.push(ir::Instr::End);
+                    let id = self.newtype(ir::Typexpr::Vector { elem: t, size: val });
+                    Ok(ir::Type::Var { id })
+                }
+                Some(_) => Err(TypeError::ForNonSize),
+                None => Err(TypeError::UnknownVar),
+            },
             ast::Expr::Unary { op, arg } => todo!(),
-            ast::Expr::Binary { op, left, right } => todo!(),
+            ast::Expr::Binary { op, left, right } => {
+                let l = self.typecheck(*left)?;
+                let r = self.typecheck(*right)?;
+                match (l, op, r) {
+                    // TODO: handle integer arithmetic
+                    (ir::Type::Real, tokens::Binop::Add, ir::Type::Real) => {
+                        self.f.body.push(ir::Instr::Binary {
+                            op: ir::Binop::AddReal,
+                        });
+                        Ok(ir::Type::Real)
+                    }
+                    (ir::Type::Real, tokens::Binop::Sub, ir::Type::Real) => {
+                        self.f.body.push(ir::Instr::Binary {
+                            op: ir::Binop::SubReal,
+                        });
+                        Ok(ir::Type::Real)
+                    }
+                    (ir::Type::Real, tokens::Binop::Mul, ir::Type::Real) => {
+                        self.f.body.push(ir::Instr::Binary {
+                            op: ir::Binop::MulReal,
+                        });
+                        Ok(ir::Type::Real)
+                    }
+                    (ir::Type::Real, tokens::Binop::Div, ir::Type::Real) => {
+                        self.f.body.push(ir::Instr::Binary {
+                            op: ir::Binop::DivReal,
+                        });
+                        Ok(ir::Type::Real)
+                    }
+
+                    // TODO: handle `mod` on other integer types
+                    (ir::Type::Int, tokens::Binop::Mod, ir::Type::Size { val }) => {
+                        self.f.body.push(ir::Instr::Binary { op: ir::Binop::Mod });
+                        return Ok(ir::Type::Nat { bound: val });
+                    }
+
+                    // TODO: handle comparison on booleans and integers
+                    (ir::Type::Real, tokens::Binop::Eq, ir::Type::Real) => {
+                        self.f.body.push(ir::Instr::Binary {
+                            op: ir::Binop::EqReal,
+                        });
+                        Ok(ir::Type::Bool)
+                    }
+                    (ir::Type::Real, tokens::Binop::Neq, ir::Type::Real) => {
+                        self.f.body.push(ir::Instr::Binary {
+                            op: ir::Binop::NeqReal,
+                        });
+                        Ok(ir::Type::Bool)
+                    }
+                    (ir::Type::Real, tokens::Binop::Lt, ir::Type::Real) => {
+                        self.f.body.push(ir::Instr::Binary {
+                            op: ir::Binop::LtReal,
+                        });
+                        Ok(ir::Type::Bool)
+                    }
+                    (ir::Type::Real, tokens::Binop::Gt, ir::Type::Real) => {
+                        self.f.body.push(ir::Instr::Binary {
+                            op: ir::Binop::GtReal,
+                        });
+                        Ok(ir::Type::Bool)
+                    }
+                    (ir::Type::Real, tokens::Binop::Leq, ir::Type::Real) => {
+                        self.f.body.push(ir::Instr::Binary {
+                            op: ir::Binop::LeqReal,
+                        });
+                        Ok(ir::Type::Bool)
+                    }
+                    (ir::Type::Real, tokens::Binop::Geq, ir::Type::Real) => {
+                        self.f.body.push(ir::Instr::Binary {
+                            op: ir::Binop::GeqReal,
+                        });
+                        Ok(ir::Type::Bool)
+                    }
+
+                    (ir::Type::Bool, tokens::Binop::And, ir::Type::Bool) => {
+                        self.f.body.push(ir::Instr::Binary { op: ir::Binop::And });
+                        Ok(ir::Type::Bool)
+                    }
+                    (ir::Type::Bool, tokens::Binop::Or, ir::Type::Bool) => {
+                        self.f.body.push(ir::Instr::Binary { op: ir::Binop::Or });
+                        Ok(ir::Type::Bool)
+                    }
+
+                    _ => Err(TypeError::BadBinaryArgs {
+                        op,
+                        left: l,
+                        right: r,
+                    }),
+                }
+            }
         }
     }
 }

@@ -45,7 +45,7 @@ pub enum Expr<'input> {
     },
     For {
         index: &'input str,
-        limit: Box<Expr<'input>>,
+        limit: &'input str,
         body: Box<Expr<'input>>,
     },
     Unary {

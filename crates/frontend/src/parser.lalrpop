@@ -42,9 +42,9 @@ Base: Expr<'input> = {
     "[" <Comma<Expr>> "]" => Expr::Vector { elems: <> },
     "{" <Comma<(<Id> "=" <Expr>)>> "}" => Expr::Struct { members: <> },
     <func:Id> "(" <args:Comma<Expr>> ")" => Expr::Call { func, args },
-    "[" "for" <index:Id> "<" <limit:Expr> "," <body:Expr> "]" => Expr::For {
+    "[" "for" <index:Id> "<" <limit:Id> "," <body:Expr> "]" => Expr::For {
         index,
-        limit: Box::new(limit),
+        limit,
         body: Box::new(body),
     },
     "(" <Expr> ")",
