@@ -245,13 +245,43 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                     self.f.body.push(ir::Instr::Call { id });
                     Ok(ret)
                 } else {
+                    // TODO: validate argument types for builtin functions
+                    // TODO: support builtin functions on integers
                     match func {
-                        "abs" => todo!(),
-                        "max" => todo!(),
-                        "min" => todo!(),
-                        "prod" => todo!(),
-                        "sqrt" => todo!(),
-                        "sum" => todo!(),
+                        "abs" => {
+                            self.f.body.push(ir::Instr::Unary {
+                                op: ir::Unop::AbsReal,
+                            });
+                            Ok(ir::Type::Real)
+                        }
+                        "max" => {
+                            self.f.body.push(ir::Instr::Unary {
+                                op: ir::Unop::MaxReal,
+                            });
+                            Ok(ir::Type::Real)
+                        }
+                        "min" => {
+                            self.f.body.push(ir::Instr::Unary {
+                                op: ir::Unop::MinReal,
+                            });
+                            Ok(ir::Type::Real)
+                        }
+                        "prod" => {
+                            self.f.body.push(ir::Instr::Unary {
+                                op: ir::Unop::ProdReal,
+                            });
+                            Ok(ir::Type::Real)
+                        }
+                        "sqrt" => {
+                            self.f.body.push(ir::Instr::Unary { op: ir::Unop::Sqrt });
+                            Ok(ir::Type::Real)
+                        }
+                        "sum" => {
+                            self.f.body.push(ir::Instr::Unary {
+                                op: ir::Unop::SumReal,
+                            });
+                            Ok(ir::Type::Real)
+                        }
                         _ => Err(TypeError::UnknownFunc {
                             name: func.to_owned(),
                         }),
