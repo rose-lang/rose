@@ -66,10 +66,10 @@ fn parse_types<'input>(
             let mut t = ir::Type::Real;
             let dims = typ
                 .val
-                .strip_prefix("R")
+                .strip_prefix('R')
                 .ok_or_else(|| TypeError::UnknownType { name: typ.span() })?;
             if !dims.is_empty() {
-                for dim in dims.rsplit("x") {
+                for dim in dims.rsplit('x') {
                     let typexpr = ir::Typexpr::Vector {
                         elem: t,
                         size: if let Ok(n) = dim.parse() {

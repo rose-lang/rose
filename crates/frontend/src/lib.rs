@@ -14,7 +14,11 @@ use parser::ModuleParser;
 use tokens::Token;
 use translate::{translate, TypeError};
 
-lalrpop_mod!(parser);
+// https://github.com/lalrpop/lalrpop/issues/115#issuecomment-950953164
+lalrpop_mod!(
+    #[allow(clippy::all)]
+    parser
+);
 
 #[derive(Debug)]
 pub enum OwnedToken {
@@ -115,7 +119,7 @@ impl<'input> From<ParseError<usize, Token<'input>, (Range<usize>, LexicalError)>
 }
 
 pub fn parse(source: &str) -> Result<rose::Module, Error> {
-    let lexer = Lexer::new(&source);
-    let ast = ModuleParser::new().parse(&source, lexer)?;
+    let lexer = Lexer::new(source);
+    let ast = ModuleParser::new().parse(source, lexer)?;
     Ok(translate(ast)?)
 }
