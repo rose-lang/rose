@@ -1,5 +1,5 @@
-import { Int } from "./int";
-import { Real } from "./real";
+import { Int } from "./int.js";
+import { Real } from "./real.js";
 
 export const neg: {
   (a: Int): Int;

@@ -1,4 +1,4 @@
-import { Int } from "./int";
+import { Int } from "./int.js";
 
 declare const opaqueBool: unique symbol;
 export type Bools = string & { tag: typeof opaqueBool };

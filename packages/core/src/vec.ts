@@ -1,5 +1,5 @@
-import { Int } from "./int";
-import { Val } from "./val";
+import { Int } from "./int.js";
+import { Val } from "./val.js";
 
 interface Cons<T> {
   tag: "cons";

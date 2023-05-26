@@ -1,4 +1,4 @@
-import { Real, Vec, fn, generic, get, mul, sub, sum, vec } from ".";
+import { Real, Vec, fn, generic, get, mul, sub, sum, vec } from "./index.js";
 
 const dot = generic(({ n }) =>
   fn([Vec(Real, n), Vec(Real, n)], (u, v) =>

@@ -1,5 +1,5 @@
-import { Real } from "./real";
-import { Val } from "./val";
+import { Real } from "./real.js";
+import { Val } from "./val.js";
 
 interface Not {
   tag: "not";

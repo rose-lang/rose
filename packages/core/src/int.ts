@@ -1,4 +1,4 @@
-import { Val } from "./val";
+import { Val } from "./val.js";
 
 interface Unary {
   tag: "unary";

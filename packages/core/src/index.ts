@@ -1,8 +1,8 @@
-import * as bool from "./bool";
-import { Bools, Fn, Ints, Reals, Type, Vecs } from "./fn";
-import * as int from "./int";
-import * as real from "./real";
-import * as vec from "./vec";
+import * as bool from "./bool.js";
+import { Bools, Fn, Ints, Reals, Type, Vecs } from "./fn.js";
+import * as int from "./int.js";
+import * as real from "./real.js";
+import * as vec from "./vec.js";
 
 export type Bool = bool.Bool;
 export const Bool = "𝔹" as Bools;
@@ -65,9 +65,9 @@ export const fn = (<T>(types: Type[], f: (...args: any[]) => T): Fn<T> => {
     ((a: Resolve<A>, b: Resolve<B>, c: Resolve<C>, d: Resolve<D>) => T);
 };
 
-export { and, eq, geq, gt, iff, leq, lt, neq, not, or, xor } from "./bool";
-export { mod } from "./int";
-export { abs, add, div, mul, neg, sub } from "./overload";
-export { max, min, prod, sqrt, sum } from "./real";
-export { cond, get } from "./val";
-export { vec } from "./vec";
+export { and, eq, geq, gt, iff, leq, lt, neq, not, or, xor } from "./bool.js";
+export { mod } from "./int.js";
+export { abs, add, div, mul, neg, sub } from "./overload.js";
+export { max, min, prod, sqrt, sum } from "./real.js";
+export { cond, get } from "./val.js";
+export { vec } from "./vec.js";

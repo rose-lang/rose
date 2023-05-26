@@ -1,5 +1,5 @@
-import { Val } from "./val";
-import { Vec } from "./vec";
+import { Val } from "./val.js";
+import { Vec } from "./vec.js";
 
 interface Unary {
   tag: "unary";

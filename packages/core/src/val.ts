@@ -1,7 +1,7 @@
-import { Bool } from "./bool";
-import { Fn } from "./fn";
-import { Int } from "./int";
-import { Vec } from "./vec";
+import { Bool } from "./bool.js";
+import { Fn } from "./fn.js";
+import { Int } from "./int.js";
+import { Vec } from "./vec.js";
 
 interface Call<T> {
   tag: "call";
