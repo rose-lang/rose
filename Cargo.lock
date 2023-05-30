@@ -545,7 +545,15 @@ dependencies = [
  "lalrpop-util",
  "logos",
  "rose",
+ "rose-interp",
  "thiserror",
+]
+
+[[package]]
+name = "rose-interp"
+version = "0.0.0"
+dependencies = [
+ "rose",
 ]
 
 [[package]]

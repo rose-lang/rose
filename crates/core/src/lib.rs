@@ -159,8 +159,20 @@ pub struct Function {
     pub body: Vec<Instr>,
 }
 
+impl Function {
+    pub fn get_func(&self, id: Func) -> &Inst {
+        &self.funcs[id.0]
+    }
+}
+
 #[derive(Debug)]
 pub struct Module {
     pub types: Vec<Def<Typexpr>>,
     pub funcs: Vec<Def<Function>>,
+}
+
+impl Module {
+    pub fn get_func(&self, id: Defn) -> &Def<Function> {
+        &self.funcs[id.0]
+    }
 }
