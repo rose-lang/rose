@@ -1,3 +1,5 @@
+mod interp;
+
 /// Index of a typedef in the module context.
 #[derive(Clone, Copy, Debug)]
 pub struct Typedef(pub usize);
@@ -159,8 +161,20 @@ pub struct Function {
     pub body: Vec<Instr>,
 }
 
+impl Function {
+    fn get_func(&self, id: Func) -> &Inst {
+        &self.funcs[id.0]
+    }
+}
+
 #[derive(Debug)]
 pub struct Module {
     pub types: Vec<Def<Typexpr>>,
     pub funcs: Vec<Def<Function>>,
+}
+
+impl Module {
+    fn get_func(&self, id: Defn) -> &Def<Function> {
+        &self.funcs[id.0]
+    }
 }

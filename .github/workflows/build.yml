@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
-      # - run: cargo run example.rose
+      - run: cargo test
       - run: rustup target add wasm32-unknown-unknown
       - run: wget https://github.com/rustwasm/wasm-bindgen/releases/download/0.2.84/wasm-bindgen-0.2.84-x86_64-unknown-linux-musl.tar.gz
       - run: tar -xzf wasm-bindgen-0.2.84-x86_64-unknown-linux-musl.tar.gz
