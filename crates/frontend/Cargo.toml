@@ -12,3 +12,6 @@ thiserror = "1"
 
 [build-dependencies]
 lalrpop = { version = "0.19", default-features = false }
+
+[dev-dependencies]
+rose-interp = { path = "../interp" }

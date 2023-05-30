@@ -1,8 +1,8 @@
-use crate::{Binop, Defn, Instr, Module};
+use rose::{Binop, Defn, Instr, Module};
 use std::rc::Rc;
 
 #[derive(Clone, Debug, PartialEq)]
-enum Val {
+pub enum Val {
     Bool(bool),
     I32(i32),
     F64(f64),
@@ -10,7 +10,7 @@ enum Val {
     Vector(Vec<Rc<Val>>),
 }
 
-fn interp(module: &Module, function: Defn, args: Vec<Val>) -> Vec<Val> {
+pub fn interp(module: &Module, function: Defn, args: Vec<Val>) -> Vec<Val> {
     let f = module.get_func(function);
     let mut locals: Vec<Option<Val>> = vec![None; f.def.locals.len()];
     let mut stack = args;
@@ -90,7 +90,7 @@ fn interp(module: &Module, function: Defn, args: Vec<Val>) -> Vec<Val> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Binop, Def, Func, Function, Inst, Local, Type};
+    use rose::{Binop, Def, Func, Function, Inst, Local, Type};
 
     #[test]
     fn test_two_plus_two() {
