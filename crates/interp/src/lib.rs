@@ -68,7 +68,13 @@ pub fn interp(module: &Module, function: Defn, args: Vec<Val>) -> Vec<Val> {
                         }
                     }
                 }
-                Binop::SubReal => todo!(),
+                Binop::SubReal => {
+                    if let Val::F64(b) = stack.pop().unwrap() {
+                        if let Val::F64(a) = stack.pop().unwrap() {
+                            stack.push(Val::F64(a - b));
+                        }
+                    }
+                }
                 Binop::MulReal => {
                     if let Val::F64(b) = stack.pop().unwrap() {
                         if let Val::F64(a) = stack.pop().unwrap() {
