@@ -25,5 +25,6 @@ jobs:
       - run: rm -r wasm-bindgen-0.2.84-x86_64-unknown-linux-musl*
       - run: npx prettier --check .
       - run: yarn wasm
+      - run: yarn test run
       - run: yarn build
       - run: yarn vscode
