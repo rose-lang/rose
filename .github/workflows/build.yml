@@ -10,13 +10,19 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
+      - run: yarn
+      - name: Check that `yarn.lock` is up to date
+        run: |
+          CHANGES=$(git status --porcelain)
+          echo "$CHANGES"
+          git diff
+          [ -z "$CHANGES" ]
       - run: cargo test
       - run: rustup target add wasm32-unknown-unknown
       - run: wget https://github.com/rustwasm/wasm-bindgen/releases/download/0.2.84/wasm-bindgen-0.2.84-x86_64-unknown-linux-musl.tar.gz
       - run: tar -xzf wasm-bindgen-0.2.84-x86_64-unknown-linux-musl.tar.gz
       - run: mv wasm-bindgen-0.2.84-x86_64-unknown-linux-musl/wasm-bindgen ~/.cargo/bin
       - run: rm -r wasm-bindgen-0.2.84-x86_64-unknown-linux-musl*
-      - run: yarn
       - run: npx prettier --check .
       - run: yarn wasm
       - run: yarn build
