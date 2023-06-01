@@ -1,7 +1,6 @@
-import { double, greet, initialize } from "@rose-lang/wasm";
+import { double, greet } from "@rose-lang/wasm";
 import { expect, test } from "vitest";
 
-initialize();
 test("test Rust Hello World", () => {
   expect(greet("Raven")).toBe("Hello, Raven!");
 });
