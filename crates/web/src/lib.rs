@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]

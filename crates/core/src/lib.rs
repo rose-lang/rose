@@ -1,38 +1,52 @@
+use ts_rs::TS;
+
+#[cfg(feature = "wasm-bindgen")]
+use wasm_bindgen::prelude::wasm_bindgen;
+
 /// Index of a typedef in the module context.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, TS)]
+#[ts(export)]
 pub struct Typedef(pub usize);
 
 /// Index of a function in the module context.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, TS)]
+#[ts(export)]
 pub struct Defn(pub usize);
 
 /// Index of a typevar in a definition context.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, TS)]
+#[ts(export)]
 pub struct Var(pub usize);
 
 /// Index of a function instantiation in a definition context.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, TS)]
+#[ts(export)]
 pub struct Func(pub usize);
 
 /// Index of a generic parameter in a definition context.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, TS)]
+#[ts(export)]
 pub struct Generic(pub usize);
 
 /// Index of a member in a tuple.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, TS)]
+#[ts(export)]
 pub struct Member(pub usize);
 
 /// Index of a local variable in a function context.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, TS)]
+#[ts(export)]
 pub struct Local(pub usize);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, TS)]
+#[ts(export)]
 pub enum Size {
     Const { val: usize },
     Generic { id: Generic },
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, TS)]
+#[ts(export)]
 pub enum Type {
     Bool,
     Int,
@@ -42,21 +56,24 @@ pub enum Type {
     Var { id: Var },
 }
 
-#[derive(Debug)]
+#[derive(Debug, TS)]
+#[ts(export)]
 pub enum Typexpr {
     Vector { elem: Type, size: Size },
     Tuple { members: Vec<Type> },
     Typedef { id: Typedef, params: Vec<Size> },
 }
 
-#[derive(Debug)]
+#[derive(Debug, TS)]
+#[ts(export)]
 pub struct Inst {
     pub id: Defn,
     /// Generic size parameters.
     pub params: Vec<Size>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, TS)]
+#[ts(export)]
 pub struct Def<T> {
     /// Number of generic size parameters.
     pub generics: usize,
@@ -64,7 +81,8 @@ pub struct Def<T> {
     pub def: T,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, TS)]
+#[ts(export)]
 pub enum Unop {
     // Bool -> Bool
     Not,
@@ -91,7 +109,8 @@ pub enum Unop {
     MinReal,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, TS)]
+#[ts(export)]
 pub enum Binop {
     // Bool -> Bool -> Bool
     And,
@@ -129,7 +148,8 @@ pub enum Binop {
     DivReal,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, TS)]
+#[ts(export)]
 pub enum Instr {
     Generic { id: Generic },
     Get { id: Local },
@@ -150,7 +170,8 @@ pub enum Instr {
     For { limit: Size },
 }
 
-#[derive(Debug)]
+#[derive(Debug, TS)]
+#[ts(export)]
 pub struct Function {
     pub params: Vec<Type>,
     pub ret: Vec<Type>,
@@ -165,7 +186,18 @@ impl Function {
     }
 }
 
-#[derive(Debug)]
+#[cfg(feature = "wasm-bindgen")]
+#[wasm_bindgen]
+#[derive(Debug, TS)]
+#[ts(export)]
+pub struct Module {
+    pub types: Vec<Def<Typexpr>>,
+    pub funcs: Vec<Def<Function>>,
+}
+
+#[cfg(not(feature = "wasm-bindgen"))]
+#[derive(Debug, TS)]
+#[ts(export)]
 pub struct Module {
     pub types: Vec<Def<Typexpr>>,
     pub funcs: Vec<Def<Function>>,
