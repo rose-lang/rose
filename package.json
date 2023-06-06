@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "yarn workspace @rose-lang/core build",
-    "build-ts": "cargo test --package=rose && cp -r crates/core/bindings packages/core/src/bindings/ && rimraf crates/core/bindings",
+    "build-ts": "rimraf packages/core/src/bindings && cargo test --package=rose && cp -r crates/core/bindings packages/core/src/bindings/ && rimraf crates/core/bindings",
     "vscode": "yarn workspace rose package",
     "wasm": "cargo build --package=rose-web --target=wasm32-unknown-unknown --release && cargo build --package=rose --target=wasm32-unknown-unknown --release --features wasm-bindgen && yarn workspace  @rose-lang/wasm build",
     "test": "vitest"
