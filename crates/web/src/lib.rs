@@ -1,3 +1,4 @@
+use rose::Module;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen]
@@ -13,4 +14,9 @@ pub fn greet(name: String) -> String {
 #[wasm_bindgen]
 pub fn double(x: u32) -> u32 {
     x * 2
+}
+
+#[wasm_bindgen]
+pub fn module(x: Module) -> Module {
+    x
 }

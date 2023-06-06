@@ -1,52 +1,50 @@
 use ts_rs::TS;
-
-#[cfg(feature = "wasm-bindgen")]
 use wasm_bindgen::prelude::wasm_bindgen;
 
 /// Index of a typedef in the module context.
-#[derive(Clone, Copy, Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Clone, Copy, Debug)]
 pub struct Typedef(pub usize);
 
 /// Index of a function in the module context.
-#[derive(Clone, Copy, Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Clone, Copy, Debug)]
 pub struct Defn(pub usize);
 
 /// Index of a typevar in a definition context.
-#[derive(Clone, Copy, Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Clone, Copy, Debug)]
 pub struct Var(pub usize);
 
 /// Index of a function instantiation in a definition context.
-#[derive(Clone, Copy, Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Clone, Copy, Debug)]
 pub struct Func(pub usize);
 
 /// Index of a generic parameter in a definition context.
-#[derive(Clone, Copy, Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Clone, Copy, Debug)]
 pub struct Generic(pub usize);
 
 /// Index of a member in a tuple.
-#[derive(Clone, Copy, Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Clone, Copy, Debug)]
 pub struct Member(pub usize);
 
 /// Index of a local variable in a function context.
-#[derive(Clone, Copy, Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Clone, Copy, Debug)]
 pub struct Local(pub usize);
 
-#[derive(Clone, Copy, Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Clone, Copy, Debug)]
 pub enum Size {
     Const { val: usize },
     Generic { id: Generic },
 }
 
-#[derive(Clone, Copy, Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Clone, Copy, Debug)]
 pub enum Type {
     Bool,
     Int,
@@ -56,24 +54,24 @@ pub enum Type {
     Var { id: Var },
 }
 
-#[derive(Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Debug)]
 pub enum Typexpr {
     Vector { elem: Type, size: Size },
     Tuple { members: Vec<Type> },
     Typedef { id: Typedef, params: Vec<Size> },
 }
 
-#[derive(Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Debug)]
 pub struct Inst {
     pub id: Defn,
     /// Generic size parameters.
     pub params: Vec<Size>,
 }
 
-#[derive(Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Debug)]
 pub struct Def<T> {
     /// Number of generic size parameters.
     pub generics: usize,
@@ -81,8 +79,8 @@ pub struct Def<T> {
     pub def: T,
 }
 
-#[derive(Clone, Copy, Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Clone, Copy, Debug)]
 pub enum Unop {
     // Bool -> Bool
     Not,
@@ -109,8 +107,8 @@ pub enum Unop {
     MinReal,
 }
 
-#[derive(Clone, Copy, Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Clone, Copy, Debug)]
 pub enum Binop {
     // Bool -> Bool -> Bool
     And,
@@ -148,8 +146,8 @@ pub enum Binop {
     DivReal,
 }
 
-#[derive(Clone, Copy, Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Clone, Copy, Debug)]
 pub enum Instr {
     Generic { id: Generic },
     Get { id: Local },
@@ -170,8 +168,8 @@ pub enum Instr {
     For { limit: Size },
 }
 
-#[derive(Debug, TS)]
-#[ts(export)]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Debug)]
 pub struct Function {
     pub params: Vec<Type>,
     pub ret: Vec<Type>,
@@ -186,14 +184,14 @@ impl Function {
     }
 }
 
-#[cfg_attr(feature = "wasm-bindgen", wasm_bindgen)]
-#[derive(Debug, TS)]
-#[ts(export)]
+#[wasm_bindgen]
+#[cfg_attr(test, derive(TS), ts(export))]
+#[derive(Debug)]
 pub struct Module {
-    #[cfg_attr(feature = "wasm-bindgen", wasm_bindgen(skip))]
+    #[wasm_bindgen(skip)]
     pub types: Vec<Def<Typexpr>>,
 
-    #[cfg_attr(feature = "wasm-bindgen", wasm_bindgen(skip))]
+    #[wasm_bindgen(skip)]
     pub funcs: Vec<Def<Function>>,
 }
 

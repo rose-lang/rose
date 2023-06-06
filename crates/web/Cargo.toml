@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 console_error_panic_hook = "0.1"
-rose = { path = "../core" }
+rose = { path = "../core", features = ["wasm-bindgen"] }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.4"
 ts-rs = "6"

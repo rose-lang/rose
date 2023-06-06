@@ -2,7 +2,7 @@
   "compilerOptions": {
     // basic stuff, or everything breaks
     "module": "ESNext",
-    "moduleResolution": "node16",
+    "moduleResolution": "node",
     "lib": ["ESNext"],
     "skipLibCheck": true,
 
