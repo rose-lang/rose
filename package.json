@@ -15,7 +15,7 @@
   "scripts": {
     "build": "yarn workspace @rose-lang/core build",
     "vscode": "yarn workspace rose package",
-    "wasm": "cargo build --package=rose-web --target=wasm32-unknown-unknown --release && yarn workspace  @rose-lang/wasm build",
+    "wasm": "cargo build --package=rose-web --target=wasm32-unknown-unknown --release --features wasm-bindgen && yarn workspace  @rose-lang/wasm build",
     "test": "vitest"
   }
 }

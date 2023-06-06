@@ -186,20 +186,14 @@ impl Function {
     }
 }
 
-#[cfg(feature = "wasm-bindgen")]
-#[wasm_bindgen]
+#[cfg_attr(feature = "wasm-bindgen", wasm_bindgen)]
 #[derive(Debug, TS)]
 #[ts(export)]
 pub struct Module {
+    #[cfg_attr(feature = "wasm-bindgen", wasm_bindgen(skip))]
     pub types: Vec<Def<Typexpr>>,
-    pub funcs: Vec<Def<Function>>,
-}
 
-#[cfg(not(feature = "wasm-bindgen"))]
-#[derive(Debug, TS)]
-#[ts(export)]
-pub struct Module {
-    pub types: Vec<Def<Typexpr>>,
+    #[cfg_attr(feature = "wasm-bindgen", wasm_bindgen(skip))]
     pub funcs: Vec<Def<Function>>,
 }
 

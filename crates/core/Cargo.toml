@@ -10,7 +10,7 @@ include = ["src/lib.rs"]
 ts-rs = "6.1"
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.4"
-wasm-bindgen = "=0.2.84"
+wasm-bindgen = "0.2.84"
 
 [features]
 wasm-bindgen = []
