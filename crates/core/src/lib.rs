@@ -1,5 +1,6 @@
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 
 /// Index of a typedef in the module context.
 #[cfg_attr(test, derive(TS), ts(export))]
@@ -186,6 +187,7 @@ impl Function {
 
 #[wasm_bindgen]
 #[cfg_attr(test, derive(TS), ts(export))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub struct Module {
     #[wasm_bindgen(skip)]
@@ -199,4 +201,9 @@ impl Module {
     pub fn get_func(&self, id: Defn) -> &Def<Function> {
         &self.funcs[id.0]
     }
+}
+
+fn to_js_value(value: &(impl Serialize + ?Sized)) -> Result<JsValue, serde_wasm_bindgen::Error> {
+    // ts-rs expects us to produce data that looks like JSON
+    value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
 }
