@@ -13,7 +13,7 @@
     "vitest": "^0.31.2"
   },
   "scripts": {
-    "build": "yarn workspace @rose-lang/core build",
+    "build": "yarn build-ts && yarn workspace @rose-lang/core build",
     "build-ts": "rimraf packages/core/src/bindings && cargo test --package=rose && cp -r crates/core/bindings packages/core/src/bindings/ && rimraf crates/core/bindings && yarn prettier --write packages/core/src/bindings/",
     "vscode": "yarn workspace rose package",
     "wasm": "cargo build --package=rose-web --target=wasm32-unknown-unknown --release && cargo build --package=rose --features serde-enable --target=wasm32-unknown-unknown --release && yarn workspace @rose-lang/wasm build",
