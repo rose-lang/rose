@@ -1,4 +1,5 @@
 /packages/core/dist/
 /packages/core/wbg/
+/packages/core/src/bindings/
 /target/
 /wbg/
