@@ -13,5 +13,4 @@ serde-wasm-bindgen = "0.4"
 wasm-bindgen = "0.2.84"
 
 [features]
-wasm-bindgen = []
-serde = []
+serde-enable = []

@@ -4,48 +4,48 @@ use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 
 /// Index of a typedef in the module context.
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub struct Typedef(pub usize);
 
 /// Index of a function in the module context.
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub struct Defn(pub usize);
 
 /// Index of a typevar in a definition context.
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub struct Var(pub usize);
 
 /// Index of a function instantiation in a definition context.
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub struct Func(pub usize);
 
 /// Index of a generic parameter in a definition context.
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub struct Generic(pub usize);
 
 /// Index of a member in a tuple.
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub struct Member(pub usize);
 
 /// Index of a local variable in a function context.
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub struct Local(pub usize);
 
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub enum Size {
     Const { val: usize },
@@ -53,7 +53,7 @@ pub enum Size {
 }
 
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub enum Type {
     Bool,
@@ -65,7 +65,7 @@ pub enum Type {
 }
 
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub enum Typexpr {
     Vector { elem: Type, size: Size },
@@ -74,7 +74,7 @@ pub enum Typexpr {
 }
 
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub struct Inst {
     pub id: Defn,
@@ -83,7 +83,7 @@ pub struct Inst {
 }
 
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub struct Def<T> {
     /// Number of generic size parameters.
@@ -93,7 +93,7 @@ pub struct Def<T> {
 }
 
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub enum Unop {
     // Bool -> Bool
@@ -122,7 +122,7 @@ pub enum Unop {
 }
 
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub enum Binop {
     // Bool -> Bool -> Bool
@@ -162,7 +162,7 @@ pub enum Binop {
 }
 
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
     Generic { id: Generic },
@@ -185,7 +185,7 @@ pub enum Instr {
 }
 
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub struct Function {
     pub params: Vec<Type>,
@@ -203,7 +203,7 @@ impl Function {
 
 #[wasm_bindgen]
 #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-enable", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub struct Module {
     #[wasm_bindgen(skip)]
@@ -217,6 +217,18 @@ impl Module {
     pub fn get_func(&self, id: Defn) -> &Def<Function> {
         &self.funcs[id.0]
     }
+}
+
+#[wasm_bindgen]
+#[cfg(feature = "serde-enable")]
+pub fn module_to_js(my_mod_js: JsValue) -> JsValue {
+    // Deserialize the JavaScript object to the Rust Module struct
+    let my_mod: Module = serde_wasm_bindgen::from_value(my_mod_js).unwrap();
+
+    // Do something with the Module object?
+
+    // Serialize the modified Module object back to a JsValue and return the modified JsValue
+    to_js_value(&my_mod).unwrap()
 }
 
 fn to_js_value(value: &(impl Serialize + ?Sized)) -> Result<JsValue, serde_wasm_bindgen::Error> {

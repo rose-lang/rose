@@ -1,4 +1,4 @@
-import { double, greet } from "@rose-lang/wasm";
+import { double, greet, module_to_js } from "@rose-lang/wasm";
 import { expect, test } from "vitest";
 import { Module } from "./bindings/Module.js";
 
@@ -30,3 +30,8 @@ let myMod: Module = {
     },
   ],
 };
+
+const modifiedObj = module_to_js(myMod);
+test("test Module type", () => {
+  expect(modifiedObj).toStrictEqual(myMod);
+});
