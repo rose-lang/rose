@@ -5,8 +5,11 @@
   "type": "module",
   "types": "./dist/index.d.ts",
   "exports": {
-    "types": "./dist/index.d.ts",
-    "default": "./dist/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./bindings/*": "./bindings/*"
   },
   "scripts": {
     "bundle": "esbuild ./index.js --outfile=dist/index.js --platform=neutral --bundle --loader:.wasm=binary --define:import.meta.url=null --sourcemap",
