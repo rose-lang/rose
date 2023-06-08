@@ -1,4 +1,6 @@
+/crates/core/bindings/
 /packages/core/dist/
 /packages/core/wbg/
+/packages/wasm/bindings/
 /target/
 /wbg/

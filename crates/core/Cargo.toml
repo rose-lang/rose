@@ -5,3 +5,14 @@ edition = "2021"
 description = "Extensible interactive autodiff."
 license = "MIT"
 include = ["src/lib.rs"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+wasm-bindgen = "0.2"
+
+[dev-dependencies]
+ts-rs = "6.1"
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]

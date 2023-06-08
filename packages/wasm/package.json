@@ -3,14 +3,18 @@
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
+  "types": "./dist/index.d.ts",
   "exports": {
-    "types": "./dist/index.d.ts",
-    "default": "./dist/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./bindings/*": "./bindings/*"
   },
   "scripts": {
     "bundle": "esbuild ./index.js --outfile=dist/index.js --platform=neutral --bundle --loader:.wasm=binary --define:import.meta.url=null --sourcemap",
     "wbg": "rimraf wbg && wasm-bindgen --target=web --out-dir=wbg ../../target/wasm32-unknown-unknown/release/rose_web.wasm",
     "types": "cp wbg/rose_web.d.ts dist/index.d.ts",
-    "build": "rimraf dist && yarn wbg && yarn bundle && yarn types"
+    "build": "yarn wbg && yarn bundle && yarn types"
   }
 }

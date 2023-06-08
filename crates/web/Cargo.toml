@@ -9,8 +9,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 console_error_panic_hook = "0.1"
-rose = { path = "../core" }
+rose = { path = "../core", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.4"
 ts-rs = "6"
-wasm-bindgen = "=0.2.84"
+wasm-bindgen = "=0.2.84"                          # Must be this version of wbg
