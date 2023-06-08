@@ -545,7 +545,6 @@ name = "rose"
 version = "0.0.0"
 dependencies = [
  "serde",
- "serde-wasm-bindgen",
  "ts-rs",
  "wasm-bindgen",
 ]

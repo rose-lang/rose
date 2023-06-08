@@ -8,7 +8,6 @@ pub fn initialize() {
 }
 
 #[wasm_bindgen]
-#[cfg(feature = "serde")]
 pub fn module_from_js(my_mod_js: JsValue) -> Result<Module, JsValue> {
     // Deserialize the JavaScript object to the Rust Module struct
     let my_mod: Module = serde_wasm_bindgen::from_value(my_mod_js)?;
@@ -16,7 +15,6 @@ pub fn module_from_js(my_mod_js: JsValue) -> Result<Module, JsValue> {
 }
 
 #[wasm_bindgen]
-#[cfg(feature = "serde")]
 pub fn module_to_js(my_mod: &Module) -> JsValue {
     // Serialize the modified Module object back to a JsValue and return the modified JsValue
     to_js_value(&my_mod).unwrap()
