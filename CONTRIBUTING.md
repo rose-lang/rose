@@ -5,23 +5,9 @@
 Make sure to have these tools installed:
 
 - [Git](https://git-scm.com/downloads)
-
+- [Make](https://www.gnu.org/software/make/)
 - [Rust](https://www.rust-lang.org/tools/install)
-
-  - the WebAssembly target for Rust:
-
-    ```
-    rustup target add wasm32-unknown-unknown
-    ```
-
-  - `wasm-bindgen` CLI v0.2.84 installed globally:
-
-    ```
-    cargo install --version=0.2.84 wasm-bindgen-cli
-    ```
-
 - [Node.js](https://nodejs.org/en/download) v16-v18
-
   - [Yarn](https://classic.yarnpkg.com/lang/en/docs/install) v1.x
 
 ## Setup
@@ -38,22 +24,18 @@ Then open a terminal in your clone of it; for instance, if you cloned it via the
 cd rose/
 ```
 
-Next, install the dependencies from npm:
+Now you should be able to run everything using Make:
 
 ```
-yarn
+make all
 ```
 
-Then, to build all packages, run in the root directory:
+## Build
+
+To just produce all build artifacts:
 
 ```
-yarn wasm
-```
-
-and then
-
-```
-yarn build
+make
 ```
 
 ## Test
@@ -61,5 +43,13 @@ yarn build
 To run all tests:
 
 ```
-yarn test
+make test
+```
+
+## Check
+
+To run any additional checks:
+
+```
+make check
 ```
