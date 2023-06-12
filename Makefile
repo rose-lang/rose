@@ -42,6 +42,7 @@ wbg: rust
 yarn:
 	yarn
 
+# check Prettier formatting
 prettier: yarn
 	npx prettier --check .
 
