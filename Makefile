@@ -16,15 +16,10 @@ all: build test check
 
 ## Rust
 
-# install `wasm-bindgen` CLI locally; we put this in a separate target from
-# `rust` so that in CI we can skip this step by downloading a prebuilt Linux
-# binary and using Make's change tracking
-.cargo/bin/wasm-bindgen:
-	cargo install --root=.cargo --version=0.2.84 wasm-bindgen-cli
-
 # install additional Rust stuff that we need
-rust: .cargo/bin/wasm-bindgen
+rust:
 	rustup target add wasm32-unknown-unknown
+	cargo install --root=.cargo --version=0.2.84 wasm-bindgen-cli
 
 # export TypeScript bindings from Rust types
 bindings:

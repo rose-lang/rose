@@ -11,8 +11,6 @@ jobs:
     steps:
       - name: Clone repo
         uses: actions/checkout@v3
-      - name: Install wasm-bindgen CLI
-        run: .github/wbg.sh # faster than `cargo install`
       - run: make all
       - name: Check that all tracked files are unmodified
         run: .github/diff.sh
