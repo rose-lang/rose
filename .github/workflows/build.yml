@@ -12,5 +12,5 @@ jobs:
       - name: Clone repo
         uses: actions/checkout@v3
       - run: make all
-      - name: Check that all tracked files are unmodified
+      - name: Check that Git diff is empty
         run: .github/diff.sh

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-# check that all tracked files are unmodified
+# check that Git diff is empty
 CHANGES=$(git status --porcelain)
 echo "$CHANGES"
 git diff
