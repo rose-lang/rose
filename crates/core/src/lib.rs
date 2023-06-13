@@ -1,22 +1,10 @@
+use std::rc::Rc;
+
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 use ts_rs::TS;
-
-use wasm_bindgen::prelude::wasm_bindgen;
-
-/// Index of a typedef in the module context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
-pub struct Typedef(pub usize);
-
-/// Index of a function in the module context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
-pub struct Defn(pub usize);
 
 /// Index of a typevar in a definition context.
 #[cfg_attr(test, derive(TS), ts(export))]
@@ -60,34 +48,44 @@ pub enum Size {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub enum Type {
+    ///
+    Opaque,
     Bool,
     Int,
     Real,
-    Size { val: Size },
-    Nat { bound: Size },
-    Var { id: Var },
+    Size {
+        val: Size,
+    },
+    Nat {
+        bound: Size,
+    },
+    Var {
+        id: Var,
+    },
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub enum Typexpr {
-    Vector { elem: Type, size: Size },
-    Tuple { members: Vec<Type> },
-    Typedef { id: Typedef, params: Vec<Size> },
+    Vector {
+        elem: Type,
+        size: Size,
+    },
+    Tuple {
+        members: Vec<Type>,
+    },
+    Typedef {
+        def: Rc<Def<Typexpr>>,
+        params: Vec<Size>,
+    },
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
-pub struct Inst {
-    pub id: Defn,
+pub struct Inst<T> {
+    pub def: Rc<Def<Function<T>>>,
     /// Generic size parameters.
     pub params: Vec<Size>,
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub struct Def<T> {
     /// Number of generic size parameters.
@@ -188,37 +186,19 @@ pub enum Instr {
     For { limit: Size },
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
-pub struct Function {
+pub struct Function<T> {
+    /// Opaque function dependencies.
+    pub opaques: Vec<T>,
     pub params: Vec<Type>,
     pub ret: Vec<Type>,
     pub locals: Vec<Type>,
-    pub funcs: Vec<Inst>,
+    pub funcs: Vec<Inst<T>>,
     pub body: Vec<Instr>,
 }
 
-impl Function {
-    pub fn get_func(&self, id: Func) -> &Inst {
-        &self.funcs[id.0]
-    }
-}
-
-#[wasm_bindgen]
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug)]
-pub struct Module {
-    #[wasm_bindgen(skip)]
-    pub types: Vec<Def<Typexpr>>,
-
-    #[wasm_bindgen(skip)]
-    pub funcs: Vec<Def<Function>>,
-}
-
-impl Module {
-    pub fn get_func(&self, id: Defn) -> &Def<Function> {
+impl<T> Function<T> {
+    pub fn get_func(&self, id: Func) -> &Inst<T> {
         &self.funcs[id.0]
     }
 }

@@ -1,4 +1,4 @@
-use rose::{Binop, Defn, Instr, Module};
+use rose::{Binop, Def, Function, Instr};
 use std::rc::Rc;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -10,8 +10,7 @@ pub enum Val {
     Vector(Vec<Rc<Val>>),
 }
 
-pub fn interp(module: &Module, function: Defn, args: Vec<Val>) -> Vec<Val> {
-    let f = module.get_func(function);
+pub fn interp<T>(f: &Def<Function<T>>, args: Vec<Val>) -> Vec<Val> {
     let mut locals: Vec<Option<Val>> = vec![None; f.def.locals.len()];
     let mut stack = args;
     for &instr in f.def.body.iter() {
@@ -33,10 +32,9 @@ pub fn interp(module: &Module, function: Defn, args: Vec<Val>) -> Vec<Val> {
             Instr::Index => todo!(),
             Instr::Member { id: _ } => todo!(),
             Instr::Call { id } => {
-                let defn = f.def.get_func(id).id;
-                let g = module.get_func(defn);
+                let g = f.def.get_func(id).def.as_ref();
                 let args = stack.drain(stack.len() - g.def.params.len()..).collect();
-                stack.append(&mut interp(module, defn, args));
+                stack.append(&mut interp(g, args));
             }
             Instr::Unary { op: _ } => todo!(),
             Instr::Binary { op } => match op {
@@ -100,63 +98,58 @@ mod tests {
 
     #[test]
     fn test_two_plus_two() {
-        let module = Module {
+        let f: Def<Function<()>> = Def {
+            generics: 0,
             types: vec![],
-            funcs: vec![Def {
-                generics: 0,
-                types: vec![],
-                def: Function {
-                    params: vec![Type::Real, Type::Real],
-                    ret: vec![Type::Real],
-                    locals: vec![],
-                    funcs: vec![],
-                    body: vec![Instr::Binary { op: Binop::AddReal }],
-                },
-            }],
+            def: Function {
+                opaques: vec![],
+                params: vec![Type::Real, Type::Real],
+                ret: vec![Type::Real],
+                locals: vec![],
+                funcs: vec![],
+                body: vec![Instr::Binary { op: Binop::AddReal }],
+            },
         };
-        let answer = interp(&module, Defn(0), vec![Val::F64(2.), Val::F64(2.)]);
+        let answer = interp(&f, vec![Val::F64(2.), Val::F64(2.)]);
         assert_eq!(answer, vec![Val::F64(4.)]);
     }
 
     #[test]
     fn test_nested_call() {
-        let module = Module {
+        let f: Rc<Def<Function<()>>> = Rc::new(Def {
+            generics: 0,
             types: vec![],
-            funcs: vec![
-                Def {
-                    generics: 0,
-                    types: vec![],
-                    def: Function {
-                        params: vec![],
-                        ret: vec![Type::Real],
-                        locals: vec![],
-                        funcs: vec![],
-                        body: vec![Instr::Real { val: 42. }],
-                    },
-                },
-                Def {
-                    generics: 0,
-                    types: vec![],
-                    def: Function {
-                        params: vec![],
-                        ret: vec![Type::Real],
-                        locals: vec![Type::Real],
-                        funcs: vec![Inst {
-                            id: Defn(0),
-                            params: vec![],
-                        }],
-                        body: vec![
-                            Instr::Call { id: Func(0) },
-                            Instr::Set { id: Local(0) },
-                            Instr::Get { id: Local(0) },
-                            Instr::Get { id: Local(0) },
-                            Instr::Binary { op: Binop::MulReal },
-                        ],
-                    },
-                },
-            ],
+            def: Function {
+                opaques: vec![],
+                params: vec![],
+                ret: vec![Type::Real],
+                locals: vec![],
+                funcs: vec![],
+                body: vec![Instr::Real { val: 42. }],
+            },
+        });
+        let g: Def<Function<()>> = Def {
+            generics: 0,
+            types: vec![],
+            def: Function {
+                opaques: vec![],
+                params: vec![],
+                ret: vec![Type::Real],
+                locals: vec![Type::Real],
+                funcs: vec![Inst {
+                    def: f,
+                    params: vec![],
+                }],
+                body: vec![
+                    Instr::Call { id: Func(0) },
+                    Instr::Set { id: Local(0) },
+                    Instr::Get { id: Local(0) },
+                    Instr::Get { id: Local(0) },
+                    Instr::Binary { op: Binop::MulReal },
+                ],
+            },
         };
-        let answer = interp(&module, Defn(1), vec![]);
+        let answer = interp(&g, vec![]);
         assert_eq!(answer, vec![Val::F64(1764.)]);
     }
 }

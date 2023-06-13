@@ -546,7 +546,6 @@ version = "0.0.0"
 dependencies = [
  "serde",
  "ts-rs",
- "wasm-bindgen",
 ]
 
 [[package]]
