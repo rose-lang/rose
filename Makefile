@@ -9,6 +9,10 @@ check: prettier
 	cargo fmt --check
 	cargo clippy
 
+# delete build artifacts, but not dependencies or downloaded files
+clean:
+	git clean -Xdf crates packages -e '!node_modules' -e '!*.png'
+
 # do everything
 all: build test check
 
