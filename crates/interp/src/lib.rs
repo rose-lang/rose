@@ -102,7 +102,6 @@ mod tests {
             generics: 0,
             types: vec![],
             def: Function {
-                opaques: vec![],
                 params: vec![Type::Real, Type::Real],
                 ret: vec![Type::Real],
                 locals: vec![],
@@ -120,7 +119,6 @@ mod tests {
             generics: 0,
             types: vec![],
             def: Function {
-                opaques: vec![],
                 params: vec![],
                 ret: vec![Type::Real],
                 locals: vec![],
@@ -132,7 +130,6 @@ mod tests {
             generics: 0,
             types: vec![],
             def: Function {
-                opaques: vec![],
                 params: vec![],
                 ret: vec![Type::Real],
                 locals: vec![Type::Real],

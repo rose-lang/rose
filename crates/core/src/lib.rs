@@ -48,20 +48,12 @@ pub enum Size {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub enum Type {
-    ///
-    Opaque,
     Bool,
     Int,
     Real,
-    Size {
-        val: Size,
-    },
-    Nat {
-        bound: Size,
-    },
-    Var {
-        id: Var,
-    },
+    Size { val: Size },
+    Nat { bound: Size },
+    Var { id: Var },
 }
 
 #[derive(Debug)]
@@ -188,8 +180,6 @@ pub enum Instr {
 
 #[derive(Debug)]
 pub struct Function<T> {
-    /// Opaque function dependencies.
-    pub opaques: Vec<T>,
     pub params: Vec<Type>,
     pub ret: Vec<Type>,
     pub locals: Vec<Type>,

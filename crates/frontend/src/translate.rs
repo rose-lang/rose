@@ -483,7 +483,6 @@ impl<'input> Module<'input> {
                 let mut ctx = FunCtx {
                     m: self,
                     f: ir::Function {
-                        opaques: vec![],
                         params: paramtypes.clone(), // should be a way to do this without `clone`...
                         ret: vec![ret],
                         locals: vec![],
