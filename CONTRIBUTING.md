@@ -55,6 +55,30 @@ To run any additional checks:
 make check
 ```
 
+## Clean
+
+Sometimes old build artifacts can hide errors. To clean your build:
+
+```
+make clean
+```
+
+This doesn't clean everything; it keeps around downloaded files and Rust's
+`target` directory. You should be able to run `make all` right after it without
+an Internet connection.
+
+## VS Code
+
+The VS Code extension is built as part of `make` or `make all`, but you can also
+just build it by itself:
+
+```
+make vscode
+```
+
+Then `packages/vscode` will contain a `*.vsix` file that you can install in VS
+Code by right-clicking it and clicking the **Install Extension VSIX** button.
+
 [curl]: https://curl.se/
 [git]: https://git-scm.com/downloads
 [make]: https://en.wikipedia.org/wiki/Make_(software)
