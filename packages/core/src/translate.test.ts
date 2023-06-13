@@ -1,28 +1,13 @@
-import { module_from_js, module_to_js } from "@rose-lang/wasm";
-import { Module } from "@rose-lang/wasm/core/Module";
+import { body_from_js, body_to_js } from "@rose-lang/wasm";
+import { Instr } from "@rose-lang/wasm/core/Instr";
 import { expect, test } from "vitest";
 
-let myMod: Module = {
-  types: [],
-  funcs: [
-    {
-      generics: 0,
-      types: [],
-      def: {
-        params: ["Real", "Real"],
-        ret: ["Real"],
-        locals: [],
-        funcs: [],
-        body: [{ Binary: { op: "AddReal" } }],
-      },
-    },
-  ],
-};
+let body: Instr[] = [{ Binary: { op: "AddReal" } }];
 
-const modifiedMod = module_from_js(myMod);
-const myMod2 = module_to_js(modifiedMod);
-modifiedMod.free();
+const modifiedBody = body_from_js(body);
+const body2 = body_to_js(modifiedBody);
+modifiedBody.free();
 
 test("test Module type", () => {
-  expect(myMod2).toStrictEqual(myMod);
+  expect(body2).toStrictEqual(body);
 });
