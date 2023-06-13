@@ -2,9 +2,7 @@
 build: packages
 
 # run all tests
-test: yarn wasm
-	cargo test
-	yarn workspace @rose-lang/core test run
+test: test-rust test-js
 
 # run other checks
 check: prettier
@@ -14,7 +12,7 @@ check: prettier
 # do everything
 all: build test check
 
-## Rust
+### Rust
 
 # install additional Rust stuff that we need
 rust:
@@ -31,7 +29,11 @@ wbg: rust
 	cargo build --package=rose-web --target=wasm32-unknown-unknown --release
 	.cargo/bin/wasm-bindgen --target=web --out-dir=packages/wasm/wbg target/wasm32-unknown-unknown/release/rose_web.wasm
 
-## JavaScript
+# run Rust tests
+test-rust:
+	cargo test
+
+### JavaScript
 
 # fetch JavaScript dependencies
 yarn:
@@ -41,17 +43,38 @@ yarn:
 prettier: yarn
 	npx prettier --check .
 
-# build `packages/core/`
-core: yarn wasm
-	yarn workspace @rose-lang/core build
-
-# build `packages/vscode/`
-vscode: yarn
-	yarn workspace rose package
-
-# build `packages/wasm/`
-wasm: yarn bindings wbg
-	yarn workspace @rose-lang/wasm build
-
 # build `packages/`
 packages: core vscode wasm
+
+# run JavaScript tests
+test-js: test-core
+
+## `packages/core`
+
+# build
+core: yarn wasm
+	yarn workspace rose build
+
+# test
+test-core: yarn wasm
+	yarn workspace rose test run
+
+## `packages/vscode`
+
+# fetch encircled icon
+packages/vscode/encircled-rose.png:
+	curl -O --output-dir packages/vscode https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/encircled-rose.png
+
+# fetch plain icon
+packages/vscode/plain-rose.png:
+	curl -O --output-dir packages/vscode https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/plain-rose.png
+
+# build
+vscode: yarn packages/vscode/encircled-rose.png packages/vscode/plain-rose.png
+	yarn workspace rose-vscode build
+
+## `packages/wasm`
+
+# build
+wasm: yarn bindings wbg
+	yarn workspace @rose-lang/wasm build

@@ -4,9 +4,9 @@
 
 Make sure to have these tools installed:
 
+- [curl][]
 - [Git][]
 - [Make][]
-- [Wget][]
 - [Rust][]
 - [Node.js][] v16-v18
   - [Yarn][] v1.x
@@ -55,9 +55,9 @@ To run any additional checks:
 make check
 ```
 
+[curl]: https://curl.se/
 [git]: https://git-scm.com/downloads
 [make]: https://en.wikipedia.org/wiki/Make_(software)
 [node.js]: https://nodejs.org/en/download
 [rust]: https://www.rust-lang.org/tools/install
-[wget]: https://en.wikipedia.org/wiki/Wget
 [yarn]: https://classic.yarnpkg.com/lang/en/docs/install

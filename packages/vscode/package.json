@@ -1,5 +1,5 @@
 {
-  "name": "rose",
+  "name": "rose-vscode",
   "displayName": "Rose",
   "version": "0.0.0",
   "publisher": "rose-lang",
@@ -45,9 +45,6 @@
     ]
   },
   "scripts": {
-    "package": "vsce package --yarn",
-    "vscode:prepublish": "yarn wget-encircled && yarn wget-plain",
-    "wget-encircled": "wget -nc https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/encircled-rose.png",
-    "wget-plain": "wget -nc https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/plain-rose.png"
+    "build": "vsce package --yarn"
   }
 }
