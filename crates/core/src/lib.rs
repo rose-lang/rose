@@ -72,8 +72,8 @@ pub enum Typexpr {
 }
 
 #[derive(Debug)]
-pub struct Inst<T> {
-    pub def: Rc<Def<Function<T>>>,
+pub struct Inst {
+    pub def: Rc<Def<Function>>,
     /// Generic size parameters.
     pub params: Vec<Size>,
 }
@@ -179,16 +179,16 @@ pub enum Instr {
 }
 
 #[derive(Debug)]
-pub struct Function<T> {
+pub struct Function {
     pub params: Vec<Type>,
     pub ret: Vec<Type>,
     pub locals: Vec<Type>,
-    pub funcs: Vec<Inst<T>>,
+    pub funcs: Vec<Inst>,
     pub body: Vec<Instr>,
 }
 
-impl<T> Function<T> {
-    pub fn get_func(&self, id: Func) -> &Inst<T> {
+impl Function {
+    pub fn get_func(&self, id: Func) -> &Inst {
         &self.funcs[id.0]
     }
 }

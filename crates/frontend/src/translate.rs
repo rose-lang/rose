@@ -112,12 +112,12 @@ pub struct Type<'input> {
 #[derive(Debug)]
 pub struct Module<'input> {
     pub types: HashMap<&'input str, Type<'input>>,
-    pub funcs: HashMap<&'input str, Rc<rose::Def<rose::Function<()>>>>,
+    pub funcs: HashMap<&'input str, Rc<rose::Def<rose::Function>>>,
 }
 
 struct FunCtx<'input, 'a> {
     m: &'a Module<'input>,
-    f: ir::Function<()>,
+    f: ir::Function,
     t: Vec<ir::Typexpr>,
     g: HashMap<&'input str, ir::Generic>,
     l: HashMap<&'input str, ir::Local>,
@@ -136,7 +136,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
         id
     }
 
-    fn newfunc(&mut self, f: ir::Inst<()>) -> ir::Func {
+    fn newfunc(&mut self, f: ir::Inst) -> ir::Func {
         let id = ir::Func(self.f.funcs.len());
         self.f.funcs.push(f);
         id
@@ -179,7 +179,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
 
     fn unify(
         &mut self,
-        _f: &ir::Def<ir::Function<()>>,
+        _f: &ir::Def<ir::Function>,
         _args: &[ir::Type],
     ) -> Result<(Vec<ir::Size>, ir::Type), TypeError> {
         todo!()

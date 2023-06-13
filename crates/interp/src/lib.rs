@@ -10,7 +10,7 @@ pub enum Val {
     Vector(Vec<Rc<Val>>),
 }
 
-pub fn interp<T>(f: &Def<Function<T>>, args: Vec<Val>) -> Vec<Val> {
+pub fn interp(f: &Def<Function>, args: Vec<Val>) -> Vec<Val> {
     let mut locals: Vec<Option<Val>> = vec![None; f.def.locals.len()];
     let mut stack = args;
     for &instr in f.def.body.iter() {
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_two_plus_two() {
-        let f: Def<Function<()>> = Def {
+        let f = Def {
             generics: 0,
             types: vec![],
             def: Function {
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_nested_call() {
-        let f: Rc<Def<Function<()>>> = Rc::new(Def {
+        let f = Rc::new(Def {
             generics: 0,
             types: vec![],
             def: Function {
@@ -126,7 +126,7 @@ mod tests {
                 body: vec![Instr::Real { val: 42. }],
             },
         });
-        let g: Def<Function<()>> = Def {
+        let g = Def {
             generics: 0,
             types: vec![],
             def: Function {
