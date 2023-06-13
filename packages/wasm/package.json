@@ -3,7 +3,6 @@
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
-  "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
     "./*": "./dist/bindings/*.js"
