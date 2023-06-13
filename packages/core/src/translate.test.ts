@@ -1,5 +1,5 @@
 import { module_from_js, module_to_js } from "@rose-lang/wasm";
-import { Module } from "@rose-lang/wasm/bindings/Module.js";
+import { Module } from "@rose-lang/wasm/core/Module";
 import { expect, test } from "vitest";
 
 let myMod: Module = {
