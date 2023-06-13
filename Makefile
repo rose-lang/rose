@@ -63,11 +63,11 @@ test-core: yarn wasm
 
 # fetch encircled icon
 packages/vscode/encircled-rose.png:
-	curl --output-dir packages/vscode https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/encircled-rose.png
+	curl -O --output-dir packages/vscode https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/encircled-rose.png
 
 # fetch plain icon
 packages/vscode/plain-rose.png:
-	curl --output-dir packages/vscode https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/plain-rose.png
+	curl -O --output-dir packages/vscode https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/plain-rose.png
 
 # build
 vscode: yarn packages/vscode/encircled-rose.png packages/vscode/plain-rose.png
