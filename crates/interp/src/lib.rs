@@ -16,29 +16,29 @@ pub fn interp(module: &Module, function: Defn, args: Vec<Val>) -> Vec<Val> {
     let mut stack = args;
     for &instr in f.def.body.iter() {
         match instr {
-            Instr::Generic { id } => todo!(),
+            Instr::Generic { id: _ } => todo!(),
             Instr::Get { id } => {
                 stack.push(locals[id.0].as_ref().unwrap().clone());
             }
             Instr::Set { id } => {
                 locals[id.0] = stack.pop();
             }
-            Instr::Bool { val } => todo!(),
-            Instr::Int { val } => todo!(),
+            Instr::Bool { val: _ } => todo!(),
+            Instr::Int { val: _ } => todo!(),
             Instr::Real { val } => {
                 stack.push(Val::F64(val));
             }
-            Instr::Vector { dim } => todo!(),
-            Instr::Tuple { id } => todo!(),
+            Instr::Vector { dim: _ } => todo!(),
+            Instr::Tuple { id: _ } => todo!(),
             Instr::Index => todo!(),
-            Instr::Member { id } => todo!(),
+            Instr::Member { id: _ } => todo!(),
             Instr::Call { id } => {
                 let defn = f.def.get_func(id).id;
                 let g = module.get_func(defn);
                 let args = stack.drain(stack.len() - g.def.params.len()..).collect();
                 stack.append(&mut interp(module, defn, args));
             }
-            Instr::Unary { op } => todo!(),
+            Instr::Unary { op: _ } => todo!(),
             Instr::Binary { op } => match op {
                 Binop::And => todo!(),
                 Binop::Or => todo!(),
@@ -87,7 +87,7 @@ pub fn interp(module: &Module, function: Defn, args: Vec<Val>) -> Vec<Val> {
             Instr::If => todo!(),
             Instr::Else => todo!(),
             Instr::End => todo!(),
-            Instr::For { limit } => todo!(),
+            Instr::For { limit: _ } => todo!(),
         }
     }
     stack

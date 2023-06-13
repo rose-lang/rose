@@ -42,17 +42,16 @@ pub enum TypeError {
     },
 }
 
+type ParsedTypes<'input> = (
+    HashMap<&'input str, ir::Generic>,
+    Vec<ir::Typexpr>,
+    Vec<ir::Type>,
+);
+
 fn parse_types<'input>(
     lookup: impl Fn(&'input str) -> Option<ir::Typedef>,
     typenames: impl Iterator<Item = ast::Spanned<&'input str>>,
-) -> Result<
-    (
-        HashMap<&'input str, ir::Generic>,
-        Vec<ir::Typexpr>,
-        Vec<ir::Type>,
-    ),
-    TypeError,
-> {
+) -> Result<ParsedTypes<'input>, TypeError> {
     let mut generics = HashMap::new();
     let mut typevars = vec![];
     let mut types = vec![];
@@ -163,15 +162,15 @@ impl<'input, 'a> FunCtx<'input, 'a> {
             ast::Bind::Id { name } => {
                 self.l.insert(name, id);
             }
-            ast::Bind::Vector { elems } => todo!(),
-            ast::Bind::Struct { members } => todo!(),
+            ast::Bind::Vector { elems: _ } => todo!(),
+            ast::Bind::Struct { members: _ } => todo!(),
         }
     }
 
     fn unify(
         &mut self,
-        f: ir::Defn,
-        args: &[ir::Type],
+        _f: ir::Defn,
+        _args: &[ir::Type],
     ) -> Result<(Vec<ir::Size>, ir::Type), TypeError> {
         todo!()
     }
@@ -213,7 +212,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                     None => Err(TypeError::EmptyVec),
                 }
             }
-            ast::Expr::Struct { members } => todo!(),
+            ast::Expr::Struct { members: _ } => todo!(),
             ast::Expr::Index { val, index } => {
                 let t = self.typecheck(*val)?;
                 self.typecheck(*index)?; // TODO: ensure this is `Nat` and bounded by `val` size
@@ -222,7 +221,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                     ir::Type::Var { id } => match self.gettype(id) {
                         ir::Typexpr::Vector { elem, .. } => Ok(*elem),
                         ir::Typexpr::Tuple { .. } => Err(TypeError::IndexTuple),
-                        ir::Typexpr::Typedef { id, params } => todo!(),
+                        ir::Typexpr::Typedef { id: _, params: _ } => todo!(),
                     },
                     _ => Err(TypeError::IndexPrimitive { t }),
                 }
@@ -231,7 +230,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                 let t = self.typecheck(*val)?;
                 match t {
                     ir::Type::Var { id } => match self.gettype(id) {
-                        ir::Typexpr::Vector { elem, size } => {
+                        ir::Typexpr::Vector { elem, size: _ } => {
                             let t = *elem;
                             let i = match member.val {
                                 // TODO: check against vector size
@@ -248,8 +247,8 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                             self.f.body.push(ir::Instr::Index);
                             Ok(t)
                         }
-                        ir::Typexpr::Tuple { members } => todo!(),
-                        ir::Typexpr::Typedef { id, params } => todo!(),
+                        ir::Typexpr::Tuple { members: _ } => todo!(),
+                        ir::Typexpr::Typedef { id: _, params: _ } => todo!(),
                     },
                     _ => Err(TypeError::MemberPrimitive { t }),
                 }
@@ -334,7 +333,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                 Some(_) => Err(TypeError::ForNonSize),
                 None => Err(TypeError::UnknownVar { name: limit.span() }),
             },
-            ast::Expr::Unary { op, arg } => todo!(),
+            ast::Expr::Unary { op: _, arg: _ } => todo!(),
             ast::Expr::Binary { op, left, right } => {
                 let l = self.typecheck(*left)?;
                 let r = self.typecheck(*right)?;
