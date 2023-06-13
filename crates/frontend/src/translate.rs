@@ -1,6 +1,6 @@
 use crate::{ast, tokens};
 use rose as ir;
-use std::{collections::HashMap, ops::Range};
+use std::{collections::HashMap, ops::Range, rc::Rc};
 
 #[derive(Debug, thiserror::Error)]
 pub enum TypeError {
@@ -49,15 +49,18 @@ type ParsedTypes<'input> = (
 );
 
 fn parse_types<'input>(
-    lookup: impl Fn(&'input str) -> Option<ir::Typedef>,
+    lookup: impl Fn(&'input str) -> Option<Rc<ir::Def<ir::Typexpr>>>,
     typenames: impl Iterator<Item = ast::Spanned<&'input str>>,
 ) -> Result<ParsedTypes<'input>, TypeError> {
     let mut generics = HashMap::new();
     let mut typevars = vec![];
     let mut types = vec![];
     for typ in typenames {
-        types.push(if let Some(id) = lookup(typ.val) {
-            let typexpr = ir::Typexpr::Typedef { id, params: vec![] };
+        types.push(if let Some(def) = lookup(typ.val) {
+            let typexpr = ir::Typexpr::Typedef {
+                def,
+                params: vec![],
+            };
             let id = ir::Var(typevars.len());
             typevars.push(typexpr);
             ir::Type::Var { id }
@@ -99,15 +102,22 @@ fn parse_types<'input>(
     Ok((generics, typevars, types))
 }
 
-struct ModCtx<'input> {
-    m: ir::Module,
-    t: HashMap<&'input str, (ir::Typedef, Vec<&'input str>)>, // sorted field names
-    f: HashMap<&'input str, ir::Defn>,
+#[derive(Debug)]
+pub struct Type<'input> {
+    pub def: Rc<rose::Def<rose::Typexpr>>,
+    /// Sorted lexicographically.
+    pub fields: Vec<&'input str>,
+}
+
+#[derive(Debug)]
+pub struct Module<'input> {
+    pub types: HashMap<&'input str, Type<'input>>,
+    pub funcs: HashMap<&'input str, Rc<rose::Def<rose::Function<()>>>>,
 }
 
 struct FunCtx<'input, 'a> {
-    ctx: &'a ModCtx<'input>,
-    f: ir::Function,
+    m: &'a Module<'input>,
+    f: ir::Function<()>,
     t: Vec<ir::Typexpr>,
     g: HashMap<&'input str, ir::Generic>,
     l: HashMap<&'input str, ir::Local>,
@@ -126,7 +136,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
         id
     }
 
-    fn newfunc(&mut self, f: ir::Inst) -> ir::Func {
+    fn newfunc(&mut self, f: ir::Inst<()>) -> ir::Func {
         let id = ir::Func(self.f.funcs.len());
         self.f.funcs.push(f);
         id
@@ -169,7 +179,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
 
     fn unify(
         &mut self,
-        _f: ir::Defn,
+        _f: &ir::Def<ir::Function<()>>,
         _args: &[ir::Type],
     ) -> Result<(Vec<ir::Size>, ir::Type), TypeError> {
         todo!()
@@ -221,7 +231,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                     ir::Type::Var { id } => match self.gettype(id) {
                         ir::Typexpr::Vector { elem, .. } => Ok(*elem),
                         ir::Typexpr::Tuple { .. } => Err(TypeError::IndexTuple),
-                        ir::Typexpr::Typedef { id: _, params: _ } => todo!(),
+                        ir::Typexpr::Typedef { def: _, params: _ } => todo!(),
                     },
                     _ => Err(TypeError::IndexPrimitive { t }),
                 }
@@ -248,7 +258,7 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                             Ok(t)
                         }
                         ir::Typexpr::Tuple { members: _ } => todo!(),
-                        ir::Typexpr::Typedef { id: _, params: _ } => todo!(),
+                        ir::Typexpr::Typedef { def: _, params: _ } => todo!(),
                     },
                     _ => Err(TypeError::MemberPrimitive { t }),
                 }
@@ -263,9 +273,12 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                 for arg in args {
                     types.push(self.typecheck(arg)?);
                 }
-                if let Some(&id) = self.ctx.f.get(func.val) {
-                    let (params, ret) = self.unify(id, &types)?;
-                    let id = self.newfunc(ir::Inst { id, params });
+                if let Some(def) = self.m.funcs.get(func.val) {
+                    let (params, ret) = self.unify(def, &types)?;
+                    let id = self.newfunc(ir::Inst {
+                        def: Rc::clone(def),
+                        params,
+                    });
                     self.f.body.push(ir::Instr::Call { id });
                     Ok(ret)
                 } else {
@@ -428,43 +441,31 @@ impl<'input, 'a> FunCtx<'input, 'a> {
     }
 }
 
-impl<'input> ModCtx<'input> {
-    fn newtype(&mut self, t: ir::Def<ir::Typexpr>) -> ir::Typedef {
-        let id = ir::Typedef(self.m.types.len());
-        self.m.types.push(t);
-        id
-    }
-
-    fn newfunc(&mut self, f: ir::Def<ir::Function>) -> ir::Defn {
-        let id = ir::Defn(self.m.funcs.len());
-        self.m.funcs.push(f);
-        id
-    }
-
+impl<'input> Module<'input> {
     fn define(&mut self, def: ast::Def<'input>) -> Result<(), TypeError> {
         match def {
             ast::Def::Type { name, mut members } => {
                 // TODO: check for duplicate field names
                 members.sort_by_key(|&(name, _)| name); // to ignore field order in literals
                 let (genericnames, typevars, fields) = parse_types(
-                    |s| self.t.get(s).map(|&(i, _)| i),
+                    |s| self.types.get(s).map(|Type { def, .. }| Rc::clone(def)),
                     members.iter().map(|&(_, t)| t),
                 )?;
-                let t = self.newtype(ir::Def {
+                let t = Rc::new(ir::Def {
                     generics: genericnames.len(),
                     types: typevars,
                     def: ir::Typexpr::Tuple { members: fields },
                 });
                 // TODO: check for duplicate type names
-                self.t.insert(
+                self.types.insert(
                     name,
-                    (
-                        t,
-                        members
+                    Type {
+                        def: t,
+                        fields: members
                             .into_iter()
                             .map(|(name, _)| name)
                             .collect::<Vec<_>>(),
-                    ),
+                    },
                 );
             }
             ast::Def::Func {
@@ -474,14 +475,15 @@ impl<'input> ModCtx<'input> {
                 body,
             } => {
                 let (genericnames, typevars, mut paramtypes) = parse_types(
-                    |s| self.t.get(s).map(|&(i, _)| i),
+                    |s| self.types.get(s).map(|Type { def, .. }| Rc::clone(def)),
                     // TODO: handle return type separately from params w.r.t. generics
                     params.iter().map(|&(_, t)| t).chain([typ]),
                 )?;
                 let ret = paramtypes.pop().expect("`parse_types` should preserve len");
                 let mut ctx = FunCtx {
-                    ctx: self,
+                    m: self,
                     f: ir::Function {
+                        opaques: vec![],
                         params: paramtypes.clone(), // should be a way to do this without `clone`...
                         ret: vec![ret],
                         locals: vec![],
@@ -496,30 +498,26 @@ impl<'input> ModCtx<'input> {
                     ctx.bind(t, bind);
                 }
                 ctx.typecheck(body)?; // TODO: ensure this matches `ret`
-                let f = self.newfunc(ir::Def {
+                let f = Rc::new(ir::Def {
                     generics: ctx.g.len(),
                     types: ctx.t,
                     def: ctx.f,
                 });
                 // TODO: check for duplicate function names
-                self.f.insert(name, f);
+                self.funcs.insert(name, f);
             }
         }
         Ok(())
     }
 }
 
-pub fn translate(ast: ast::Module) -> Result<ir::Module, TypeError> {
-    let mut ctx = ModCtx {
-        m: ir::Module {
-            types: vec![],
-            funcs: vec![],
-        },
-        f: HashMap::new(),
-        t: HashMap::new(),
+pub fn translate(ast: ast::Module) -> Result<Module, TypeError> {
+    let mut m = Module {
+        types: HashMap::new(),
+        funcs: HashMap::new(),
     };
     for def in ast.defs {
-        ctx.define(def)?;
+        m.define(def)?;
     }
-    Ok(ctx.m)
+    Ok(m)
 }
