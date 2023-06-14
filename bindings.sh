@@ -24,7 +24,8 @@ do
     do
         # Get the base filename, without the .ts extension
         base_name=$(basename "$tsfile" .ts)
-        # Copy and rename
-        cp "$tsfile" "$dest_dir/$subfolder_name/$base_name.d.ts"
+
+        # Copy with modifications using sed
+        sed 's/\(import.*from.*\)\("\|'\''\)\(.*\)\("\|'\''\);/\1\2\3.js\4;/' "$tsfile" > "$dest_dir/$subfolder_name/$base_name.d.ts"
     done
 done

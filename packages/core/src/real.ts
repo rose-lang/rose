@@ -1,20 +1,20 @@
 import { Val } from "./val.js";
 import { Vec } from "./vec.js";
 
-interface Unary {
+export interface Unary {
   tag: "unary";
   op: "-" | "abs" | "sqrt";
   arg: Real;
 }
 
-interface Binary {
+export interface Binary {
   tag: "binary";
   op: "*" | "+" | "-" | "/";
   left: Real;
   right: Real;
 }
 
-interface Fold {
+export interface Fold {
   tag: "fold";
   op: "*" | "+" | "max" | "min";
   vec: Vec<Real>;

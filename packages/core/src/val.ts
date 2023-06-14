@@ -3,20 +3,20 @@ import { Fn } from "./fn.js";
 import { Int } from "./int.js";
 import { Vec } from "./vec.js";
 
-interface Call<T> {
+export interface Call {
   tag: "call";
-  f: Fn<T>;
+  f: Fn;
   args: unknown[];
 }
 
-interface If<T> {
+export interface If<T> {
   tag: "if";
   cond: Bool;
   then: T;
   els: T;
 }
 
-interface Index<T> {
+export interface Index<T> {
   tag: "index";
   vec: Vec<T>;
   index: Int;
@@ -24,7 +24,7 @@ interface Index<T> {
 
 export interface Val<T> {
   tag: "val";
-  val: symbol | Call<T> | Index<T> | If<T>;
+  val: symbol | Call | Index<T> | If<T>;
 }
 
 export const cond = <T>(cond: Bool, then: T, els: T): Val<T> => ({
