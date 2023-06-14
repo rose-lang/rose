@@ -573,6 +573,8 @@ name = "rose-interp"
 version = "0.0.0"
 dependencies = [
  "rose",
+ "serde",
+ "ts-rs",
 ]
 
 [[package]]
@@ -581,6 +583,7 @@ version = "0.0.0"
 dependencies = [
  "console_error_panic_hook",
  "rose",
+ "rose-interp",
  "serde",
  "serde-wasm-bindgen",
  "ts-rs",

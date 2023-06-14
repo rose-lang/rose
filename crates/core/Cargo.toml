@@ -10,8 +10,7 @@ include = ["src/lib.rs"]
 serde = { version = "1", features = ["derive"], optional = true }
 
 [dev-dependencies]
-ts-rs = "6.1"
+ts-rs = "6"
 
 [features]
-default = ["serde"]
 serde = ["dep:serde"]

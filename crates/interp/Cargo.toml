@@ -6,3 +6,10 @@ edition = "2021"
 
 [dependencies]
 rose = { path = "../core" }
+serde = { version = "1", features = ["derive", "rc"], optional = true }
+
+[dev-dependencies]
+ts-rs = "6"
+
+[features]
+serde = ["dep:serde"]
