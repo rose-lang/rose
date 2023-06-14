@@ -26,7 +26,7 @@ rust:
 # export TypeScript bindings from Rust types
 bindings:
 	cargo test export_bindings_
-	./bindings.sh
+	node bindings.js
 
 # compile Rust to WebAssembly
 wbg: rust
