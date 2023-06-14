@@ -1,6 +1,14 @@
 use rose::{Binop, Def, Function, Instr};
 use std::rc::Rc;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+#[cfg(test)]
+use ts_rs::TS;
+
+#[cfg_attr(test, derive(TS), ts(export))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Val {
     Bool(bool),

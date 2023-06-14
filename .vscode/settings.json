@@ -14,5 +14,6 @@
   "[yaml]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
 
   "editor.formatOnSave": true,
+  "evenBetterToml.formatter.alignComments": false,
   "rust-analyzer.check.command": "clippy"
 }

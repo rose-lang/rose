@@ -1,13 +1,28 @@
-import { body_from_js, body_to_js } from "@rose-lang/wasm";
+import * as wasm from "@rose-lang/wasm";
 import { Instr } from "@rose-lang/wasm/core/Instr";
+import { Type } from "@rose-lang/wasm/core/Type";
+import { Val } from "@rose-lang/wasm/interp/Val";
 import { expect, test } from "vitest";
 
-let body: Instr[] = [{ Binary: { op: "AddReal" } }];
+const registry = new FinalizationRegistry((free: () => void) => {
+  free();
+});
 
-const modifiedBody = body_from_js(body);
-const body2 = body_to_js(modifiedBody);
-modifiedBody.free();
+interface Func {
+  f: wasm.Func;
+}
 
-test("test Module type", () => {
-  expect(body2).toStrictEqual(body);
+const makeFunc = (params: Type[], locals: Type[], body: Instr[]): Func => {
+  const f = wasm.makeFunc(params, locals, body);
+  const func: Func = { f };
+  registry.register(func, () => f.free());
+  return func;
+};
+
+const interp = (f: Func, args: Val[]): Val => wasm.interp(f.f, args);
+
+test("2 + 2", () => {
+  const f = makeFunc(["Real", "Real"], [], [{ Binary: { op: "AddReal" } }]);
+  const x = interp(f, [{ F64: 2 }, { F64: 2 }]);
+  expect(x).toStrictEqual({ F64: 4 });
 });
