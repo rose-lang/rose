@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::rc::Rc;
 use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 
@@ -11,9 +11,6 @@ fn to_js_value(value: &impl Serialize) -> Result<JsValue, serde_wasm_bindgen::Er
     value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
 }
 
-#[derive(Deserialize)]
-pub struct Body(Vec<rose::Instr>);
-
 #[wasm_bindgen]
 pub struct Func(Rc<rose::Def<rose::Function>>);
 
@@ -25,7 +22,7 @@ pub fn make_func(
 ) -> Result<Func, serde_wasm_bindgen::Error> {
     let params: Vec<rose::Type> = serde_wasm_bindgen::from_value(param_types)?;
     let locals: Vec<rose::Type> = serde_wasm_bindgen::from_value(local_types)?;
-    let Body(body) = serde_wasm_bindgen::from_value(body)?;
+    let body: Vec<rose::Instr> = serde_wasm_bindgen::from_value(body)?;
     Ok(Func(Rc::new(rose::Def {
         generics: 0,
         types: vec![],
