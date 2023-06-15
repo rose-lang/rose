@@ -81,8 +81,7 @@ class Body {
 
   // non-entrypoints
 
-  val<T>(x: Val<T>): number {
-    const { val } = x;
+  val<T>({ val }: Val<T>): number {
     if (typeof val === "symbol") throw Error("all symbols should be mapped");
     switch (val.tag) {
       case "call": {
