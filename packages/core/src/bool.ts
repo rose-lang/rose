@@ -1,19 +1,19 @@
 import { Real } from "./real.js";
 import { Val } from "./val.js";
 
-interface Not {
+export interface Not {
   tag: "not";
   arg: Bool;
 }
 
-interface Logic {
+export interface Logic {
   tag: "logic";
   op: "!=" | "==" | "and" | "or";
   left: Bool;
   right: Bool;
 }
 
-interface Comp {
+export interface Comp {
   tag: "comp";
   op: "!=" | "<" | "<=" | "==" | ">" | ">=";
   left: Real;
