@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import prettier from "prettier";
 
 const start_dir = "crates";
 const dest_dir = "packages/wasm/dist/bindings";
@@ -37,7 +38,7 @@ for (const crate of crates) {
     // Write the updated content to the new location with .d.ts extension
     await fs.writeFile(
       path.join(dest_folder, `${base_name}.d.ts`),
-      updated_content
+      prettier.format(updated_content, { parser: "typescript" })
     );
   }
 }

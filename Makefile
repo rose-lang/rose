@@ -26,7 +26,6 @@ rust:
 # export TypeScript bindings from Rust types
 bindings:
 	cargo test export_bindings_
-	node bindings.js
 
 # compile Rust to WebAssembly
 wbg: rust
@@ -82,3 +81,4 @@ vscode: yarn packages/vscode/encircled-rose.png packages/vscode/plain-rose.png
 # build
 wasm: yarn bindings wbg
 	yarn workspace @rose-lang/wasm build
+	node bindings.js
