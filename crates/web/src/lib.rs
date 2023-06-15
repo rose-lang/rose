@@ -11,6 +11,9 @@ fn to_js_value(value: &impl Serialize) -> Result<JsValue, serde_wasm_bindgen::Er
     value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
 }
 
+/// An under-construction function body.
+///
+/// All methods simply push one instruction onto the end.
 #[wasm_bindgen]
 pub struct Body {
     instrs: Vec<rose::Instr>,
@@ -78,9 +81,18 @@ impl Body {
     }
 }
 
+/// A reference-counted pointer to a function.
 #[wasm_bindgen]
 pub struct Func(Rc<rose::Def<rose::Function>>);
 
+/// Construct a new function.
+///
+/// The `param_types` and `local_types` arguments are each Serde-converted to `Vec<rose::Type>`.
+///
+/// TODO: currently no support for
+/// - generics
+/// - return values other than `Real`
+/// - calling other functions
 #[wasm_bindgen(js_name = "makeFunc")]
 pub fn make_func(
     param_types: JsValue,
@@ -102,6 +114,10 @@ pub fn make_func(
     })))
 }
 
+/// Interpret a function with the given arguments.
+///
+/// The `args` are each Serde-converted to `Vec<rose_interp::Val>`, and the return value is
+/// Serde-converted from `rose_interp::Val`.
 #[wasm_bindgen]
 pub fn interp(Func(f): &Func, args: JsValue) -> Result<JsValue, serde_wasm_bindgen::Error> {
     let vals: Vec<rose_interp::Val> = serde_wasm_bindgen::from_value(args)?;
