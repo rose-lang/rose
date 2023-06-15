@@ -27,24 +27,31 @@ type Resolve<T extends readonly Reals[]> = {
 
 class Body {
   locals: Map<unknown, number>;
-  instrs: ffi.Instr[];
+  instrs: ffi.Body;
 
   constructor(params: symbol[]) {
-    this.instrs = params.map((param, id) => ({ Set: { id } })).reverse();
-    this.locals = new Map(params.map((param, id) => [param, id]));
+    this.instrs = new ffi.Body();
+    try {
+      for (let i = params.length - 1; i >= 0; --i) this.instrs.set(i);
+      this.locals = new Map(params.map((param, id) => [param, id]));
+    } catch (e) {
+      this.instrs.free();
+      throw e;
+    }
   }
 
   local(x: unknown): number {
     const id = this.locals.size;
     this.locals.set(x, id);
-    this.instrs.push({ Set: { id } }, { Get: { id } });
+    this.instrs.set(id);
+    this.instrs.get(id);
     return id;
   }
 
   val<T>(x: Val<T>["val"]): number {
     const id = this.locals.get(x);
     if (id !== undefined) {
-      this.instrs.push({ Get: { id } });
+      this.instrs.get(id);
       return id;
     }
     if (typeof x === "symbol") throw Error("all symbols should be mapped");
@@ -66,19 +73,19 @@ class Body {
     this.real(x.right);
     switch (x.op) {
       case "+": {
-        this.instrs.push({ Binary: { op: "AddReal" } });
+        this.instrs.addReal();
         return this.local(x);
       }
       case "-": {
-        this.instrs.push({ Binary: { op: "SubReal" } });
+        this.instrs.subReal();
         return this.local(x);
       }
       case "*": {
-        this.instrs.push({ Binary: { op: "MulReal" } });
+        this.instrs.mulReal();
         return this.local(x);
       }
       case "/": {
-        this.instrs.push({ Binary: { op: "DivReal" } });
+        this.instrs.divReal();
         return this.local(x);
       }
     }
@@ -87,11 +94,11 @@ class Body {
   real(x: Real): number {
     const id = this.locals.get(x);
     if (id !== undefined) {
-      this.instrs.push({ Get: { id } });
+      this.instrs.get(id);
       return id;
     }
     if (typeof x === "number") {
-      this.instrs.push({ Real: { val: x } });
+      this.instrs.real(x);
       return this.local(x);
     }
     switch (x.tag) {
@@ -135,7 +142,12 @@ export const fn = <const T extends readonly Reals[]>(
   g.params = types as unknown as Type[];
   const params = types.map(() => Symbol());
   const body = new Body(params);
-  body.real(f(...(params.map((val) => ({ tag: "val", val })) as Resolve<T>)));
+  try {
+    body.real(f(...(params.map((val) => ({ tag: "val", val })) as Resolve<T>)));
+  } catch (e) {
+    body.instrs.free();
+    throw e;
+  }
   g.f = ffi.makeFunc(
     types.map(ffiType),
     Array(body.locals.size).fill("Real"),

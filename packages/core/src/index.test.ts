@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { Real, add, fn, interp } from "./index.js";
+import { Real, fn, interp, sub } from "./index.js";
 
-test("add", () => {
-  const f = fn([Real, Real], (x, y) => add(x, y));
+test("sub", () => {
+  const f = fn([Real, Real], (x, y) => sub(x, y));
   const g = interp(f);
-  expect(g(3, 5)).toEqual(8);
+  expect(g(5, 3)).toEqual(2);
 });
