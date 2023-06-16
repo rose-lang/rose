@@ -118,7 +118,7 @@ impl<'input> From<ParseError<usize, Token<'input>, (Range<usize>, LexicalError)>
     }
 }
 
-pub fn parse(source: &str) -> Result<rose::Module, Error> {
+pub fn parse(source: &str) -> Result<translate::Module, Error> {
     let lexer = Lexer::new(source);
     let ast = ModuleParser::new().parse(source, lexer)?;
     Ok(translate(ast)?)

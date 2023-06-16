@@ -1,6 +1,5 @@
-/crates/core/bindings/
-/packages/core/dist/
-/packages/core/wbg/
-/packages/wasm/bindings/
+/.cargo/
+/packages/wasm/wbg/
 /target/
-/wbg/
+bindings/
+dist/

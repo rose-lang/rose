@@ -1,7 +1,7 @@
 import { Int } from "./int.js";
 import { Val } from "./val.js";
 
-interface Cons<T> {
+export interface Cons<T> {
   tag: "cons";
   dim: Int;
   index: symbol;

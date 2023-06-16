@@ -1,5 +1,8 @@
 .DS_Store
 *.tgz
 *.vsix
+/.cargo/
 /target/
+bindings/
+dist/
 node_modules/

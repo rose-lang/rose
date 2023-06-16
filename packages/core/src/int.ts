@@ -1,19 +1,19 @@
 import { Val } from "./val.js";
 
-interface Unary {
+export interface Unary {
   tag: "unary";
   op: "-" | "abs";
   arg: Int;
 }
 
-interface Binary {
+export interface Binary {
   tag: "binary";
   op: "*" | "+" | "-" | "/" | "mod";
   left: Int;
   right: Int;
 }
 
-interface Index {
+export interface Index {
   tag: "index";
   bound: Int;
   name: symbol;
