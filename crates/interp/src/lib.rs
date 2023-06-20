@@ -35,7 +35,7 @@ pub fn interp(f: &Def<Function>, args: Vec<Val>) -> Vec<Val> {
             Instr::Real { val } => {
                 stack.push(Val::F64(val));
             }
-            Instr::Vector { dim: _ } => todo!(),
+            Instr::Vector { id: _ } => todo!(),
             Instr::Tuple { id: _ } => todo!(),
             Instr::Index => todo!(),
             Instr::Member { id: _ } => todo!(),
