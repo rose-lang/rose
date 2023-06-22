@@ -24,12 +24,27 @@ export interface Fn {
   f: wasm.Func;
 }
 
-export const makeFunc = (
-  params: Type[],
-  locals: Type[],
-  body: wasm.Body
-): Fn => {
-  const f = wasm.makeFunc(params, locals, body);
+/**
+ * Unlike `Fn`, the `Context` type shouldn't be held onto in any public APIs, so
+ * we don't give it a canonical wrapper; every instance must always be `bake`d
+ * or `free`d.
+ */
+export class Context extends wasm.Context {
+  constructor(params: Type[], ret: Type) {
+    super(params, ret);
+  }
+
+  set(t: Type): number {
+    return super.set(t);
+  }
+
+  // for some reason errors happen when adding methods to this class that don't
+  // already exist in `wasm.Context`; not sure why, but that's why `bake` is
+  // just a function in this module instead of a method here
+}
+
+export const bake = (ctx: Context): Fn => {
+  const f = wasm.bake(ctx);
   const fn: Fn = { f };
   registry.register(fn, () => f.free());
   return fn;
@@ -37,8 +52,4 @@ export const makeFunc = (
 
 export const interp = (f: Fn, args: Val[]): Val => wasm.interp(f.f, args);
 
-// Unlike `Fn`, the `Body` type shouldn't be held onto in any public APIs, so we
-// don't give it a canonical wrapper; every instance must always be consumed or
-// otherwise `free`d.
-export { Body } from "@rose-lang/wasm";
 export type { Type, Val };
