@@ -37,9 +37,7 @@ const ffiType = (t: Type): ffi.Type => {
   }
 };
 
-/**
- * Constructs an abstract function with the given `types` for parameters.
- */
+/** Constructs an abstract function with the given `types` for parameters. */
 // TODO: allow args other than `Real`
 export const fn = <const T extends readonly Reals[]>(
   types: T,

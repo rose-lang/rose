@@ -37,6 +37,10 @@ export class Context extends wasm.Context {
   set(t: Type): number {
     return super.set(t);
   }
+
+  // for some reason errors happen when adding methods to this class that don't
+  // already exist in `wasm.Context`; not sure why, but that's why `bake` is
+  // just a function in this module instead of a method here
 }
 
 export const bake = (ctx: Context): Fn => {

@@ -1,5 +1,5 @@
 import { Bool } from "./bool.js";
-import { Local, getCtx } from "./context.js";
+import { Local, getCtx, local } from "./context.js";
 import * as ffi from "./ffi.js";
 import { Vec, getVec } from "./vec.js";
 
@@ -20,14 +20,13 @@ class ConstInt {
 
 export type Int = ConstInt | Local;
 
+/** Throw if `n` is not a valid unsigned 32-bit integer. */
 export const int = (n: number): Int => new ConstInt(n);
 
+/** Emit instructions to push the value of `x` onto the stack. */
 const getInt = (ctx: ffi.Context, n: Int): void => {
   if (n instanceof ConstInt) ctx.int(n.val());
-  else {
-    if (n.ctx !== ctx) throw Error("value escaped its context");
-    ctx.get(n.id);
-  }
+  else local(ctx, n);
 };
 
 const unary =

@@ -1,16 +1,14 @@
 import { Bool } from "./bool.js";
-import { Local, getCtx } from "./context.js";
+import { Local, getCtx, local } from "./context.js";
 import * as ffi from "./ffi.js";
 import { Vec, getVec } from "./vec.js";
 
 export type Real = number | Local;
 
+/** Emit instructions to push the value of `x` onto the stack. */
 export const getReal = (ctx: ffi.Context, x: Real): void => {
   if (typeof x === "number") ctx.real(x);
-  else {
-    if (x.ctx !== ctx) throw Error("value escaped its context");
-    ctx.get(x.id);
-  }
+  else local(ctx, x);
 };
 
 const unary =

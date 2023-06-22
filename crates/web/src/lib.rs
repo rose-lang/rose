@@ -69,6 +69,20 @@ impl Context {
         })
     }
 
+    /// Create a new local and then emit a `rose::Instr::Set` instruction.
+    ///
+    /// The `t` argument is Serde-converted to `rose::Type`.
+    #[wasm_bindgen]
+    pub fn set(&mut self, t: JsValue) -> Result<usize, serde_wasm_bindgen::Error> {
+        let local: rose::Type = serde_wasm_bindgen::from_value(t)?;
+        let id = self.locals.len();
+        self.locals.push(local);
+        self.body.push(rose::Instr::Set {
+            id: rose::Local(id),
+        });
+        Ok(id)
+    }
+
     #[wasm_bindgen]
     pub fn generic(&mut self, id: usize) {
         self.body.push(rose::Instr::Generic {
@@ -81,18 +95,6 @@ impl Context {
         self.body.push(rose::Instr::Get {
             id: rose::Local(id),
         });
-    }
-
-    /// The `t` argument is Serde-converted to `rose::Type`.
-    #[wasm_bindgen]
-    pub fn set(&mut self, t: JsValue) -> Result<usize, serde_wasm_bindgen::Error> {
-        let local: rose::Type = serde_wasm_bindgen::from_value(t)?;
-        let id = self.locals.len();
-        self.locals.push(local);
-        self.body.push(rose::Instr::Set {
-            id: rose::Local(id),
-        });
-        Ok(id)
     }
 
     #[wasm_bindgen]

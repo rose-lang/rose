@@ -1,14 +1,12 @@
-import { Local, getCtx } from "./context.js";
+import { Local, getCtx, local } from "./context.js";
 import * as ffi from "./ffi.js";
 
 export type Bool = boolean | Local;
 
+/** Emit instructions to push the value of `x` onto the stack. */
 const getBool = (ctx: ffi.Context, x: Bool): void => {
   if (typeof x === "boolean") ctx.bool(x);
-  else {
-    if (x.ctx !== ctx) throw Error("value escaped its context");
-    ctx.get(x.id);
-  }
+  else local(ctx, x);
 };
 
 export const not = (p: Bool): Bool => {
