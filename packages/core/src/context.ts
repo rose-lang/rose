@@ -7,7 +7,7 @@ export const getCtx = (): ffi.Context => {
   return context;
 };
 
-export const setCtx = (ctx: ffi.Context): void => {
+export const setCtx = (ctx: ffi.Context | undefined): void => {
   context = ctx;
 };
 

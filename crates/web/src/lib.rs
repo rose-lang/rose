@@ -15,9 +15,7 @@ fn to_js_value(value: &impl Serialize) -> Result<JsValue, serde_wasm_bindgen::Er
 #[wasm_bindgen]
 pub struct Func(Rc<rose::Def<rose::Function>>);
 
-/// An under-construction function body.
-///
-/// All methods simply push one instruction onto the end.
+/// A function under construction.
 #[wasm_bindgen]
 pub struct Context {
     generics: usize,
@@ -29,56 +27,53 @@ pub struct Context {
     body: Vec<rose::Instr>,
 }
 
-/// Start a new context.
-///
-/// The `param_types` argument is Serde-converted to `Vec<rose::Type>`, and the `ret_type` argument
-/// is Serde-converted to `rose::Type`.
-///
-/// TODO: currently no support for
-/// - generics
-/// - non-primitive types
-/// - calling other functions
-#[wasm_bindgen(js_name = "makeContext")]
-pub fn make_context(
-    param_types: JsValue,
-    ret_type: JsValue,
-) -> Result<Context, serde_wasm_bindgen::Error> {
-    let params: Vec<rose::Type> = serde_wasm_bindgen::from_value(param_types)?;
-    let ret: rose::Type = serde_wasm_bindgen::from_value(ret_type)?;
-    Ok(Context {
-        generics: 0,
-        types: vec![],
-        params,
-        ret,
-        locals: vec![],
-        funcs: vec![],
-        body: vec![],
-    })
+#[wasm_bindgen]
+pub fn bake(ctx: Context) -> Func {
+    Func(Rc::new(rose::Def {
+        generics: ctx.generics,
+        types: ctx.types,
+        def: rose::Function {
+            params: ctx.params,
+            ret: vec![ctx.ret],
+            locals: ctx.locals,
+            funcs: ctx.funcs,
+            body: ctx.body,
+        },
+    }))
 }
 
 #[wasm_bindgen]
 impl Context {
-    #[wasm_bindgen]
-    pub fn bake(self) -> Func {
-        Func(Rc::new(rose::Def {
-            generics: self.generics,
-            types: self.types,
-            def: rose::Function {
-                params: self.params,
-                ret: vec![self.ret],
-                locals: self.locals,
-                funcs: self.funcs,
-                body: self.body,
-            },
-        }))
+    /// The `param_types` argument is Serde-converted to `Vec<rose::Type>`, and the `ret_type`
+    /// argument is Serde-converted to `rose::Type`.
+    ///
+    /// TODO: currently no support for
+    /// - generics
+    /// - non-primitive types
+    /// - calling other functions
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        param_types: JsValue,
+        ret_type: JsValue,
+    ) -> Result<Context, serde_wasm_bindgen::Error> {
+        let params: Vec<rose::Type> = serde_wasm_bindgen::from_value(param_types)?;
+        let ret: rose::Type = serde_wasm_bindgen::from_value(ret_type)?;
+        Ok(Self {
+            generics: 0,
+            types: vec![],
+            params,
+            ret,
+            locals: vec![],
+            funcs: vec![],
+            body: vec![],
+        })
     }
 
-    #[wasm_bindgen(js_name = "makeLocal")]
-    pub fn make_local(&mut self, t: JsValue) -> Result<usize, serde_wasm_bindgen::Error> {
-        let t: rose::Type = serde_wasm_bindgen::from_value(t)?;
-        let id = self.locals.len();
-        self.locals.push(t);
-        Ok(id)
+    #[wasm_bindgen]
+    pub fn generic(&mut self, id: usize) {
+        self.body.push(rose::Instr::Generic {
+            id: rose::Generic(id),
+        });
     }
 
     #[wasm_bindgen]
@@ -88,16 +83,304 @@ impl Context {
         });
     }
 
+    /// The `t` argument is Serde-converted to `rose::Type`.
     #[wasm_bindgen]
-    pub fn set(&mut self, id: usize) {
+    pub fn set(&mut self, t: JsValue) -> Result<usize, serde_wasm_bindgen::Error> {
+        let local: rose::Type = serde_wasm_bindgen::from_value(t)?;
+        let id = self.locals.len();
+        self.locals.push(local);
         self.body.push(rose::Instr::Set {
             id: rose::Local(id),
         });
+        Ok(id)
+    }
+
+    #[wasm_bindgen]
+    pub fn bool(&mut self, val: bool) {
+        self.body.push(rose::Instr::Bool { val });
+    }
+
+    #[wasm_bindgen]
+    pub fn int(&mut self, val: u32) {
+        self.body.push(rose::Instr::Int { val });
     }
 
     #[wasm_bindgen]
     pub fn real(&mut self, val: f64) {
         self.body.push(rose::Instr::Real { val });
+    }
+
+    #[wasm_bindgen]
+    pub fn vector(&mut self, id: usize) {
+        self.body.push(rose::Instr::Vector { id: rose::Var(id) });
+    }
+
+    #[wasm_bindgen]
+    pub fn tuple(&mut self, id: usize) {
+        self.body.push(rose::Instr::Tuple { id: rose::Var(id) });
+    }
+
+    #[wasm_bindgen]
+    pub fn index(&mut self) {
+        self.body.push(rose::Instr::Index);
+    }
+
+    #[wasm_bindgen]
+    pub fn member(&mut self, id: usize) {
+        self.body.push(rose::Instr::Member {
+            id: rose::Member(id),
+        });
+    }
+
+    // unary
+
+    #[wasm_bindgen]
+    pub fn not(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::Not,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "negInt")]
+    pub fn neg_int(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::NegInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "absInt")]
+    pub fn abs_int(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::AbsInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "negReal")]
+    pub fn neg_real(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::NegReal,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "absReal")]
+    pub fn abs_real(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::AbsReal,
+        });
+    }
+
+    #[wasm_bindgen]
+    pub fn sqrt(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::Sqrt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "sumInt")]
+    pub fn sum_int(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::SumInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "prodInt")]
+    pub fn prod_int(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::ProdInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "maxInt")]
+    pub fn max_int(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::MaxInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "minInt")]
+    pub fn min_int(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::MinInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "sumReal")]
+    pub fn sum_real(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::SumReal,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "prodReal")]
+    pub fn prod_real(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::ProdReal,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "maxReal")]
+    pub fn max_real(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::MaxReal,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "minReal")]
+    pub fn min_real(&mut self) {
+        self.body.push(rose::Instr::Unary {
+            op: rose::Unop::MinReal,
+        });
+    }
+
+    // end of unary
+
+    // binary
+
+    #[wasm_bindgen]
+    pub fn and(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::And,
+        });
+    }
+
+    #[wasm_bindgen]
+    pub fn or(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::Or,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "eqBool")]
+    pub fn eq_bool(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::EqBool,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "neqBool")]
+    pub fn neq_bool(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::NeqBool,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "neqInt")]
+    pub fn neq_int(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::NeqInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "ltInt")]
+    pub fn lt_int(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::LtInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "leqInt")]
+    pub fn leq_int(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::LeqInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "eqInt")]
+    pub fn eq_int(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::EqInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "gtInt")]
+    pub fn gt_int(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::GtInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "geqInt")]
+    pub fn geq_int(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::GeqInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "neqReal")]
+    pub fn neq_real(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::NeqReal,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "ltReal")]
+    pub fn lt_real(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::LtReal,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "leqReal")]
+    pub fn leq_real(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::LeqReal,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "eqReal")]
+    pub fn eq_real(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::EqReal,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "gtReal")]
+    pub fn gt_real(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::GtReal,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "geqReal")]
+    pub fn geq_real(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::GeqReal,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "addInt")]
+    pub fn add_int(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::AddInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "subInt")]
+    pub fn sub_int(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::SubInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "mulInt")]
+    pub fn mul_int(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::MulInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "divInt")]
+    pub fn div_int(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::DivInt,
+        });
+    }
+
+    #[wasm_bindgen(js_name = "mod")]
+    pub fn modulus(&mut self) {
+        self.body.push(rose::Instr::Binary {
+            op: rose::Binop::Mod,
+        });
     }
 
     #[wasm_bindgen(js_name = "addReal")]
@@ -125,6 +408,41 @@ impl Context {
     pub fn div_real(&mut self) {
         self.body.push(rose::Instr::Binary {
             op: rose::Binop::DivReal,
+        });
+    }
+
+    // end of binary
+
+    /// `rose::Instr::If`
+    #[wasm_bindgen]
+    pub fn cond(&mut self) {
+        self.body.push(rose::Instr::If);
+    }
+
+    /// `rose::Instr::Else`
+    #[wasm_bindgen]
+    pub fn alt(&mut self) {
+        self.body.push(rose::Instr::Else);
+    }
+
+    #[wasm_bindgen]
+    pub fn end(&mut self) {
+        self.body.push(rose::Instr::End);
+    }
+
+    #[wasm_bindgen(js_name = "forConst")]
+    pub fn for_const(&mut self, val: usize) {
+        self.body.push(rose::Instr::For {
+            limit: rose::Size::Const { val },
+        });
+    }
+
+    #[wasm_bindgen(js_name = "forGeneric")]
+    pub fn for_generic(&mut self, id: usize) {
+        self.body.push(rose::Instr::For {
+            limit: rose::Size::Generic {
+                id: rose::Generic(id),
+            },
         });
     }
 }
