@@ -11,107 +11,122 @@ fn to_js_value(value: &impl Serialize) -> Result<JsValue, serde_wasm_bindgen::Er
     value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
 }
 
+/// A reference-counted pointer to a function.
+#[wasm_bindgen]
+pub struct Func(Rc<rose::Def<rose::Function>>);
+
 /// An under-construction function body.
 ///
 /// All methods simply push one instruction onto the end.
 #[wasm_bindgen]
-pub struct Body {
-    instrs: Vec<rose::Instr>,
+pub struct Context {
+    generics: usize,
+    types: Vec<rose::Typexpr>,
+    params: Vec<rose::Type>,
+    ret: rose::Type,
+    locals: Vec<rose::Type>,
+    funcs: Vec<rose::Inst>,
+    body: Vec<rose::Instr>,
 }
 
-// just to appease Clippy
-impl Default for Body {
-    fn default() -> Self {
-        Self::new()
-    }
+/// Start a new context.
+///
+/// The `param_types` argument is Serde-converted to `Vec<rose::Type>`, and the `ret_type` argument
+/// is Serde-converted to `rose::Type`.
+///
+/// TODO: currently no support for
+/// - generics
+/// - non-primitive types
+/// - calling other functions
+#[wasm_bindgen(js_name = "makeContext")]
+pub fn make_context(
+    param_types: JsValue,
+    ret_type: JsValue,
+) -> Result<Context, serde_wasm_bindgen::Error> {
+    let params: Vec<rose::Type> = serde_wasm_bindgen::from_value(param_types)?;
+    let ret: rose::Type = serde_wasm_bindgen::from_value(ret_type)?;
+    Ok(Context {
+        generics: 0,
+        types: vec![],
+        params,
+        ret,
+        locals: vec![],
+        funcs: vec![],
+        body: vec![],
+    })
 }
 
 #[wasm_bindgen]
-impl Body {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        Body { instrs: vec![] }
+impl Context {
+    #[wasm_bindgen]
+    pub fn bake(self) -> Func {
+        Func(Rc::new(rose::Def {
+            generics: self.generics,
+            types: self.types,
+            def: rose::Function {
+                params: self.params,
+                ret: vec![self.ret],
+                locals: self.locals,
+                funcs: self.funcs,
+                body: self.body,
+            },
+        }))
+    }
+
+    #[wasm_bindgen(js_name = "makeLocal")]
+    pub fn make_local(&mut self, t: JsValue) -> Result<usize, serde_wasm_bindgen::Error> {
+        let t: rose::Type = serde_wasm_bindgen::from_value(t)?;
+        let id = self.locals.len();
+        self.locals.push(t);
+        Ok(id)
     }
 
     #[wasm_bindgen]
     pub fn get(&mut self, id: usize) {
-        self.instrs.push(rose::Instr::Get {
+        self.body.push(rose::Instr::Get {
             id: rose::Local(id),
         });
     }
 
     #[wasm_bindgen]
     pub fn set(&mut self, id: usize) {
-        self.instrs.push(rose::Instr::Set {
+        self.body.push(rose::Instr::Set {
             id: rose::Local(id),
         });
     }
 
     #[wasm_bindgen]
     pub fn real(&mut self, val: f64) {
-        self.instrs.push(rose::Instr::Real { val });
+        self.body.push(rose::Instr::Real { val });
     }
 
     #[wasm_bindgen(js_name = "addReal")]
     pub fn add_real(&mut self) {
-        self.instrs.push(rose::Instr::Binary {
+        self.body.push(rose::Instr::Binary {
             op: rose::Binop::AddReal,
         });
     }
 
     #[wasm_bindgen(js_name = "subReal")]
     pub fn sub_real(&mut self) {
-        self.instrs.push(rose::Instr::Binary {
+        self.body.push(rose::Instr::Binary {
             op: rose::Binop::SubReal,
         });
     }
 
     #[wasm_bindgen(js_name = "mulReal")]
     pub fn mul_real(&mut self) {
-        self.instrs.push(rose::Instr::Binary {
+        self.body.push(rose::Instr::Binary {
             op: rose::Binop::MulReal,
         });
     }
 
     #[wasm_bindgen(js_name = "divReal")]
     pub fn div_real(&mut self) {
-        self.instrs.push(rose::Instr::Binary {
+        self.body.push(rose::Instr::Binary {
             op: rose::Binop::DivReal,
         });
     }
-}
-
-/// A reference-counted pointer to a function.
-#[wasm_bindgen]
-pub struct Func(Rc<rose::Def<rose::Function>>);
-
-/// Construct a new function.
-///
-/// The `param_types` and `local_types` arguments are each Serde-converted to `Vec<rose::Type>`.
-///
-/// TODO: currently no support for
-/// - generics
-/// - return values other than `Real`
-/// - calling other functions
-#[wasm_bindgen(js_name = "makeFunc")]
-pub fn make_func(
-    param_types: JsValue,
-    local_types: JsValue,
-    body: Body,
-) -> Result<Func, serde_wasm_bindgen::Error> {
-    let params: Vec<rose::Type> = serde_wasm_bindgen::from_value(param_types)?;
-    let locals: Vec<rose::Type> = serde_wasm_bindgen::from_value(local_types)?;
-    Ok(Func(Rc::new(rose::Def {
-        generics: 0,
-        types: vec![],
-        def: rose::Function {
-            params,
-            ret: vec![rose::Type::Real],
-            locals,
-            funcs: vec![],
-            body: body.instrs,
-        },
-    })))
 }
 
 /// Interpret a function with the given arguments.

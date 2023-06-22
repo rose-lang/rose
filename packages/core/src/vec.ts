@@ -1,3 +1,4 @@
+import * as ffi from "./ffi.js";
 import { Int } from "./int.js";
 import { Val } from "./val.js";
 
@@ -14,4 +15,8 @@ export const vec = <T>(n: Int, f: (i: Int) => T): Vec<T> => {
   const name = Symbol();
   const i: Int = { tag: "index", bound: n, name };
   return { tag: "cons", dim: n, index: name, elem: f(i) };
+};
+
+export const getVec = <T>(ctx: ffi.Context, v: Vec<T>): void => {
+  throw Error("TODO");
 };
