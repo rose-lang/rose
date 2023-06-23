@@ -186,9 +186,3 @@ pub struct Function {
     pub funcs: Vec<Inst>,
     pub body: Vec<Instr>,
 }
-
-impl Function {
-    pub fn get_func(&self, id: Func) -> &Inst {
-        &self.funcs[id.0]
-    }
-}
