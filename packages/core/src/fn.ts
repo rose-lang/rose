@@ -20,8 +20,12 @@ export interface Fn {
   f: ffi.Fn;
 }
 
-type Resolve<T extends readonly Reals[]> = {
+type FromType<T extends readonly Reals[]> = {
   [K in keyof T]: Real;
+};
+
+export type ToJs<T extends readonly Real[]> = {
+  [K in keyof T]: number;
 };
 
 const ffiType = (t: Type): ffi.Type => {
@@ -41,8 +45,8 @@ const ffiType = (t: Type): ffi.Type => {
 // TODO: allow args other than `Real`
 export const fn = <const T extends readonly Reals[]>(
   types: T,
-  f: (...args: Resolve<T>) => Real // TODO: allow return other than `Real`
-): Fn & ((...args: Resolve<T>) => Real) => {
+  f: (...args: FromType<T>) => Real // TODO: allow return other than `Real`
+): Fn & ((...args: FromType<T>) => Real) => {
   // TODO: support closures
   if (context !== undefined)
     throw Error("can't define a function while defining another function");
@@ -55,7 +59,7 @@ export const fn = <const T extends readonly Reals[]>(
     // reverse because stack is LIFO
     for (let i = types.length - 1; i >= 0; --i)
       params.push({ ctx, id: ctx.set(paramTypes[i]) });
-    getReal(ctx, f(...(params.reverse() as Resolve<T>)));
+    getReal(ctx, f(...(params.reverse() as FromType<T>)));
     func = ffi.bake(ctx);
   } catch (e) {
     // `ctx` points into Wasm memory, so if we didn't finish the `ffi.bake` call
@@ -65,7 +69,7 @@ export const fn = <const T extends readonly Reals[]>(
   } finally {
     setCtx(undefined);
   }
-  const g = (...args: Resolve<T>): Real => {
+  const g = (...args: FromType<T>): Real => {
     throw Error("TODO");
   };
   g.params = types as unknown as Type[];

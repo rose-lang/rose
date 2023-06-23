@@ -6,6 +6,4 @@ edition = "2021"
 
 [dependencies]
 rose = { path = "../core" }
-
-[dev-dependencies]
-wasmtime = "9"
+walrus = "0.20"

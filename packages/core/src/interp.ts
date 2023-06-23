@@ -1,10 +1,6 @@
 import * as ffi from "./ffi.js";
-import { Fn } from "./fn.js";
+import { Fn, ToJs } from "./fn.js";
 import { Real } from "./real.js";
-
-type Resolve<T extends readonly Real[]> = {
-  [K in keyof T]: number;
-};
 
 /**
  * Converts an abstract function into a concrete function using the interpreter.
@@ -12,9 +8,9 @@ type Resolve<T extends readonly Real[]> = {
 export const interp =
   <const T extends readonly Real[]>(
     f: Fn & ((...args: T) => Real)
-  ): ((...args: Resolve<T>) => number) =>
+  ): ((...args: ToJs<T>) => number) =>
   // just return a closure
-  (...args: Resolve<T>) => {
+  (...args: ToJs<T>) => {
     // that calls the interpreter
     const x = ffi.interp(
       f.f,

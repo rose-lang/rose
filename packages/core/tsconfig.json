@@ -1,9 +1,12 @@
 {
   "compilerOptions": {
     // basic stuff, or everything breaks
-    "module": "ESNext",
+    "module": "ES2022", // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/await#top_level_await
     "moduleResolution": "node16",
-    "lib": ["ESNext"],
+    "lib": [
+      "DOM", // https://github.com/microsoft/TypeScript-DOM-lib-generator/issues/826
+      "ES2021" // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/FinalizationRegistry
+    ],
     "skipLibCheck": true,
 
     // build config

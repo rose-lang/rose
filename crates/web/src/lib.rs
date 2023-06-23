@@ -460,3 +460,13 @@ pub fn interp(Func(f): &Func, args: JsValue) -> Result<JsValue, serde_wasm_bindg
     assert_eq!(ret.len(), 1);
     to_js_value(&ret[0])
 }
+
+#[wasm_bindgen(js_name = "wasmExportName")]
+pub fn wasm_export_name() -> String {
+    rose_wasm::EXPORT_NAME.to_owned()
+}
+
+#[wasm_bindgen]
+pub fn compile(Func(f): &Func, generics: &[usize]) -> Vec<u8> {
+    rose_wasm::compile(f, generics)
+}

@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 console_error_panic_hook = "0.1"
 rose = { path = "../core", features = ["serde"] }
 rose-interp = { path = "../interp", features = ["serde"] }
+rose-wasm = { path = "../wasm" }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.4"
 ts-rs = "6"

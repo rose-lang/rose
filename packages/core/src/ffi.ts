@@ -52,4 +52,9 @@ export const bake = (ctx: Context): Fn => {
 
 export const interp = (f: Fn, args: Val[]): Val => wasm.interp(f.f, args);
 
+export const wasmExportName = wasm.wasmExportName();
+
+export const compile = (f: Fn, generics: number[]) =>
+  wasm.compile(f.f, new Uint32Array(generics));
+
 export type { Type, Val };

@@ -17,6 +17,7 @@ export type Vec<T> = vec.Vec<T>;
 export const Vec = <T>(t: T, n: int.Int): Vecs<T> => ({ tag: "Vec", t, n });
 
 export { and, cond, iff, not, or, xor } from "./bool.js";
+export { compile } from "./compile.js";
 export { fn } from "./fn.js";
 export { int, mod } from "./int.js";
 export { interp } from "./interp.js";
