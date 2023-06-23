@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::rc::Rc;
-use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
+use wasm_bindgen::prelude::{wasm_bindgen, JsError, JsValue};
 
 fn to_js_value(value: &impl Serialize) -> Result<JsValue, serde_wasm_bindgen::Error> {
     value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
@@ -47,10 +47,7 @@ impl Context {
     /// - non-primitive types
     /// - calling other functions
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        param_types: JsValue,
-        ret_type: JsValue,
-    ) -> Result<Context, serde_wasm_bindgen::Error> {
+    pub fn new(param_types: JsValue, ret_type: JsValue) -> Result<Context, JsError> {
         let params: Vec<rose::Type> = serde_wasm_bindgen::from_value(param_types)?;
         let ret: rose::Type = serde_wasm_bindgen::from_value(ret_type)?;
         Ok(Self {
@@ -68,7 +65,7 @@ impl Context {
     ///
     /// The `t` argument is Serde-converted to `rose::Type`.
     #[wasm_bindgen]
-    pub fn set(&mut self, t: JsValue) -> Result<usize, serde_wasm_bindgen::Error> {
+    pub fn set(&mut self, t: JsValue) -> Result<usize, JsError> {
         let local: rose::Type = serde_wasm_bindgen::from_value(t)?;
         let id = self.locals.len();
         self.locals.push(local);
@@ -449,9 +446,9 @@ impl Context {
 /// The `args` are each Serde-converted to `Vec<rose_interp::Val>`, and the return value is
 /// Serde-converted from `rose_interp::Val`.
 #[wasm_bindgen]
-pub fn interp(Func(f): &Func, args: JsValue) -> Result<JsValue, serde_wasm_bindgen::Error> {
+pub fn interp(Func(f): &Func, generics: &[usize], args: JsValue) -> Result<JsValue, JsError> {
     let vals: Vec<rose_interp::Val> = serde_wasm_bindgen::from_value(args)?;
-    let ret = rose_interp::interp(f, vals);
+    let ret = rose_interp::interp(f, generics, vals)?;
     assert_eq!(ret.len(), 1);
-    to_js_value(&ret[0])
+    Ok(to_js_value(&ret[0])?)
 }

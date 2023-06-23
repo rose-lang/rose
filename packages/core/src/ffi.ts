@@ -50,6 +50,7 @@ export const bake = (ctx: Context): Fn => {
   return fn;
 };
 
-export const interp = (f: Fn, args: Val[]): Val => wasm.interp(f.f, args);
+export const interp = (f: Fn, args: Val[]): Val =>
+  wasm.interp(f.f, new Uint32Array(), args); // TODO: support generics
 
 export type { Type, Val };
