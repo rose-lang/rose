@@ -35,7 +35,7 @@ pub fn interp(f: &Def<Function>, args: Vec<Val>) -> Vec<Val> {
             Instr::Real { val } => {
                 stack.push(Val::F64(val));
             }
-            Instr::Vector { dim: _ } => todo!(),
+            Instr::Vector { id: _ } => todo!(),
             Instr::Tuple { id: _ } => todo!(),
             Instr::Index => todo!(),
             Instr::Member { id: _ } => todo!(),
@@ -88,7 +88,13 @@ pub fn interp(f: &Def<Function>, args: Vec<Val>) -> Vec<Val> {
                         }
                     }
                 }
-                Binop::DivReal => todo!(),
+                Binop::DivReal => {
+                    if let Val::F64(b) = stack.pop().unwrap() {
+                        if let Val::F64(a) = stack.pop().unwrap() {
+                            stack.push(Val::F64(a / b));
+                        }
+                    }
+                }
             },
             Instr::If => todo!(),
             Instr::Else => todo!(),

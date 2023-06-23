@@ -16,11 +16,27 @@ export const Real: Reals = { tag: "Real" };
 export type Vec<T> = vec.Vec<T>;
 export const Vec = <T>(t: T, n: int.Int): Vecs<T> => ({ tag: "Vec", t, n });
 
-export { and, eq, geq, gt, iff, leq, lt, neq, not, or, xor } from "./bool.js";
+export { and, cond, iff, not, or, xor } from "./bool.js";
 export { fn } from "./fn.js";
-export { mod } from "./int.js";
+export { int, mod } from "./int.js";
 export { interp } from "./interp.js";
-export { abs, add, div, mul, neg, sub } from "./overload.js";
-export { max, min, prod, sqrt, sum } from "./real.js";
-export { cond, get } from "./val.js";
+export {
+  abs,
+  add,
+  div,
+  eq,
+  geq,
+  gt,
+  leq,
+  lt,
+  max,
+  min,
+  mul,
+  neg,
+  neq,
+  prod,
+  sub,
+  sum,
+} from "./overload.js";
+export { sqrt } from "./real.js";
 export { vec } from "./vec.js";

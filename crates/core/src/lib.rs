@@ -165,7 +165,7 @@ pub enum Instr {
     Bool { val: bool },
     Int { val: u32 },
     Real { val: f64 },
-    Vector { dim: usize },
+    Vector { id: Var },
     Tuple { id: Var },
     Index,
     Member { id: Member },
