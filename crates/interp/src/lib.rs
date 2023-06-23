@@ -14,8 +14,8 @@ pub enum Val {
     Bool(bool),
     I32(i32),
     F64(f64),
-    Tuple(Vec<Rc<Val>>),
-    Vector(Vec<Rc<Val>>),
+    Tuple(Rc<Vec<Val>>),
+    Vector(Rc<Vec<Val>>),
 }
 
 fn type_of(x: &Val) -> Type {
@@ -126,12 +126,13 @@ impl<'a> Interpreter<'a> {
         match self.pop()? {
             Val::Vector(v) => {
                 let mut acc = init;
-                for val in v {
-                    match val.as_ref() {
+                for val in v.as_ref() {
+                    match val {
                         Val::I32(x) => acc = f(acc, *x),
                         x => return Err(type_error(Type::Int, x)),
                     }
                 }
+                self.stack.push(Val::I32(acc));
                 Ok(())
             }
             x => Err(Error::ExpectedVector {
@@ -144,12 +145,13 @@ impl<'a> Interpreter<'a> {
         match self.pop()? {
             Val::Vector(v) => {
                 let mut acc = init;
-                for val in v {
-                    match val.as_ref() {
+                for val in v.as_ref() {
+                    match val {
                         Val::F64(x) => acc = f(acc, *x),
                         x => return Err(type_error(Type::Real, x)),
                     }
                 }
+                self.stack.push(Val::F64(acc));
                 Ok(())
             }
             x => Err(Error::ExpectedVector {
@@ -357,7 +359,7 @@ pub fn interp(f: &Def<Function>, generics: &[usize], args: Vec<Val>) -> Result<V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rose::{Binop, Def, Func, Function, Inst, Local, Type};
+    use rose::{Inst, Typexpr, Var};
 
     #[test]
     fn test_two_plus_two() {
@@ -411,5 +413,63 @@ mod tests {
         };
         let answer = interp(&g, &[], vec![]).unwrap();
         assert_eq!(answer, vec![Val::F64(1764.)]);
+    }
+
+    #[test]
+    fn test_sum_int() {
+        let f = Def {
+            generics: 1,
+            types: vec![Typexpr::Vector {
+                elem: Type::Int,
+                size: Size::Generic { id: Generic(0) },
+            }],
+            def: Function {
+                params: vec![Type::Var { id: Var(0) }],
+                ret: vec![Type::Int],
+                locals: vec![],
+                funcs: vec![],
+                body: vec![Instr::Unary { op: Unop::SumInt }],
+            },
+        };
+        let answer = interp(
+            &f,
+            &[3],
+            vec![Val::Vector(Rc::new(vec![
+                Val::I32(1),
+                Val::I32(2),
+                Val::I32(3),
+            ]))],
+        )
+        .unwrap();
+        assert_eq!(answer, vec![Val::I32(6)]);
+    }
+
+    #[test]
+    fn test_prod_real() {
+        let f = Def {
+            generics: 1,
+            types: vec![Typexpr::Vector {
+                elem: Type::Real,
+                size: Size::Generic { id: Generic(0) },
+            }],
+            def: Function {
+                params: vec![Type::Var { id: Var(0) }],
+                ret: vec![Type::Real],
+                locals: vec![],
+                funcs: vec![],
+                body: vec![Instr::Unary { op: Unop::ProdReal }],
+            },
+        };
+        let answer = interp(
+            &f,
+            &[3],
+            vec![Val::Vector(Rc::new(vec![
+                Val::F64(2.),
+                Val::F64(3.),
+                Val::F64(4.),
+            ]))],
+        )
+        .unwrap();
+        assert_eq!(answer, vec![Val::F64(24.)]);
     }
 }
