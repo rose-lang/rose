@@ -451,9 +451,9 @@ impl Context {
 /// The `args` are each Serde-converted to `Vec<rose_interp::Val>`, and the return value is
 /// Serde-converted from `rose_interp::Val`.
 #[wasm_bindgen]
-pub fn interp(Func(f): &Func, generics: Vec<usize>, args: JsValue) -> Result<JsValue, JsError> {
+pub fn interp(Func(f): &Func, generics: &[usize], args: JsValue) -> Result<JsValue, JsError> {
     let vals: Vec<rose_interp::Val> = serde_wasm_bindgen::from_value(args)?;
-    let ret = rose_interp::interp(f, &generics, vals)?;
+    let ret = rose_interp::interp(f, generics, vals)?;
     assert_eq!(ret.len(), 1);
     Ok(to_js_value(&ret[0])?)
 }
