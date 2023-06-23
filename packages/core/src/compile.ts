@@ -10,7 +10,6 @@ export const compile = async <const T extends readonly Real[]>(
   generics: number[]
 ): Promise<(...args: ToJs<T>) => number> => {
   const bytes = ffi.compile(f.f, generics);
-  console.log(bytes);
   const instance = await WebAssembly.instantiate(
     await WebAssembly.compile(bytes)
   );
