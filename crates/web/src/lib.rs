@@ -2,11 +2,6 @@ use serde::Serialize;
 use std::rc::Rc;
 use wasm_bindgen::prelude::{wasm_bindgen, JsValue};
 
-#[wasm_bindgen]
-pub fn initialize() {
-    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-}
-
 fn to_js_value(value: &impl Serialize) -> Result<JsValue, serde_wasm_bindgen::Error> {
     value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
 }

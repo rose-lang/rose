@@ -30,7 +30,7 @@ bindings:
 
 # compile Rust to WebAssembly
 wbg: rust
-	cargo build --package=rose-web --target=wasm32-unknown-unknown --release
+	cargo +nightly build --package=rose-web -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target wasm32-unknown-unknown --release
 	.cargo/bin/wasm-bindgen --target=web --out-dir=packages/wasm/wbg target/wasm32-unknown-unknown/release/rose_web.wasm
 
 # run Rust tests
