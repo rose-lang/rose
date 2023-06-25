@@ -5,7 +5,7 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/wbg/rose_web.js",
+      "types": "./dist/wbg/rose_web.d.ts",
       "browser": "./dist/browser.js",
       "default": "./dist/index.js"
     },
