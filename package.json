@@ -10,6 +10,8 @@
     "prettier-plugin-organize-imports": "^3",
     "typescript": "^5",
     "esbuild": "^0.17.19",
+    "vite": "^4",
+    "vite-plugin-top-level-await": "^1",
     "vitest": "^0.31.2"
   }
 }

@@ -1,0 +1,12 @@
+{
+  "name": "@rose-lang/bundle",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "rose": "0.0.0"
+  },
+  "scripts": {
+    "build": "vite build"
+  }
+}
