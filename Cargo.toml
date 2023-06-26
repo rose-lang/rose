@@ -1,2 +1,11 @@
 [workspace]
 members = ["crates/*"]
+resolver = "2"
+
+# https://github.com/johnthagen/min-sized-rust
+[profile.web]
+inherits = "release"
+codegen-units = 1
+lto = true
+opt-level = "z"
+strip = true
