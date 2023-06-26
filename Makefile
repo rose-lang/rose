@@ -20,8 +20,6 @@ all: build test check
 
 # install additional Rust stuff that we need
 rust:
-	rustup target add wasm32-unknown-unknown
-	rustup toolchain install nightly --component rust-src
 	cargo install --root=.cargo --version=0.2.87 wasm-bindgen-cli
 
 # export TypeScript bindings from Rust types
@@ -31,7 +29,7 @@ bindings:
 
 # compile Rust to WebAssembly
 wbg: rust
-	cargo +nightly build --package=rose-web -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target wasm32-unknown-unknown --release
+	cargo build --package=rose-web -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target wasm32-unknown-unknown --release
 	.cargo/bin/wasm-bindgen --target=web --out-dir=packages/wasm/dist/wbg target/wasm32-unknown-unknown/release/rose_web.wasm
 
 # run Rust tests
