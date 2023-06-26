@@ -1,20 +1,10 @@
 {
+  "extends": "../../tsconfig.json",
   "compilerOptions": {
-    // basic stuff, or everything breaks
-    "module": "ESNext",
-    "moduleResolution": "node16",
-    "lib": ["ESNext"],
-    "skipLibCheck": true,
-
-    // build config
-    "rootDir": "src",
-    "outDir": "dist",
     "declaration": true,
-    "sourceMap": true,
     "declarationMap": true,
-
-    // typechecking
-    "noFallthroughCasesInSwitch": true,
-    "strict": true
-  }
+    "outDir": "dist",
+    "sourceMap": true
+  },
+  "include": ["src"]
 }

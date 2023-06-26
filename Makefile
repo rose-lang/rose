@@ -33,7 +33,7 @@ bindings:
 # compile Rust to WebAssembly
 wbg: rust
 	cargo +nightly build --package=rose-web -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target wasm32-unknown-unknown --release
-	.cargo/bin/wasm-bindgen --target=web --out-dir=packages/wasm/wbg target/wasm32-unknown-unknown/release/rose_web.wasm
+	.cargo/bin/wasm-bindgen --target=web --out-dir=packages/wasm/dist/wbg target/wasm32-unknown-unknown/release/rose_web.wasm
 
 # run Rust tests
 test-rust:
@@ -50,7 +50,7 @@ prettier: yarn
 	npx prettier --check .
 
 # build `packages/`
-packages: core vscode wasm
+packages: core site vscode wasm
 
 # run JavaScript tests
 test-js: test-core
@@ -64,6 +64,11 @@ core: yarn wasm
 # test
 test-core: yarn wasm
 	yarn workspace rose test run
+
+## `packages/site`
+
+site: yarn core
+	yarn workspace @rose-lang/site build
 
 ## `packages/vscode`
 
