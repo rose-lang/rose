@@ -1,4 +1,3 @@
-import * as wasm from "@rose-lang/wasm";
 import { expect, test } from "vitest";
 import { Real, add, div, fn, interp, mul, sub } from "./index.js";
 
@@ -13,8 +12,3 @@ test("basic arithmetic", () => {
   const g = interp(f);
   expect(g()).toBe(6);
 });
-
-// Printing a js fuction's rust IR to console
-const f = fn([Real, Real], (x, y) => add(x, y));
-const g = wasm.js2Rust(f.f.f);
-console.log(g);
