@@ -43,6 +43,14 @@ pub fn bake(ctx: Context) -> Func {
     }))
 }
 
+// Debugging
+#[wasm_bindgen(js_name = "js2Rust")]
+pub fn js_to_rust(Func(f): &Func) -> String {
+    let def: &rose::Def<rose::Function> = f;
+    let func: &rose::Function = &def.def;
+    format!("{:#?}", func)
+}
+
 #[wasm_bindgen]
 impl Context {
     /// The `param_types` argument is Serde-converted to `Vec<rose::Type>`, and the `ret_type`
