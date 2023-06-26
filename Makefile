@@ -21,8 +21,7 @@ all: build test check
 # install additional Rust stuff that we need
 rust:
 	rustup target add wasm32-unknown-unknown
-	rustup toolchain install nightly
-	rustup component add rust-src --toolchain nightly
+	rustup toolchain install --component rust-src nightly
 	cargo install --root=.cargo --version=0.2.87 wasm-bindgen-cli
 
 # export TypeScript bindings from Rust types
