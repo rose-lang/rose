@@ -48,7 +48,7 @@ prettier: yarn
 	npx prettier --check .
 
 # build `packages/`
-packages: core vscode wasm
+packages: core site vscode wasm
 
 # run JavaScript tests
 test-js: test-core
@@ -62,6 +62,11 @@ core: yarn wasm
 # test
 test-core: yarn wasm
 	yarn workspace rose test run
+
+## `packages/site`
+
+site: yarn core
+	yarn workspace @rose-lang/site build
 
 ## `packages/vscode`
 
