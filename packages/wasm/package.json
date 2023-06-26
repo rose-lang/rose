@@ -4,12 +4,14 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    ".": "./dist/index.js",
+    ".": {
+      "types": "./dist/wbg/rose_web.d.ts",
+      "browser": "./dist/browser.js",
+      "default": "./dist/index.js"
+    },
     "./*": "./dist/bindings/*.js"
   },
   "scripts": {
-    "bundle": "esbuild ./index.js --outfile=dist/index.js --platform=neutral --bundle --loader:.wasm=binary --define:import.meta.url=null --sourcemap",
-    "types": "cp wbg/rose_web.d.ts dist/index.d.ts",
-    "build": "yarn bundle && yarn types"
+    "build": "cp browser.js dist && esbuild index.js --outfile=dist/index.js --platform=neutral --bundle --loader:.wasm=binary --define:import.meta.url=null --sourcemap"
   }
 }

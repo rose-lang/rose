@@ -1,23 +1,10 @@
 {
+  "extends": "../../tsconfig.json",
   "compilerOptions": {
-    // basic stuff, or everything breaks
-    "module": "ES2022", // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/await#top_level_await
-    "moduleResolution": "node16",
-    "lib": [
-      "DOM", // https://github.com/microsoft/TypeScript-DOM-lib-generator/issues/826
-      "ES2021" // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/FinalizationRegistry
-    ],
-    "skipLibCheck": true,
-
-    // build config
-    "rootDir": "src",
-    "outDir": "dist",
     "declaration": true,
-    "sourceMap": true,
     "declarationMap": true,
-
-    // typechecking
-    "noFallthroughCasesInSwitch": true,
-    "strict": true
-  }
+    "outDir": "dist",
+    "sourceMap": true
+  },
+  "include": ["src"]
 }

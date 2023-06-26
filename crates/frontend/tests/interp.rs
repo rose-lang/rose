@@ -7,8 +7,10 @@ fn test_add() {
     let module = parse(src).unwrap();
     let answer = interp(
         module.funcs.get("add").unwrap(),
+        &[],
         vec![Val::F64(2.), Val::F64(2.)],
-    );
+    )
+    .unwrap();
     assert_eq!(answer, vec![Val::F64(4.)]);
 }
 
@@ -18,7 +20,9 @@ fn test_sub() {
     let module = parse(src).unwrap();
     let answer = interp(
         module.funcs.get("sub").unwrap(),
+        &[],
         vec![Val::F64(2.), Val::F64(2.)],
-    );
+    )
+    .unwrap();
     assert_eq!(answer, vec![Val::F64(0.)]);
 }
