@@ -1,0 +1,41 @@
+:root {
+  --color-background: #222;
+  --color-text: #ddd;
+  --color-text-hover: white;
+
+  background-color: var(--color-background);
+  color: var(--color-text);
+  font-family: sans-serif;
+}
+
+.top {
+  margin: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.name {
+  flex-grow: 1;
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.top a:link {
+  color: var(--color-text);
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.top a:visited {
+  color: var(--color-text);
+}
+
+.top a:hover {
+  color: var(--color-text-hover);
+}
+
+main {
+  display: flex;
+  justify-content: center;
+}

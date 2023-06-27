@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "highlight.js": "^11",
     "rose": "0.0.0"
   },
   "scripts": {
