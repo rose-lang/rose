@@ -2,11 +2,68 @@
 <html lang="en-us">
   <head>
     <meta charset="utf-8" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="https://raw.githubusercontent.com/rose-lang/rose-icons/efcc218832d65970a47bed597ee11cecd3d1cc3c/svg/plain-rose.svg"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/fork-awesome@1.2.0/css/fork-awesome.min.css"
+      integrity="sha256-XoaMnoYC5TH6/+ihMEnospgm0J1PM/nioxbOUdnM8HY="
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="/style.css" />
     <title>Rose</title>
   </head>
   <body>
-    <pre><code id="code"></code></pre>
+    <div class="top">
+      <img
+        height="40px"
+        src="https://raw.githubusercontent.com/rose-lang/rose-icons/efcc218832d65970a47bed597ee11cecd3d1cc3c/svg/encircled-rose.svg"
+      />
+      <span class="name">Rose</span>
+      <a
+        class="fa fa-github fa-2x"
+        href="https://github.com/rose-lang/rose"
+      ></a>
+    </div>
+    <div class="example">
+      <pre><code class="language-javascript">import * as rose from "rose";
+import { Real, Vec, fn, pow } from "rose";
+
+const Vec2 = Vec(Real, 2);
+const Mat2 = Vec(Vec2, 2);
+
+const f = fn([Vec2], Real, (v) => {
+  return pow(v[0], v[1]);
+});
+
+const g = fn([Vec2], Vec2, (v) => {
+  return rose.vjp(f)(v).vjp(1);
+});
+
+const h = fn([Vec2], Mat2, (v) => {
+  const x = rose.vjp(g)(v);
+  return [x.vjp([1, 0]), x.vjp([0, 1])];
+});
+
+const l = await Promise.all([
+  rose.compile(f),
+  rose.compile(g),
+  rose.compile(h),
+]);
+
+export default (x, y) => {
+  return l.map((func) => func([x, y]));
+};</code></pre>
+    </div>
+    <div class="bottom">
+      <a href="https://github.com/rose-lang/rose-icons">icons</a> by
+      <a href="https://github.com/aatxe">Aaron Weiss</a> /
+      <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

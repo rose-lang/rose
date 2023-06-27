@@ -1,4 +1,8 @@
-import * as rose from "rose";
+import hljs from "highlight.js/lib/core";
+import javascript from "highlight.js/lib/languages/javascript";
+import "highlight.js/styles/base16/helios.css";
 
-const elem = document.getElementById("code");
-if (elem !== null) elem.innerText = JSON.stringify(rose, null, 2);
+hljs.registerLanguage("javascript", javascript);
+hljs.highlightAll();
+
+console.log(await import("rose"));
