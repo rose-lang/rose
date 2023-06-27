@@ -12,5 +12,23 @@ jobs:
       - name: Clone repo
         uses: actions/checkout@v3
       - run: make all
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: packages/site/dist
       - name: Check that Git diff is empty
         run: .github/diff.sh
+
+  pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    runs-on: ubuntu-22.04
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v2
