@@ -2,6 +2,9 @@
   --color-background: #222;
   --color-text: #ddd;
   --color-text-hover: white;
+  --color-text-dark: #666;
+  --color-link-dark: hsl(222 50% 45%);
+  --color-link-dark-hover: hsl(222 50% 50%);
 
   background-color: var(--color-background);
   color: var(--color-text);
@@ -35,7 +38,26 @@
   color: var(--color-text-hover);
 }
 
-main {
+.example {
   display: flex;
   justify-content: center;
+}
+
+.bottom {
+  text-align: center;
+  color: var(--color-text-dark);
+  font-style: italic;
+}
+
+.bottom a:link {
+  color: var(--color-link-dark);
+  text-decoration: none;
+}
+
+.bottom a:visited {
+  color: var(--color-link-dark);
+}
+
+.bottom a:hover {
+  color: var(--color-link-dark-hover);
 }
