@@ -71,9 +71,6 @@ site-deps: yarn core
 site: site-deps
 	yarn workspace @rose-lang/site build
 
-site-dev: site-deps
-	yarn workspace @rose-lang/site dev
-
 ## `packages/vscode`
 
 # fetch encircled icon
