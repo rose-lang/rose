@@ -66,8 +66,13 @@ test-core: yarn wasm
 
 ## `packages/site`
 
-site: yarn core
+site-deps: yarn core
+
+site: site-deps
 	yarn workspace @rose-lang/site build
+
+site-dev: site-deps
+	yarn workspace @rose-lang/site dev
 
 ## `packages/vscode`
 
