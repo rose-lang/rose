@@ -1,5 +1,5 @@
 use crate::{ast, tokens};
-use rose as ir;
+use rose::{self as ir, id};
 use std::{collections::HashMap, ops::Range, rc::Rc};
 
 #[derive(Debug, thiserror::Error)]
@@ -43,7 +43,7 @@ pub enum TypeError {
 }
 
 type ParsedTypes<'input> = (
-    HashMap<&'input str, ir::Generic>,
+    HashMap<&'input str, id::Generic>,
     Vec<ir::Typexpr>,
     Vec<ir::Type>,
 );
@@ -61,7 +61,7 @@ fn parse_types<'input>(
                 def,
                 params: vec![],
             };
-            let id = ir::Var(typevars.len());
+            let id = id::typ(typevars.len());
             typevars.push(typexpr);
             ir::Type::Var { id }
         } else {
@@ -84,14 +84,14 @@ fn parse_types<'input>(
                                 id: if let Some(&i) = generics.get(dim) {
                                     i
                                 } else {
-                                    let i = ir::Generic(generics.len());
+                                    let i = id::generic(generics.len());
                                     generics.insert(dim, i);
                                     i
                                 },
                             }
                         },
                     };
-                    let id = ir::Var(typevars.len());
+                    let id = id::typ(typevars.len());
                     typevars.push(typexpr);
                     t = ir::Type::Var { id };
                 }
@@ -119,35 +119,35 @@ struct FunCtx<'input, 'a> {
     m: &'a Module<'input>,
     f: ir::Function,
     t: Vec<ir::Typexpr>,
-    g: HashMap<&'input str, ir::Generic>,
-    l: HashMap<&'input str, ir::Local>,
+    g: HashMap<&'input str, id::Generic>,
+    l: HashMap<&'input str, id::Local>,
 }
 
 impl<'input, 'a> FunCtx<'input, 'a> {
-    fn newtype(&mut self, t: ir::Typexpr) -> ir::Var {
-        let id = ir::Var(self.t.len());
+    fn newtype(&mut self, t: ir::Typexpr) -> id::Typ {
+        let id = id::typ(self.t.len());
         self.t.push(t);
         id
     }
 
-    fn newlocal(&mut self, t: ir::Type) -> ir::Local {
-        let id = ir::Local(self.f.locals.len());
+    fn newlocal(&mut self, t: ir::Type) -> id::Local {
+        let id = id::local(self.f.locals.len());
         self.f.locals.push(t);
         id
     }
 
-    fn newfunc(&mut self, f: ir::Inst) -> ir::Func {
-        let id = ir::Func(self.f.funcs.len());
+    fn newfunc(&mut self, f: ir::Inst) -> id::Func {
+        let id = id::func(self.f.funcs.len());
         self.f.funcs.push(f);
         id
     }
 
-    fn gettype(&self, id: ir::Var) -> &ir::Typexpr {
-        &self.t[id.0]
+    fn gettype(&self, id: id::Typ) -> &ir::Typexpr {
+        &self.t[id.typ()]
     }
 
-    fn getlocal(&self, id: ir::Local) -> ir::Type {
-        self.f.locals[id.0]
+    fn getlocal(&self, id: id::Local) -> ir::Type {
+        self.f.locals[id.local()]
     }
 
     fn lookup(&self, name: &'input str) -> Option<(ir::Type, ir::Instr)> {

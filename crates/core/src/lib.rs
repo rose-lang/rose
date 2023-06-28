@@ -1,3 +1,5 @@
+pub mod id;
+
 use std::rc::Rc;
 
 #[cfg(feature = "serde")]
@@ -6,42 +8,12 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use ts_rs::TS;
 
-/// Index of a typevar in a definition context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
-pub struct Var(pub usize);
-
-/// Index of a function instantiation in a definition context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
-pub struct Func(pub usize);
-
-/// Index of a generic parameter in a definition context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
-pub struct Generic(pub usize);
-
-/// Index of a member in a tuple.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
-pub struct Member(pub usize);
-
-/// Index of a local variable in a function context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
-pub struct Local(pub usize);
-
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub enum Size {
     Const { val: usize },
-    Generic { id: Generic },
+    Generic { id: id::Generic },
 }
 
 #[cfg_attr(test, derive(TS), ts(export))]
@@ -53,7 +25,7 @@ pub enum Type {
     Real,
     Size { val: Size },
     Nat { bound: Size },
-    Var { id: Var },
+    Var { id: id::Typ },
 }
 
 #[derive(Debug)]
@@ -159,17 +131,17 @@ pub enum Binop {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub enum Instr {
-    Generic { id: Generic },
-    Get { id: Local },
-    Set { id: Local },
+    Generic { id: id::Generic },
+    Get { id: id::Local },
+    Set { id: id::Local },
     Bool { val: bool },
     Int { val: u32 },
     Real { val: f64 },
-    Vector { id: Var },
-    Tuple { id: Var },
+    Vector { id: id::Typ },
+    Tuple { id: id::Typ },
     Index,
-    Member { id: Member },
-    Call { id: Func },
+    Member { id: id::Member },
+    Call { id: id::Func },
     Unary { op: Unop },
     Binary { op: Binop },
     If,

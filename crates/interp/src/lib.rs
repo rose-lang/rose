@@ -1,4 +1,4 @@
-use rose::{Binop, Def, Func, Function, Generic, Instr, Local, Size, Type, Unop};
+use rose::{id, Binop, Def, Function, Instr, Size, Type, Unop};
 use std::rc::Rc;
 
 #[cfg(feature = "serde")]
@@ -40,16 +40,16 @@ pub enum Error {
     EmptyStack,
 
     #[error("have {num} generics, {id:?} out of range")]
-    BadGeneric { num: usize, id: Generic },
+    BadGeneric { num: usize, id: id::Generic },
 
     #[error("have {num} locals, {id:?} out of range")]
-    BadLocal { num: usize, id: Local },
+    BadLocal { num: usize, id: id::Local },
 
     #[error("have {num} function references, {id:?} out of range")]
-    BadFunc { num: usize, id: Func },
+    BadFunc { num: usize, id: id::Func },
 
     #[error("local {id:?} is unset")]
-    UnsetLocal { id: Local },
+    UnsetLocal { id: id::Local },
 
     #[error("expected primitive type {expected:?}, got {actual:?}")]
     ExpectedPrimitive { expected: Type, actual: Type },
@@ -246,11 +246,14 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn get_generic(&self, id: Generic) -> Result<usize, Error> {
-        self.generics.get(id.0).copied().ok_or(Error::BadGeneric {
-            num: self.f.generics,
-            id,
-        })
+    fn get_generic(&self, id: id::Generic) -> Result<usize, Error> {
+        self.generics
+            .get(id.generic())
+            .copied()
+            .ok_or(Error::BadGeneric {
+                num: self.f.generics,
+                id,
+            })
     }
 
     fn instr(&mut self, instr: Instr) -> Result<(), Error> {
@@ -264,7 +267,7 @@ impl<'a> Interpreter<'a> {
                 Ok(())
             }
             Get { id } => {
-                let val = self.locals.get(id.0).ok_or(Error::BadLocal {
+                let val = self.locals.get(id.local()).ok_or(Error::BadLocal {
                     num: self.f.def.locals.len(),
                     id,
                 })?;
@@ -274,7 +277,7 @@ impl<'a> Interpreter<'a> {
             }
             Set { id } => {
                 let val = self.pop()?;
-                let local = self.locals.get_mut(id.0).ok_or(Error::BadLocal {
+                let local = self.locals.get_mut(id.local()).ok_or(Error::BadLocal {
                     num: self.f.def.locals.len(),
                     id,
                 })?;
@@ -300,7 +303,7 @@ impl<'a> Interpreter<'a> {
             Index => todo!(),
             Member { id: _ } => todo!(),
             Call { id } => {
-                let func = self.f.def.funcs.get(id.0).ok_or(Error::BadFunc {
+                let func = self.f.def.funcs.get(id.func()).ok_or(Error::BadFunc {
                     num: self.f.def.funcs.len(),
                     id,
                 })?;
@@ -359,7 +362,7 @@ pub fn interp(f: &Def<Function>, generics: &[usize], args: Vec<Val>) -> Result<V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rose::{Inst, Typexpr, Var};
+    use rose::{Inst, Typexpr};
 
     #[test]
     fn test_two_plus_two() {
@@ -403,10 +406,10 @@ mod tests {
                     params: vec![],
                 }],
                 body: vec![
-                    Instr::Call { id: Func(0) },
-                    Instr::Set { id: Local(0) },
-                    Instr::Get { id: Local(0) },
-                    Instr::Get { id: Local(0) },
+                    Instr::Call { id: id::func(0) },
+                    Instr::Set { id: id::local(0) },
+                    Instr::Get { id: id::local(0) },
+                    Instr::Get { id: id::local(0) },
                     Instr::Binary { op: Binop::MulReal },
                 ],
             },
@@ -421,10 +424,10 @@ mod tests {
             generics: 1,
             types: vec![Typexpr::Vector {
                 elem: Type::Int,
-                size: Size::Generic { id: Generic(0) },
+                size: Size::Generic { id: id::generic(0) },
             }],
             def: Function {
-                params: vec![Type::Var { id: Var(0) }],
+                params: vec![Type::Var { id: id::typ(0) }],
                 ret: vec![Type::Int],
                 locals: vec![],
                 funcs: vec![],
@@ -450,10 +453,10 @@ mod tests {
             generics: 1,
             types: vec![Typexpr::Vector {
                 elem: Type::Real,
-                size: Size::Generic { id: Generic(0) },
+                size: Size::Generic { id: id::generic(0) },
             }],
             def: Function {
-                params: vec![Type::Var { id: Var(0) }],
+                params: vec![Type::Var { id: id::typ(0) }],
                 ret: vec![Type::Real],
                 locals: vec![],
                 funcs: vec![],
