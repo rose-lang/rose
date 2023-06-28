@@ -1,3 +1,4 @@
+use rose::id;
 use serde::Serialize;
 use std::rc::Rc;
 use wasm_bindgen::prelude::{wasm_bindgen, JsError, JsValue};
@@ -84,24 +85,20 @@ impl Context {
         let local: rose::Type = serde_wasm_bindgen::from_value(t)?;
         let id = self.locals.len();
         self.locals.push(local);
-        self.body.push(rose::Instr::Set {
-            id: rose::Local(id),
-        });
+        self.body.push(rose::Instr::Set { id: id::local(id) });
         Ok(id)
     }
 
     #[wasm_bindgen]
     pub fn generic(&mut self, id: usize) {
         self.body.push(rose::Instr::Generic {
-            id: rose::Generic(id),
+            id: id::generic(id),
         });
     }
 
     #[wasm_bindgen]
     pub fn get(&mut self, id: usize) {
-        self.body.push(rose::Instr::Get {
-            id: rose::Local(id),
-        });
+        self.body.push(rose::Instr::Get { id: id::local(id) });
     }
 
     #[wasm_bindgen]
@@ -121,12 +118,12 @@ impl Context {
 
     #[wasm_bindgen]
     pub fn vector(&mut self, id: usize) {
-        self.body.push(rose::Instr::Vector { id: rose::Var(id) });
+        self.body.push(rose::Instr::Vector { id: id::typ(id) });
     }
 
     #[wasm_bindgen]
     pub fn tuple(&mut self, id: usize) {
-        self.body.push(rose::Instr::Tuple { id: rose::Var(id) });
+        self.body.push(rose::Instr::Tuple { id: id::typ(id) });
     }
 
     #[wasm_bindgen]
@@ -136,9 +133,7 @@ impl Context {
 
     #[wasm_bindgen]
     pub fn member(&mut self, id: usize) {
-        self.body.push(rose::Instr::Member {
-            id: rose::Member(id),
-        });
+        self.body.push(rose::Instr::Member { id: id::member(id) });
     }
 
     // unary
@@ -450,7 +445,7 @@ impl Context {
     pub fn for_generic(&mut self, id: usize) {
         self.body.push(rose::Instr::For {
             limit: rose::Size::Generic {
-                id: rose::Generic(id),
+                id: id::generic(id),
             },
         });
     }
