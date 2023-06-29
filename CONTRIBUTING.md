@@ -67,6 +67,24 @@ This doesn't clean everything; it keeps around downloaded files and Rust's
 `target` directory. You should be able to run `make all` right after it without
 an Internet connection.
 
+## Site
+
+To develop the website locally:
+
+```
+make site-deps && yarn workspace @rose-lang/site dev
+```
+
+Then open http://localhost:5173/ in your browser.
+
+Or, if you want to host on your local network, e.g. to test on your phone:
+
+```
+make site-deps && yarn workspace @rose-lang/site dev --host
+```
+
+Then open http://192.168.0.12:5173/ on your phone.
+
 ## VS Code
 
 The VS Code extension is built as part of `make` or `make all`, but you can also

@@ -1,95 +1,43 @@
-import { Real } from "./real.js";
-import { Val } from "./val.js";
+import { Local, getCtx, local } from "./context.js";
+import * as ffi from "./ffi.js";
 
-interface Not {
-  tag: "not";
-  arg: Bool;
-}
+export type Bool = boolean | Local;
 
-interface Logic {
-  tag: "logic";
-  op: "!=" | "==" | "and" | "or";
-  left: Bool;
-  right: Bool;
-}
+/** Emit instructions to push the value of `x` onto the stack. */
+const getBool = (ctx: ffi.Context, x: Bool): void => {
+  if (typeof x === "boolean") ctx.bool(x);
+  else local(ctx, x);
+};
 
-interface Comp {
-  tag: "comp";
-  op: "!=" | "<" | "<=" | "==" | ">" | ">=";
-  left: Real;
-  right: Real;
-}
+export const not = (p: Bool): Bool => {
+  const ctx = getCtx();
+  getBool(ctx, p);
+  ctx.not();
+  return { ctx, id: ctx.set("Bool") };
+};
 
-export type Bool = boolean | Val<Bool> | Not | Logic | Comp;
+const logic =
+  (op: (ctx: ffi.Context) => void) =>
+  (p: Bool, q: Bool): Bool => {
+    const ctx = getCtx();
+    getBool(ctx, p);
+    getBool(ctx, q);
+    op(ctx);
+    return { ctx, id: ctx.set("Bool") };
+  };
 
-export const not = (p: Bool): Bool => ({ tag: "not", arg: p });
+export const and = logic((ctx) => ctx.and());
+export const or = logic((ctx) => ctx.or());
+export const iff = logic((ctx) => ctx.eqBool());
+export const xor = logic((ctx) => ctx.neqBool());
 
-export const and = (p: Bool, q: Bool): Bool => ({
-  tag: "logic",
-  op: "and",
-  left: p,
-  right: q,
-});
-
-export const or = (p: Bool, q: Bool): Bool => ({
-  tag: "logic",
-  op: "or",
-  left: p,
-  right: q,
-});
-
-export const iff = (p: Bool, q: Bool): Bool => ({
-  tag: "logic",
-  op: "==",
-  left: p,
-  right: q,
-});
-
-export const xor = (p: Bool, q: Bool): Bool => ({
-  tag: "logic",
-  op: "!=",
-  left: p,
-  right: q,
-});
-
-export const eq = (a: Real, b: Real): Bool => ({
-  tag: "comp",
-  op: "==",
-  left: a,
-  right: b,
-});
-
-export const neq = (a: Real, b: Real): Bool => ({
-  tag: "comp",
-  op: "!=",
-  left: a,
-  right: b,
-});
-
-export const lt = (a: Real, b: Real): Bool => ({
-  tag: "comp",
-  op: "<",
-  left: a,
-  right: b,
-});
-
-export const leq = (a: Real, b: Real): Bool => ({
-  tag: "comp",
-  op: "<=",
-  left: a,
-  right: b,
-});
-
-export const gt = (a: Real, b: Real): Bool => ({
-  tag: "comp",
-  op: ">",
-  left: a,
-  right: b,
-});
-
-export const geq = (a: Real, b: Real): Bool => ({
-  tag: "comp",
-  op: ">=",
-  left: a,
-  right: b,
-});
+export const cond = <T>(cond: Bool, then: () => T, els: () => T): Local => {
+  const ctx = getCtx();
+  getBool(ctx, cond);
+  ctx.cond();
+  then();
+  ctx.alt();
+  els();
+  ctx.end();
+  return { ctx, id: ctx.set("Real") }; // TODO: support other types
+};
