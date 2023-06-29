@@ -242,6 +242,14 @@ pub enum Expr {
         /// `arg` has type `Ref` with scope `body` and inner type `vector`.
         body: id::Block,
     },
+
+    /// Accumulate into a `Ref`. Returned type is `Unit`.
+    Add {
+        /// The `Ref`, which must be in scope.
+        accum: id::Var,
+        /// Must be of the `Ref`'s inner type, which must satisfy `Constraint::Vector`.
+        addend: id::Var,
+    },
 }
 
 #[cfg_attr(test, derive(TS), ts(export))]
