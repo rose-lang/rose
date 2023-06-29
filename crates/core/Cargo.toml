@@ -14,4 +14,5 @@ thiserror = "1"
 ts-rs = "6"
 
 [features]
+default = ["serde"]
 serde = ["dep:serde"]
