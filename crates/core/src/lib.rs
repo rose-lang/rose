@@ -205,6 +205,12 @@ pub enum Expr {
         member: id::Member,
     },
 
+    Slice {
+        /// Must actually be a `Ref` of an array, not just an array.
+        array: id::Var,
+        index: id::Var,
+    },
+
     Unary {
         op: Unop,
         arg: id::Var,
