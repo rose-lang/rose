@@ -231,7 +231,9 @@ pub enum Expr {
     },
     If {
         cond: id::Var,
+        /// `arg` has type `Unit`.
         then: id::Block,
+        /// `arg` has type `Unit`.
         els: id::Block,
     },
     For {
