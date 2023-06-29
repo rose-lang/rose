@@ -37,7 +37,8 @@ pub struct Function {
     pub param: crate::Type,
     pub ret: crate::Type,
     pub vars: Vec<crate::Type>,
-    pub body: crate::Block,
+    pub blocks: Vec<crate::Block>,
+    pub main: crate::id::Block,
 }
 
 impl Function {
@@ -49,7 +50,8 @@ impl Function {
             param,
             ret,
             vars,
-            body,
+            blocks,
+            main,
         } = self;
         // TODO: actually check validity
         Ok(crate::Function {
@@ -59,7 +61,8 @@ impl Function {
             param,
             ret,
             vars,
-            body,
+            blocks,
+            main,
         })
     }
 }

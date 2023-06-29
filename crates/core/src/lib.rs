@@ -40,9 +40,7 @@ pub enum Type {
     },
     /// Satisfies `Constraint::Scope`.
     Scope {
-        /// Technically this points to the variable that will hold the value after the scope ends,
-        /// but it doesn't matter as long as we're consistent.
-        id: id::Var,
+        id: id::Block,
     },
     Expr {
         id: id::Typexpr,
@@ -115,7 +113,8 @@ pub struct Function {
     param: Type,
     ret: Type,
     vars: Vec<Type>,
-    body: Block,
+    blocks: Vec<Block>,
+    main: id::Block,
 }
 
 impl Function {
@@ -149,9 +148,14 @@ impl Function {
         &self.vars
     }
 
-    /// Body of the function.
-    pub fn body(&self) -> &Block {
-        &self.body
+    /// Blocks of code.
+    pub fn blocks(&self) -> &[Block] {
+        &self.blocks
+    }
+
+    /// Main block.
+    pub fn main(&self) -> id::Block {
+        self.main
     }
 }
 
@@ -227,24 +231,22 @@ pub enum Expr {
     },
     If {
         cond: id::Var,
-        /// `arg` has type `Unit`.
-        then: Box<Block>,
-        /// `arg` has type `Unit`.
-        els: Box<Block>,
+        then: id::Block,
+        els: id::Block,
     },
     For {
         /// Must satisfy `Constraint::Index`.
         index: Type,
         /// `arg` has type `index`.
-        body: Box<Block>,
+        body: id::Block,
     },
     Accum {
         /// Final contents of the `Ref`.
         var: id::Var,
         /// Must satisfy `Constraint::Vector`.
         vector: Type,
-        /// `arg` has type `Ref` with scope `var` and inner type `vector`.
-        body: Box<Block>,
+        /// `arg` has type `Ref` with scope `body` and inner type `vector`.
+        body: id::Block,
     },
 
     /// Accumulate into a `Ref`. Returned type is `Unit`.
