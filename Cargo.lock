@@ -545,6 +545,7 @@ name = "rose"
 version = "0.0.0"
 dependencies = [
  "serde",
+ "thiserror",
  "ts-rs",
 ]
 
