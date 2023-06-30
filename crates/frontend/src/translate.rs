@@ -23,10 +23,16 @@ pub enum TypeError {
     IndexPrimitive { t: ir::Type },
 
     #[error("")]
+    IndexRef,
+
+    #[error("")]
     IndexTuple,
 
     #[error("")]
     MemberPrimitive { t: ir::Type },
+
+    #[error("")]
+    MemberRef,
 
     #[error("")]
     BadSwizzle { swizzle: Range<usize> },
@@ -49,7 +55,7 @@ type ParsedTypes<'input> = (
 );
 
 fn parse_types<'input>(
-    lookup: impl Fn(&'input str) -> Option<Rc<ir::Def<ir::Typexpr>>>,
+    lookup: impl Fn(&'input str) -> Option<Rc<ir::Typedef>>,
     typenames: impl Iterator<Item = ast::Spanned<&'input str>>,
 ) -> Result<ParsedTypes<'input>, TypeError> {
     let mut generics = HashMap::new();
@@ -57,30 +63,30 @@ fn parse_types<'input>(
     let mut types = vec![];
     for typ in typenames {
         types.push(if let Some(def) = lookup(typ.val) {
-            let typexpr = ir::Typexpr::Typedef {
+            let typexpr = ir::Typexpr::Def {
                 def,
                 params: vec![],
             };
-            let id = id::typ(typevars.len());
+            let id = id::typexpr(typevars.len());
             typevars.push(typexpr);
-            ir::Type::Var { id }
+            ir::Type::Expr { id }
         } else {
-            let mut t = ir::Type::Real;
+            let mut t = ir::Type::F64;
             let dims = typ
                 .val
                 .strip_prefix('R')
                 .ok_or_else(|| TypeError::UnknownType { name: typ.span() })?;
             if !dims.is_empty() {
                 for dim in dims.rsplit('x') {
-                    let typexpr = ir::Typexpr::Vector {
+                    let typexpr = ir::Typexpr::Array {
                         elem: t,
-                        size: if let Ok(n) = dim.parse() {
-                            ir::Size::Const { val: n }
+                        index: if let Ok(n) = dim.parse() {
+                            ir::Type::Fin { size: n }
                         } else if dim.is_empty() {
                             // TODO: change this condition to check for valid identifiers
                             return Err(TypeError::BadTensorType { name: typ.span() });
                         } else {
-                            ir::Size::Generic {
+                            ir::Type::Generic {
                                 id: if let Some(&i) = generics.get(dim) {
                                     i
                                 } else {
@@ -91,9 +97,9 @@ fn parse_types<'input>(
                             }
                         },
                     };
-                    let id = id::typ(typevars.len());
+                    let id = id::typexpr(typevars.len());
                     typevars.push(typexpr);
-                    t = ir::Type::Var { id };
+                    t = ir::Type::Expr { id };
                 }
             }
             t
@@ -102,75 +108,65 @@ fn parse_types<'input>(
     Ok((generics, typevars, types))
 }
 
-#[derive(Debug)]
 pub struct Type<'input> {
-    pub def: Rc<rose::Def<rose::Typexpr>>,
+    pub def: Rc<rose::Typedef>,
     /// Sorted lexicographically.
     pub fields: Vec<&'input str>,
 }
 
-#[derive(Debug)]
 pub struct Module<'input> {
     pub types: HashMap<&'input str, Type<'input>>,
-    pub funcs: HashMap<&'input str, Rc<rose::Def<rose::Function>>>,
+    pub funcs: HashMap<&'input str, Rc<rose::Function>>,
 }
 
-struct FunCtx<'input, 'a> {
+struct BlockCtx<'input, 'a> {
     m: &'a Module<'input>,
-    f: ir::Function,
-    t: Vec<ir::Typexpr>,
     g: HashMap<&'input str, id::Generic>,
-    l: HashMap<&'input str, id::Local>,
+    l: HashMap<&'input str, id::Var>,
+    t: Vec<ir::Typexpr>,
+    f: Vec<ir::Func>,
+    v: Vec<ir::Type>,
+    b: Vec<ir::Block>,
+    c: Vec<ir::Instr>,
 }
 
-impl<'input, 'a> FunCtx<'input, 'a> {
-    fn newtype(&mut self, t: ir::Typexpr) -> id::Typ {
-        let id = id::typ(self.t.len());
+impl<'input, 'a> BlockCtx<'input, 'a> {
+    fn newtype(&mut self, t: ir::Typexpr) -> id::Typexpr {
+        let id = id::typexpr(self.t.len());
         self.t.push(t);
         id
     }
 
-    fn newlocal(&mut self, t: ir::Type) -> id::Local {
-        let id = id::local(self.f.locals.len());
-        self.f.locals.push(t);
+    fn newlocal(&mut self, t: ir::Type) -> id::Var {
+        let id = id::var(self.v.len());
+        self.v.push(t);
         id
     }
 
-    fn newfunc(&mut self, f: ir::Inst) -> id::Func {
-        let id = id::func(self.f.funcs.len());
-        self.f.funcs.push(f);
+    fn newfunc(&mut self, f: ir::Func) -> id::Func {
+        let id = id::func(self.f.len());
+        self.f.push(f);
         id
     }
 
-    fn gettype(&self, id: id::Typ) -> &ir::Typexpr {
-        &self.t[id.typ()]
+    fn gettype(&self, id: id::Typexpr) -> &ir::Typexpr {
+        &self.t[id.typexpr()]
     }
 
-    fn getlocal(&self, id: id::Local) -> ir::Type {
-        self.f.locals[id.local()]
+    fn getlocal(&self, id: id::Var) -> ir::Type {
+        self.v[id.var()]
     }
 
-    fn lookup(&self, name: &'input str) -> Option<(ir::Type, ir::Instr)> {
-        if let Some(&id) = self.l.get(name) {
-            Some((self.getlocal(id), ir::Instr::Get { id }))
-        } else if let Some(&id) = self.g.get(name) {
-            Some((
-                ir::Type::Size {
-                    val: ir::Size::Generic { id },
-                },
-                ir::Instr::Generic { id },
-            ))
-        } else {
-            None
-        }
+    fn instr(&mut self, t: ir::Type, expr: ir::Expr) -> id::Var {
+        let var = self.newlocal(t);
+        self.c.push(ir::Instr { var, expr });
+        var
     }
 
-    fn bind(&mut self, t: ir::Type, bind: ast::Bind<'input>) {
-        let id = self.newlocal(t);
-        self.f.body.push(ir::Instr::Set { id });
+    fn bind(&mut self, bind: ast::Bind<'input>, val: id::Var) {
         match bind {
             ast::Bind::Id { name } => {
-                self.l.insert(name, id);
+                self.l.insert(name, val);
             }
             ast::Bind::Vector { elems: _ } => todo!(),
             ast::Bind::Struct { members: _ } => todo!(),
@@ -179,69 +175,58 @@ impl<'input, 'a> FunCtx<'input, 'a> {
 
     fn unify(
         &mut self,
-        _f: &ir::Def<ir::Function>,
+        _f: &ir::Function,
         _args: &[ir::Type],
-    ) -> Result<(Vec<ir::Size>, ir::Type), TypeError> {
+    ) -> Result<(Vec<ir::Type>, ir::Type), TypeError> {
         todo!()
     }
 
-    fn typecheck(&mut self, expr: ast::Expr<'input>) -> Result<ir::Type, TypeError> {
+    fn typecheck(&mut self, expr: ast::Expr<'input>) -> Result<id::Var, TypeError> {
         // TODO: prevent clobbering and don't let variable names escape their scope
         match expr {
-            ast::Expr::Id { name } => {
-                let (t, instr) = self
-                    .lookup(name.val)
-                    .ok_or_else(|| TypeError::UnknownVar { name: name.span() })?;
-                self.f.body.push(instr);
-                Ok(t)
-            }
-            ast::Expr::Int { val } => {
-                self.f.body.push(ir::Instr::Int { val });
-                Ok(ir::Type::Size {
-                    val: ir::Size::Const {
-                        val: val
-                            .try_into()
-                            .expect("pointer sizes smaller than `u32` are not supported"),
-                    },
-                })
-            }
+            ast::Expr::Id { name } => self
+                .l
+                .get(name.val)
+                .copied()
+                .ok_or_else(|| TypeError::UnknownVar { name: name.span() }),
+            ast::Expr::Int { val: _ } => todo!(), // the IR doesn't currently have `Int`
             ast::Expr::Vector { elems } => {
-                let n = elems.len();
-                let mut t = None;
-                for elem in elems {
-                    // TODO: make sure all the element types are compatible
-                    t = Some(self.typecheck(elem)?);
-                }
-                match t {
-                    Some(elem) => Ok(ir::Type::Var {
-                        id: self.newtype(ir::Typexpr::Vector {
-                            elem,
-                            size: ir::Size::Const { val: n },
-                        }),
-                    }),
+                let vars = elems
+                    .into_iter()
+                    .map(|elem| self.typecheck(elem))
+                    .collect::<Result<Vec<id::Var>, TypeError>>()?;
+                match vars.first() {
+                    Some(&x) => {
+                        let t = self.newtype(ir::Typexpr::Array {
+                            index: ir::Type::Fin { size: vars.len() },
+                            elem: self.getlocal(x),
+                        });
+                        Ok(self.instr(ir::Type::Expr { id: t }, ir::Expr::Array { elems: vars }))
+                    }
                     None => Err(TypeError::EmptyVec),
                 }
             }
             ast::Expr::Struct { members: _ } => todo!(),
             ast::Expr::Index { val, index } => {
-                let t = self.typecheck(*val)?;
-                self.typecheck(*index)?; // TODO: ensure this is `Nat` and bounded by `val` size
-                self.f.body.push(ir::Instr::Index);
-                match t {
-                    ir::Type::Var { id } => match self.gettype(id) {
-                        ir::Typexpr::Vector { elem, .. } => Ok(*elem),
+                let v = self.typecheck(*val)?;
+                let i = self.typecheck(*index)?; // TODO: check index type
+                let t = match self.getlocal(v) {
+                    ir::Type::Expr { id } => match self.gettype(id) {
+                        ir::Typexpr::Ref { .. } => Err(TypeError::IndexRef),
+                        ir::Typexpr::Array { elem, .. } => Ok(*elem),
                         ir::Typexpr::Tuple { .. } => Err(TypeError::IndexTuple),
-                        ir::Typexpr::Typedef { def: _, params: _ } => todo!(),
+                        ir::Typexpr::Def { def: _, params: _ } => todo!(),
                     },
-                    _ => Err(TypeError::IndexPrimitive { t }),
-                }
+                    t => Err(TypeError::IndexPrimitive { t }),
+                }?;
+                Ok(self.instr(t, ir::Expr::Index { array: v, index: i }))
             }
             ast::Expr::Member { val, member } => {
-                let t = self.typecheck(*val)?;
-                match t {
-                    ir::Type::Var { id } => match self.gettype(id) {
-                        ir::Typexpr::Vector { elem, size: _ } => {
-                            let t = *elem;
+                let tuple = self.typecheck(*val)?;
+                match self.getlocal(tuple) {
+                    ir::Type::Expr { id } => match self.gettype(id) {
+                        ir::Typexpr::Ref { .. } => Err(TypeError::MemberRef),
+                        ir::Typexpr::Array { index: _, elem } => {
                             let i = match member.val {
                                 // TODO: check against vector size
                                 "r" | "x" => Ok(0),
@@ -253,189 +238,145 @@ impl<'input, 'a> FunCtx<'input, 'a> {
                                     swizzle: member.span(),
                                 }),
                             }?;
-                            self.f.body.push(ir::Instr::Int { val: i });
-                            self.f.body.push(ir::Instr::Index);
-                            Ok(t)
+                            Ok(self.instr(
+                                *elem,
+                                ir::Expr::Member {
+                                    tuple,
+                                    member: id::member(i),
+                                },
+                            ))
                         }
                         ir::Typexpr::Tuple { members: _ } => todo!(),
-                        ir::Typexpr::Typedef { def: _, params: _ } => todo!(),
+                        ir::Typexpr::Def { def: _, params: _ } => todo!(),
                     },
-                    _ => Err(TypeError::MemberPrimitive { t }),
+                    t => Err(TypeError::MemberPrimitive { t }),
                 }
             }
             ast::Expr::Let { bind, val, body } => {
-                let t = self.typecheck(*val)?;
-                self.bind(t, bind);
+                let var = self.typecheck(*val)?;
+                self.bind(bind, var);
                 self.typecheck(*body)
             }
             ast::Expr::Call { func, args } => {
-                let mut types = vec![];
-                for arg in args {
-                    types.push(self.typecheck(arg)?);
-                }
+                let vars = args
+                    .into_iter()
+                    .map(|elem| self.typecheck(elem))
+                    .collect::<Result<Vec<id::Var>, TypeError>>()?;
+                let types: Vec<ir::Type> = vars.iter().map(|&v| self.getlocal(v)).collect();
                 if let Some(def) = self.m.funcs.get(func.val) {
-                    let (params, ret) = self.unify(def, &types)?;
-                    let id = self.newfunc(ir::Inst {
+                    let (generics, ret) = self.unify(def, &types)?;
+                    let func = self.newfunc(ir::Func {
                         def: Rc::clone(def),
-                        params,
+                        generics,
                     });
-                    self.f.body.push(ir::Instr::Call { id });
-                    Ok(ret)
+                    let t = self.newtype(ir::Typexpr::Tuple { members: types });
+                    let arg =
+                        self.instr(ir::Type::Expr { id: t }, ir::Expr::Tuple { members: vars });
+                    Ok(self.instr(ret, ir::Expr::Call { func, arg }))
                 } else {
                     // TODO: validate argument types for builtin functions
-                    // TODO: support builtin functions on integers
                     match func.val {
-                        "abs" => {
-                            self.f.body.push(ir::Instr::Unary {
-                                op: ir::Unop::AbsReal,
-                            });
-                            Ok(ir::Type::Real)
-                        }
-                        "max" => {
-                            self.f.body.push(ir::Instr::Unary {
-                                op: ir::Unop::MaxReal,
-                            });
-                            Ok(ir::Type::Real)
-                        }
-                        "min" => {
-                            self.f.body.push(ir::Instr::Unary {
-                                op: ir::Unop::MinReal,
-                            });
-                            Ok(ir::Type::Real)
-                        }
-                        "prod" => {
-                            self.f.body.push(ir::Instr::Unary {
-                                op: ir::Unop::ProdReal,
-                            });
-                            Ok(ir::Type::Real)
-                        }
-                        "sqrt" => {
-                            self.f.body.push(ir::Instr::Unary { op: ir::Unop::Sqrt });
-                            Ok(ir::Type::Real)
-                        }
-                        "sum" => {
-                            self.f.body.push(ir::Instr::Unary {
-                                op: ir::Unop::SumReal,
-                            });
-                            Ok(ir::Type::Real)
-                        }
+                        "abs" => Ok(self.instr(
+                            ir::Type::F64,
+                            ir::Expr::Unary {
+                                op: ir::Unop::Abs,
+                                arg: vars[0],
+                            },
+                        )),
+                        "sqrt" => Ok(self.instr(
+                            ir::Type::F64,
+                            ir::Expr::Unary {
+                                op: ir::Unop::Abs,
+                                arg: vars[0],
+                            },
+                        )),
                         _ => Err(TypeError::UnknownFunc { name: func.span() }),
                     }
                 }
             }
             ast::Expr::If { cond, then, els } => {
-                self.typecheck(*cond)?; // TODO: ensure this is `Bool`
-                self.f.body.push(ir::Instr::If);
-                let t = self.typecheck(*then)?;
-                self.f.body.push(ir::Instr::Else);
-                self.typecheck(*els)?; // TODO: ensure this matches `t`
-                self.f.body.push(ir::Instr::End);
-                Ok(t)
+                let c = self.typecheck(*cond)?; // TODO: ensure this is `Bool`
+                let code = std::mem::take(&mut self.c);
+
+                let arg_then = self.newlocal(ir::Type::Unit);
+                let ret_then = self.typecheck(*then)?;
+                let block_then = id::block(self.b.len());
+                let code_then = std::mem::take(&mut self.c);
+                self.b.push(ir::Block {
+                    arg: arg_then,
+                    code: code_then,
+                    ret: ret_then,
+                });
+
+                let arg_els = self.newlocal(ir::Type::Unit);
+                let ret_els = self.typecheck(*els)?;
+                let block_els = id::block(self.b.len());
+                let code_els = std::mem::replace(&mut self.c, code);
+                self.b.push(ir::Block {
+                    arg: arg_els,
+                    code: code_els,
+                    ret: ret_els,
+                });
+
+                Ok(self.instr(
+                    self.getlocal(ret_then), // TODO: ensure this matches the type of `ret_els`
+                    ir::Expr::If {
+                        cond: c,
+                        then: block_then,
+                        els: block_els,
+                    },
+                ))
             }
-            ast::Expr::For { index, limit, body } => match self.lookup(limit.val) {
-                Some((ir::Type::Size { val }, _)) => {
-                    self.f.body.push(ir::Instr::For { limit: val });
-                    let id = self.newlocal(ir::Type::Nat { bound: val });
-                    self.l.insert(index, id);
-                    self.f.body.push(ir::Instr::Set { id });
-                    let t = self.typecheck(*body)?;
-                    self.f.body.push(ir::Instr::End);
-                    let id = self.newtype(ir::Typexpr::Vector { elem: t, size: val });
-                    Ok(ir::Type::Var { id })
-                }
-                Some(_) => Err(TypeError::ForNonSize),
-                None => Err(TypeError::UnknownVar { name: limit.span() }),
-            },
+            ast::Expr::For { index, limit, body } => {
+                let &id = self
+                    .g
+                    .get(limit.val)
+                    .ok_or_else(|| TypeError::UnknownVar { name: limit.span() })?;
+                let i = ir::Type::Generic { id };
+                let code = std::mem::take(&mut self.c);
+
+                let arg = self.newlocal(i);
+                self.l.insert(index, arg);
+                let elem = self.typecheck(*body)?;
+                let body = id::block(self.b.len());
+                let code_for = std::mem::replace(&mut self.c, code);
+                self.b.push(ir::Block {
+                    arg,
+                    code: code_for,
+                    ret: elem,
+                });
+
+                let v = self.newtype(ir::Typexpr::Array {
+                    index: i,
+                    elem: self.getlocal(elem),
+                });
+                Ok(self.instr(ir::Type::Expr { id: v }, ir::Expr::For { index: i, body }))
+            }
             ast::Expr::Unary { op: _, arg: _ } => todo!(),
             ast::Expr::Binary { op, left, right } => {
                 let l = self.typecheck(*left)?;
                 let r = self.typecheck(*right)?;
-                match (l, op, r) {
-                    // TODO: handle integer arithmetic
-                    (ir::Type::Real, tokens::Binop::Add, ir::Type::Real) => {
-                        self.f.body.push(ir::Instr::Binary {
-                            op: ir::Binop::AddReal,
-                        });
-                        Ok(ir::Type::Real)
-                    }
-                    (ir::Type::Real, tokens::Binop::Sub, ir::Type::Real) => {
-                        self.f.body.push(ir::Instr::Binary {
-                            op: ir::Binop::SubReal,
-                        });
-                        Ok(ir::Type::Real)
-                    }
-                    (ir::Type::Real, tokens::Binop::Mul, ir::Type::Real) => {
-                        self.f.body.push(ir::Instr::Binary {
-                            op: ir::Binop::MulReal,
-                        });
-                        Ok(ir::Type::Real)
-                    }
-                    (ir::Type::Real, tokens::Binop::Div, ir::Type::Real) => {
-                        self.f.body.push(ir::Instr::Binary {
-                            op: ir::Binop::DivReal,
-                        });
-                        Ok(ir::Type::Real)
-                    }
-
-                    // TODO: handle `mod` on other integer types
-                    (ir::Type::Int, tokens::Binop::Mod, ir::Type::Size { val }) => {
-                        self.f.body.push(ir::Instr::Binary { op: ir::Binop::Mod });
-                        Ok(ir::Type::Nat { bound: val })
-                    }
-
-                    // TODO: handle comparison on booleans and integers
-                    (ir::Type::Real, tokens::Binop::Eq, ir::Type::Real) => {
-                        self.f.body.push(ir::Instr::Binary {
-                            op: ir::Binop::EqReal,
-                        });
-                        Ok(ir::Type::Bool)
-                    }
-                    (ir::Type::Real, tokens::Binop::Neq, ir::Type::Real) => {
-                        self.f.body.push(ir::Instr::Binary {
-                            op: ir::Binop::NeqReal,
-                        });
-                        Ok(ir::Type::Bool)
-                    }
-                    (ir::Type::Real, tokens::Binop::Lt, ir::Type::Real) => {
-                        self.f.body.push(ir::Instr::Binary {
-                            op: ir::Binop::LtReal,
-                        });
-                        Ok(ir::Type::Bool)
-                    }
-                    (ir::Type::Real, tokens::Binop::Gt, ir::Type::Real) => {
-                        self.f.body.push(ir::Instr::Binary {
-                            op: ir::Binop::GtReal,
-                        });
-                        Ok(ir::Type::Bool)
-                    }
-                    (ir::Type::Real, tokens::Binop::Leq, ir::Type::Real) => {
-                        self.f.body.push(ir::Instr::Binary {
-                            op: ir::Binop::LeqReal,
-                        });
-                        Ok(ir::Type::Bool)
-                    }
-                    (ir::Type::Real, tokens::Binop::Geq, ir::Type::Real) => {
-                        self.f.body.push(ir::Instr::Binary {
-                            op: ir::Binop::GeqReal,
-                        });
-                        Ok(ir::Type::Bool)
-                    }
-
-                    (ir::Type::Bool, tokens::Binop::And, ir::Type::Bool) => {
-                        self.f.body.push(ir::Instr::Binary { op: ir::Binop::And });
-                        Ok(ir::Type::Bool)
-                    }
-                    (ir::Type::Bool, tokens::Binop::Or, ir::Type::Bool) => {
-                        self.f.body.push(ir::Instr::Binary { op: ir::Binop::Or });
-                        Ok(ir::Type::Bool)
-                    }
-
-                    _ => Err(TypeError::BadBinaryArgs {
-                        op,
-                        left: l,
-                        right: r,
-                    }),
-                }
+                let (t, binop) = match op {
+                    tokens::Binop::Add => (ir::Type::F64, ir::Binop::Add),
+                    tokens::Binop::Sub => (ir::Type::F64, ir::Binop::Sub),
+                    tokens::Binop::Mul => (ir::Type::F64, ir::Binop::Mul),
+                    tokens::Binop::Div => (ir::Type::F64, ir::Binop::Div),
+                    tokens::Binop::Mod => todo!(),
+                    tokens::Binop::Eq => (ir::Type::F64, ir::Binop::Eq),
+                    tokens::Binop::Neq => (ir::Type::F64, ir::Binop::Neq),
+                    tokens::Binop::Lt => (ir::Type::F64, ir::Binop::Lt),
+                    tokens::Binop::Gt => (ir::Type::F64, ir::Binop::Gt),
+                    tokens::Binop::Leq => (ir::Type::F64, ir::Binop::Leq),
+                    tokens::Binop::Geq => (ir::Type::F64, ir::Binop::Geq),
+                    tokens::Binop::And => (ir::Type::F64, ir::Binop::And),
+                    tokens::Binop::Or => (ir::Type::F64, ir::Binop::Or),
+                };
+                let expr = ir::Expr::Binary {
+                    op: binop,
+                    left: l,
+                    right: r,
+                };
+                Ok(self.instr(t, expr))
             }
         }
     }
@@ -447,15 +388,25 @@ impl<'input> Module<'input> {
             ast::Def::Type { name, mut members } => {
                 // TODO: check for duplicate field names
                 members.sort_by_key(|&(name, _)| name); // to ignore field order in literals
-                let (genericnames, typevars, fields) = parse_types(
+                let (genericnames, mut typevars, fields) = parse_types(
                     |s| self.types.get(s).map(|Type { def, .. }| Rc::clone(def)),
                     members.iter().map(|&(_, t)| t),
                 )?;
-                let t = Rc::new(ir::Def {
-                    generics: genericnames.len(),
-                    types: typevars,
-                    def: ir::Typexpr::Tuple { members: fields },
-                });
+                let def = ir::Type::Expr {
+                    id: id::typexpr(typevars.len()),
+                };
+                typevars.push(ir::Typexpr::Tuple { members: fields });
+                let t = Rc::new(
+                    ir::build::Typedef {
+                        generics: vec![Some(ir::Constraint::Index); genericnames.len()],
+                        types: typevars,
+                        def,
+                        // TODO: check constraints once the text syntax supports non-vector structs
+                        constraint: Some(ir::Constraint::Vector),
+                    }
+                    .check()
+                    .expect("typecheck should catch errors"),
+                );
                 // TODO: check for duplicate type names
                 self.types.insert(
                     name,
@@ -474,34 +425,59 @@ impl<'input> Module<'input> {
                 typ,
                 body,
             } => {
-                let (genericnames, typevars, mut paramtypes) = parse_types(
+                let (genericnames, mut typevars, mut paramtypes) = parse_types(
                     |s| self.types.get(s).map(|Type { def, .. }| Rc::clone(def)),
                     // TODO: handle return type separately from params w.r.t. generics
                     params.iter().map(|&(_, t)| t).chain([typ]),
                 )?;
+                let generics = vec![Some(ir::Constraint::Index); genericnames.len()];
                 let ret = paramtypes.pop().expect("`parse_types` should preserve len");
-                let mut ctx = FunCtx {
+                let param = ir::Type::Expr {
+                    id: id::typexpr(paramtypes.len()),
+                };
+                typevars.push(ir::Typexpr::Tuple {
+                    members: paramtypes.clone(), // should be a way to do this without `clone`...
+                });
+                let arg = id::var(0);
+                let mut ctx = BlockCtx {
                     m: self,
-                    f: ir::Function {
-                        params: paramtypes.clone(), // should be a way to do this without `clone`...
-                        ret: vec![ret],
-                        locals: vec![],
-                        funcs: vec![],
-                        body: vec![],
-                    },
-                    t: typevars,
                     g: genericnames,
                     l: HashMap::new(),
+                    t: typevars,
+                    f: vec![],
+                    v: vec![param],
+                    b: vec![],
+                    c: vec![],
                 };
-                for ((bind, _), t) in params.into_iter().zip(paramtypes).rev() {
-                    ctx.bind(t, bind);
+                for (i, ((bind, _), t)) in params.into_iter().zip(paramtypes).enumerate() {
+                    let expr = ir::Expr::Member {
+                        tuple: arg,
+                        member: id::member(i),
+                    };
+                    let var = ctx.instr(t, expr);
+                    ctx.bind(bind, var);
                 }
-                ctx.typecheck(body)?; // TODO: ensure this matches `ret`
-                let f = Rc::new(ir::Def {
-                    generics: ctx.g.len(),
-                    types: ctx.t,
-                    def: ctx.f,
+                let retvar = ctx.typecheck(body)?; // TODO: ensure this matches `ret`
+                let main = id::block(ctx.b.len());
+                ctx.b.push(ir::Block {
+                    arg,
+                    code: ctx.c,
+                    ret: retvar,
                 });
+                let f = Rc::new(
+                    ir::build::Function {
+                        generics,
+                        types: ctx.t,
+                        funcs: ctx.f,
+                        param,
+                        ret,
+                        vars: ctx.v,
+                        blocks: ctx.b,
+                        main,
+                    }
+                    .check()
+                    .expect("typecheck should catch errors"),
+                );
                 // TODO: check for duplicate function names
                 self.funcs.insert(name, f);
             }
