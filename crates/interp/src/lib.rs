@@ -1,5 +1,5 @@
-use rose::{id, Binop, Block, Expr, Func, Function, Instr, Type, Typexpr, Unop};
-use std::rc::Rc;
+use rose::{id, Binop, Expr, Function, Type, Typexpr, Unop};
+use std::{cell::Cell, rc::Rc};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -39,177 +39,248 @@ pub enum Val {
     Bool(bool),
     F64(f64),
     Fin(usize),
-    // TODO: support `Ref`
+    Ref(Rc<Cell<f64>>),
     Array(Rc<Vec<Val>>), // assume all indices are `Fin`
     Tuple(Rc<Vec<Val>>),
+}
+
+impl Val {
+    fn bool(&self) -> bool {
+        match self {
+            &Val::Bool(x) => x,
+            _ => unreachable!(),
+        }
+    }
+
+    fn f64(&self) -> f64 {
+        match self {
+            &Val::F64(x) => x,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Typeval {
+    /// Return zero a value of `Ref` type for this type, which must satisfy `Constraint::Vector`.
+    fn zero(&self) -> Val {
+        match self {
+            Self::F64 => Val::Ref(Rc::new(Cell::new(0.))),
+            Self::Array { index, elem } => match index.as_ref() {
+                &Typeval::Fin { size } => Val::Array(Rc::new(vec![elem.as_ref().zero(); size])),
+                _ => unreachable!(),
+            },
+            Self::Tuple { members } => {
+                Val::Tuple(Rc::new(members.iter().map(|x| x.zero()).collect()))
+            }
+            Self::Unit | Self::Bool | Self::Fin { .. } | Self::Scope | Self::Ref { .. } => {
+                unreachable!()
+            }
+        }
+    }
+}
+
+impl Val {
+    /// Pull out the immutable inner value represented by this mutable `Ref` type.
+    fn immut(&self) -> Self {
+        match self {
+            Self::Ref(x) => Self::F64(x.get()),
+            Self::Array(x) => Self::Array(Rc::new(x.iter().map(|x| x.immut()).collect())),
+            Self::Tuple(x) => Self::Tuple(Rc::new(x.iter().map(|x| x.immut()).collect())),
+            Self::Unit | Self::Bool(..) | Self::F64(..) | Self::Fin { .. } => {
+                unreachable!()
+            }
+        }
+    }
+
+    /// Add `x` to this value, which must represent a mutable `Ref` type.
+    fn add(&self, x: &Self) {
+        match (self, x) {
+            (Self::Ref(a), Self::F64(b)) => a.set(a.get() + b),
+            (Self::Array(a), Self::Array(b)) => {
+                for (a, b) in a.iter().zip(b.iter()) {
+                    a.add(b);
+                }
+            }
+            (Self::Tuple(a), Self::Tuple(b)) => {
+                for (a, b) in a.iter().zip(b.iter()) {
+                    a.add(b);
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+fn resolve(generics: &[Typeval], types: &[Typeval], t: Type) -> Typeval {
+    match t {
+        Type::Unit => Typeval::Unit,
+        Type::Bool => Typeval::Bool,
+        Type::F64 => Typeval::F64,
+        Type::Fin { size } => Typeval::Fin { size },
+        Type::Generic { id } => generics[id.generic()].clone(),
+        Type::Scope { id: _ } => Typeval::Scope,
+        Type::Expr { id } => types[id.typexpr()].clone(),
+    }
 }
 
 struct Interpreter<'a> {
     f: &'a Function,
     generics: &'a [Typeval],
+    types: Vec<Typeval>,
     vars: Vec<Option<Val>>,
 }
 
 impl<'a> Interpreter<'a> {
-    fn pop(&mut self) -> Result<Val, Error> {
-        self.stack.pop().ok_or(Error::EmptyStack)
-    }
-
-    fn pop_bool(&mut self) -> Result<bool, Error> {
-        match self.pop()? {
-            Val::Bool(x) => Ok(x),
-            x => Err(type_error(Type::Bool, &x)),
+    fn new(f: &'a Function, generics: &'a [Typeval]) -> Self {
+        let mut types = vec![];
+        for t in f.types() {
+            let v = match t {
+                &Typexpr::Ref { scope: _, inner } => Typeval::Ref {
+                    inner: Rc::new(resolve(generics, &types, inner)),
+                },
+                &Typexpr::Array { index, elem } => Typeval::Array {
+                    index: Rc::new(resolve(generics, &types, index)),
+                    elem: Rc::new(resolve(generics, &types, elem)),
+                },
+                Typexpr::Tuple { members } => Typeval::Tuple {
+                    members: Rc::new(
+                        members
+                            .iter()
+                            .map(|x| resolve(generics, &types, *x))
+                            .collect(),
+                    ),
+                },
+                Typexpr::Def { def: _, params: _ } => todo!(),
+            };
+            types.push(v);
+        }
+        Self {
+            f,
+            generics,
+            types,
+            vars: vec![None; f.vars().len()],
         }
     }
 
-    fn pop_f64(&mut self) -> Result<f64, Error> {
-        match self.pop()? {
-            Val::F64(x) => Ok(x),
-            x => Err(type_error(Type::F64, &x)),
-        }
+    fn resolve(&self, t: Type) -> Typeval {
+        resolve(self.generics, &self.types, t)
     }
 
-    fn unary_bool(&mut self, f: impl Fn(bool) -> bool) -> Result<(), Error> {
-        let a = self.pop_bool()?;
-        self.stack.push(Val::Bool(f(a)));
-        Ok(())
-    }
-
-    fn unary_f64(&mut self, f: impl Fn(f64) -> f64) -> Result<(), Error> {
-        let a = self.pop_f64()?;
-        self.stack.push(Val::F64(f(a)));
-        Ok(())
-    }
-
-    fn unary(&mut self, op: Unop) -> Result<(), Error> {
-        use Unop::*;
-        match op {
-            Not => self.unary_bool(|a| !a),
-            NegReal => self.unary_f64(|a| -a),
-            AbsReal => self.unary_f64(|a| a.abs()),
-            Sqrt => self.unary_f64(|a| a.sqrt()),
-        }
-    }
-
-    fn logic(&mut self, f: impl Fn(bool, bool) -> bool) -> Result<(), Error> {
-        let b = self.pop_bool()?;
-        let a = self.pop_bool()?;
-        self.stack.push(Val::Bool(f(a, b)));
-        Ok(())
-    }
-
-    fn comp_f64(&mut self, f: impl Fn(f64, f64) -> bool) -> Result<(), Error> {
-        let b = self.pop_f64()?;
-        let a = self.pop_f64()?;
-        self.stack.push(Val::Bool(f(a, b)));
-        Ok(())
-    }
-
-    fn bin_f64(&mut self, f: impl Fn(f64, f64) -> f64) -> Result<(), Error> {
-        let b = self.pop_f64()?;
-        let a = self.pop_f64()?;
-        self.stack.push(Val::F64(f(a, b)));
-        Ok(())
-    }
-
-    fn binary(&mut self, op: Binop) -> Result<(), Error> {
-        use Binop::*;
-        match op {
-            And => self.logic(|a, b| a && b),
-            Or => self.logic(|a, b| a || b),
-            EqBool => self.logic(|a, b| a == b),
-            NeqBool => self.logic(|a, b| a != b),
-            NeqReal => self.comp_f64(|a, b| a != b),
-            LtReal => self.comp_f64(|a, b| a < b),
-            LeqReal => self.comp_f64(|a, b| a <= b),
-            EqReal => self.comp_f64(|a, b| a == b),
-            GtReal => self.comp_f64(|a, b| a > b),
-            GeqReal => self.comp_f64(|a, b| a >= b),
-            AddReal => self.bin_f64(|a, b| a + b),
-            SubReal => self.bin_f64(|a, b| a - b),
-            MulReal => self.bin_f64(|a, b| a * b),
-            DivReal => self.bin_f64(|a, b| a / b),
-        }
+    fn get(&self, var: id::Var) -> &Val {
+        self.vars[var.var()].as_ref().unwrap()
     }
 
     fn expr(&mut self, expr: &Expr) -> Val {
-        use Expr::*;
         match expr {
-            Unit => Val::Unit,
-            Bool { val } => Val::Bool(*val),
-            F64 { val } => Val::F64(*val),
-            Fin { val } => Val::Fin(*val),
+            Expr::Unit => Val::Unit,
+            &Expr::Bool { val } => Val::Bool(val),
+            &Expr::F64 { val } => Val::F64(val),
+            &Expr::Fin { val } => Val::Fin(val),
 
-            Get { id } => {
-                let val = self.locals.get(id.local()).ok_or(Error::BadLocal {
-                    num: self.f.def.locals.len(),
-                    id,
-                })?;
-                self.stack
-                    .push(val.as_ref().ok_or(Error::UnsetLocal { id })?.clone());
-                Ok(())
+            Expr::Array { elems } => Val::Array(Rc::new(
+                elems.iter().map(|&x| self.get(x).clone()).collect(),
+            )),
+            Expr::Tuple { members } => Val::Tuple(Rc::new(
+                members.iter().map(|&x| self.get(x).clone()).collect(),
+            )),
+
+            &Expr::Index { array, index } => match (self.get(array), self.get(index)) {
+                (Val::Array(v), &Val::Fin(i)) => v[i].clone(),
+                _ => unreachable!(),
+            },
+            &Expr::Member { tuple, member } => match self.get(tuple) {
+                Val::Tuple(x) => x[member.member()].clone(),
+                _ => unreachable!(),
+            },
+
+            // a `Ref` of `F64` becomes `Ref`, while composites just wrap those individual refs
+            &Expr::Slice { array, index } => match (self.get(array), self.get(index)) {
+                (Val::Array(v), &Val::Fin(i)) => v[i].clone(),
+                _ => unreachable!(),
+            },
+
+            &Expr::Unary { op, arg } => {
+                let x = self.get(arg);
+                match op {
+                    Unop::Not => Val::Bool(!x.bool()),
+
+                    Unop::Neg => Val::F64(-x.f64()),
+                    Unop::Abs => Val::F64(x.f64().abs()),
+                    Unop::Sqrt => Val::F64(x.f64().sqrt()),
+                }
             }
-            Set { id } => {
-                let val = self.pop()?;
-                let local = self.locals.get_mut(id.local()).ok_or(Error::BadLocal {
-                    num: self.f.def.locals.len(),
-                    id,
-                })?;
-                *local = Some(val);
-                Ok(())
+            &Expr::Binary { op, left, right } => {
+                let x = self.get(left);
+                let y = self.get(right);
+                match op {
+                    Binop::And => Val::Bool(x.bool() && y.bool()),
+                    Binop::Or => Val::Bool(x.bool() || y.bool()),
+                    Binop::Iff => Val::Bool(x.bool() == y.bool()),
+                    Binop::Xor => Val::Bool(x.bool() != y.bool()),
+
+                    Binop::Neq => Val::Bool(x.f64() != y.f64()),
+                    Binop::Lt => Val::Bool(x.f64() < y.f64()),
+                    Binop::Leq => Val::Bool(x.f64() <= y.f64()),
+                    Binop::Eq => Val::Bool(x.f64() == y.f64()),
+                    Binop::Gt => Val::Bool(x.f64() > y.f64()),
+                    Binop::Geq => Val::Bool(x.f64() >= y.f64()),
+
+                    Binop::Add => Val::F64(x.f64() + y.f64()),
+                    Binop::Sub => Val::F64(x.f64() - y.f64()),
+                    Binop::Mul => Val::F64(x.f64() * y.f64()),
+                    Binop::Div => Val::F64(x.f64() / y.f64()),
+                }
             }
-            Int { val } => {
-                self.stack.push(Val::I32(
-                    val.try_into().map_err(|_| Error::U32TooBig { val })?,
-                ));
-                Ok(())
+
+            &Expr::Call { func, arg } => {
+                let f = &self.f.funcs()[func.func()];
+                let generics: Vec<Typeval> = f.generics.iter().map(|&t| self.resolve(t)).collect();
+                call(&f.def, &generics, self.get(arg).clone())
             }
-            Real { val } => {
-                self.stack.push(Val::F64(val));
-                Ok(())
+            &Expr::If { cond, then, els } => {
+                if self.get(cond).bool() {
+                    self.block(then, Val::Unit).clone()
+                } else {
+                    self.block(els, Val::Unit).clone()
+                }
             }
-            Vector { id: _ } => todo!(),
-            Tuple { id: _ } => todo!(),
-            Index => todo!(),
-            Member { id: _ } => todo!(),
-            Call { id } => {
-                let func = self.f.def.funcs.get(id.func()).ok_or(Error::BadFunc {
-                    num: self.f.def.funcs.len(),
-                    id,
-                })?;
-                let generics: Result<Vec<usize>, Error> = func
-                    .params
-                    .iter()
-                    .map(|&size| match size {
-                        Size::Const { val } => Ok(val),
-                        Size::Generic { id } => self.get_generic(id),
-                    })
+            &Expr::For { index, body } => {
+                let n = match self.resolve(index) {
+                    Typeval::Fin { size } => size,
+                    _ => unreachable!(),
+                };
+                let v: Vec<Val> = (0..n)
+                    .map(|i| self.block(body, Val::Fin(i)).clone())
                     .collect();
-                let g = func.def.as_ref();
-                let args = self
-                    .stack
-                    .drain(self.stack.len() - g.def.params.len()..) // TODO: don't panic
-                    .collect();
-                self.stack.append(&mut interp(g, &generics?, args)?);
-                Ok(())
+                Val::Array(Rc::new(v))
             }
-            Unary { op } => self.unary(op),
-            Binary { op } => self.binary(op),
-            If => todo!(),
-            Else => todo!(),
-            End => todo!(),
-            For { limit: _ } => todo!(),
+            &Expr::Accum { var, vector, body } => {
+                let x = self.resolve(vector).zero();
+                let y = self.block(body, x.clone()).clone();
+                self.vars[var.var()] = Some(x.immut());
+                y
+            }
+
+            &Expr::Add { accum, addend } => {
+                self.get(accum).add(self.get(addend));
+                Val::Unit
+            }
         }
     }
 
-    fn block(&mut self, b: id::Block, arg: Val) -> Val {
+    fn block(&mut self, b: id::Block, arg: Val) -> &Val {
         let block = &self.f.blocks()[b.block()];
         self.vars[block.arg.var()] = Some(arg);
         for instr in &block.code {
             self.vars[instr.var.var()] = Some(self.expr(&instr.expr));
         }
-        self.vars[block.ret.var()].unwrap()
+        self.vars[block.ret.var()].as_ref().unwrap()
     }
+}
+
+/// Assumes `generics` and `arg` are valid.
+fn call(f: &Function, generics: &[Typeval], arg: Val) -> Val {
+    Interpreter::new(f, generics).block(f.main(), arg).clone()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -218,21 +289,17 @@ pub enum Error {}
 /// Guaranteed not to panic if `f` is valid.
 pub fn interp(f: &Function, generics: &[Typeval], arg: Val) -> Result<Val, Error> {
     // TODO: check that `generics` and `arg` are valid
-    let mut interpreter = Interpreter {
-        f,
-        generics,
-        vars: vec![None; f.vars().len()],
-    };
-    Ok(interpreter.block(f.main(), arg))
+    Ok(call(f, generics, arg))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rose::{build, Block, Func, Instr};
 
     #[test]
     fn test_two_plus_two() {
-        let f = Function {
+        let f = build::Function {
             generics: vec![],
             types: vec![Typexpr::Tuple {
                 members: vec![Type::F64, Type::F64],
@@ -275,7 +342,9 @@ mod tests {
                 ret: id::var(3),
             }],
             main: id::block(0),
-        };
+        }
+        .check()
+        .unwrap();
         let answer = interp(
             &f,
             &[],
@@ -287,24 +356,28 @@ mod tests {
 
     #[test]
     fn test_nested_call() {
-        let f = Rc::new(Function {
-            generics: vec![],
-            types: vec![],
-            funcs: vec![],
-            param: Type::Unit,
-            ret: Type::F64,
-            vars: vec![Type::Unit, Type::F64],
-            blocks: vec![Block {
-                arg: id::var(0),
-                code: vec![Instr {
-                    var: id::var(1),
-                    expr: Expr::F64 { val: 42. },
+        let f = Rc::new(
+            build::Function {
+                generics: vec![],
+                types: vec![],
+                funcs: vec![],
+                param: Type::Unit,
+                ret: Type::F64,
+                vars: vec![Type::Unit, Type::F64],
+                blocks: vec![Block {
+                    arg: id::var(0),
+                    code: vec![Instr {
+                        var: id::var(1),
+                        expr: Expr::F64 { val: 42. },
+                    }],
+                    ret: id::var(1),
                 }],
-                ret: id::var(1),
-            }],
-            main: id::block(0),
-        });
-        let g = Function {
+                main: id::block(0),
+            }
+            .check()
+            .unwrap(),
+        );
+        let g = build::Function {
             generics: vec![],
             types: vec![],
             funcs: vec![Func {
@@ -336,7 +409,9 @@ mod tests {
                 ret: id::var(2),
             }],
             main: id::block(0),
-        };
+        }
+        .check()
+        .unwrap();
         let answer = interp(&g, &[], Val::Unit).unwrap();
         assert_eq!(answer, Val::F64(1764.));
     }
