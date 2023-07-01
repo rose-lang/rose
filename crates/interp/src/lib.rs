@@ -7,6 +7,30 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use ts_rs::TS;
 
+/// A resolved type.
+#[cfg_attr(test, derive(TS), ts(export))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug)]
+pub enum Typeval {
+    Unit,
+    Bool,
+    F64,
+    Fin {
+        size: usize,
+    },
+    Scope, // we erase scope info in the interpreter
+    Ref {
+        inner: Rc<Typeval>,
+    },
+    Array {
+        index: Rc<Typeval>,
+        elem: Rc<Typeval>,
+    },
+    Tuple {
+        members: Rc<Vec<Typeval>>,
+    },
+}
+
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
@@ -14,66 +38,15 @@ pub enum Val {
     Unit,
     Bool(bool),
     F64(f64),
+    Fin(usize),
+    // TODO: support `Ref`
+    Array(Rc<Vec<Val>>), // assume all indices are `Fin`
     Tuple(Rc<Vec<Val>>),
-    Vector(Rc<Vec<Val>>),
-}
-
-fn type_of(x: &Val) -> Type {
-    match x {
-        Val::Unit => Type::Unit,
-        Val::Bool(_) => Type::Bool,
-        Val::F64(_) => Type::F64,
-        Val::Tuple(_) => todo!(),
-        Val::Vector(_) => todo!(),
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("expected {expected} generics, got {actual}")]
-    WrongGenerics { expected: usize, actual: usize },
-
-    #[error("expected {expected} args, got {actual}")]
-    WrongArgs { expected: usize, actual: usize },
-
-    #[error("empty stack")]
-    EmptyStack,
-
-    #[error("have {num} generics, {id:?} out of range")]
-    BadGeneric { num: usize, id: id::Generic },
-
-    #[error("have {num} locals, {id:?} out of range")]
-    BadLocal { num: usize, id: id::Var },
-
-    #[error("have {num} function references, {id:?} out of range")]
-    BadFunc { num: usize, id: id::Func },
-
-    #[error("local {id:?} is unset")]
-    UnsetLocal { id: id::Var },
-
-    #[error("expected primitive type {expected:?}, got {actual:?}")]
-    ExpectedPrimitive { expected: Type, actual: Type },
-
-    #[error("expected vector, got type {actual:?}")]
-    ExpectedVector { actual: Type },
-
-    #[error("u32 {val} too big for i32")]
-    U32TooBig { val: u32 },
-
-    #[error("usize {val} too big for i32")]
-    UsizeTooBig { val: usize },
-}
-
-fn type_error(t: Type, x: &Val) -> Error {
-    Error::ExpectedPrimitive {
-        expected: t,
-        actual: type_of(x),
-    }
 }
 
 struct Interpreter<'a> {
     f: &'a Function,
-    generics: &'a [usize],
+    generics: &'a [Typeval],
     vars: Vec<Option<Val>>,
 }
 
@@ -159,16 +132,14 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn instr(&mut self, instr: &Instr) -> Result<(), Error> {
+    fn expr(&mut self, expr: &Expr) -> Val {
         use Expr::*;
-        match instr.expr {
-            Generic { id } => {
-                let val = self.get_generic(id)?;
-                self.stack.push(Val::I32(
-                    val.try_into().map_err(|_| Error::UsizeTooBig { val })?,
-                ));
-                Ok(())
-            }
+        match expr {
+            Unit => Val::Unit,
+            Bool { val } => Val::Bool(*val),
+            F64 { val } => Val::F64(*val),
+            Fin { val } => Val::Fin(*val),
+
             Get { id } => {
                 let val = self.locals.get(id.local()).ok_or(Error::BadLocal {
                     num: self.f.def.locals.len(),
@@ -185,10 +156,6 @@ impl<'a> Interpreter<'a> {
                     id,
                 })?;
                 *local = Some(val);
-                Ok(())
-            }
-            Bool { val } => {
-                self.stack.push(Val::Bool(val));
                 Ok(())
             }
             Int { val } => {
@@ -234,32 +201,29 @@ impl<'a> Interpreter<'a> {
             For { limit: _ } => todo!(),
         }
     }
+
+    fn block(&mut self, b: id::Block, arg: Val) -> Val {
+        let block = &self.f.blocks()[b.block()];
+        self.vars[block.arg.var()] = Some(arg);
+        for instr in &block.code {
+            self.vars[instr.var.var()] = Some(self.expr(&instr.expr));
+        }
+        self.vars[block.ret.var()].unwrap()
+    }
 }
 
-// TODO: return a stack trace with instruction indices, instead of just the error kind
-pub fn interp(f: &Function, generics: &[usize], args: Vec<Val>) -> Result<Vec<Val>, Error> {
-    if generics.len() != f.generics {
-        return Err(Error::WrongGenerics {
-            expected: f.generics,
-            actual: generics.len(),
-        });
-    }
-    if args.len() != f.def.params.len() {
-        return Err(Error::WrongArgs {
-            expected: f.def.params.len(),
-            actual: args.len(),
-        });
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum Error {}
+
+/// Guaranteed not to panic if `f` is valid.
+pub fn interp(f: &Function, generics: &[Typeval], arg: Val) -> Result<Val, Error> {
+    // TODO: check that `generics` and `arg` are valid
     let mut interpreter = Interpreter {
         f,
         generics,
-        locals: vec![None; f.def.locals.len()],
-        stack: args,
+        vars: vec![None; f.vars().len()],
     };
-    for &instr in &f.def.body {
-        interpreter.instr(instr)?;
-    }
-    Ok(interpreter.stack)
+    Ok(interpreter.block(f.main(), arg))
 }
 
 #[cfg(test)]
@@ -312,8 +276,13 @@ mod tests {
             }],
             main: id::block(0),
         };
-        let answer = interp(&f, &[], vec![Val::F64(2.), Val::F64(2.)]).unwrap();
-        assert_eq!(answer, vec![Val::F64(4.)]);
+        let answer = interp(
+            &f,
+            &[],
+            Val::Tuple(Rc::new(vec![Val::F64(2.), Val::F64(2.)])),
+        )
+        .unwrap();
+        assert_eq!(answer, Val::F64(4.));
     }
 
     #[test]
@@ -368,7 +337,7 @@ mod tests {
             }],
             main: id::block(0),
         };
-        let answer = interp(&g, &[], vec![]).unwrap();
-        assert_eq!(answer, vec![Val::F64(1764.)]);
+        let answer = interp(&g, &[], Val::Unit).unwrap();
+        assert_eq!(answer, Val::F64(1764.));
     }
 }
