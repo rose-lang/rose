@@ -108,12 +108,14 @@ fn parse_types<'input>(
     Ok((generics, typevars, types))
 }
 
+#[derive(Debug)]
 pub struct Type<'input> {
     pub def: Rc<rose::Typedef>,
     /// Sorted lexicographically.
     pub fields: Vec<&'input str>,
 }
 
+#[derive(Debug)]
 pub struct Module<'input> {
     pub types: HashMap<&'input str, Type<'input>>,
     pub funcs: HashMap<&'input str, Rc<rose::Function>>,
@@ -433,7 +435,7 @@ impl<'input> Module<'input> {
                 let generics = vec![Some(ir::Constraint::Index); genericnames.len()];
                 let ret = paramtypes.pop().expect("`parse_types` should preserve len");
                 let param = ir::Type::Expr {
-                    id: id::typexpr(paramtypes.len()),
+                    id: id::typexpr(typevars.len()),
                 };
                 typevars.push(ir::Typexpr::Tuple {
                     members: paramtypes.clone(), // should be a way to do this without `clone`...

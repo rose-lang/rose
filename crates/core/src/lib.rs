@@ -1,7 +1,7 @@
 pub mod build;
 pub mod id;
 
-use std::rc::Rc;
+use std::{fmt, rc::Rc};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -69,7 +69,30 @@ pub enum Typexpr {
     },
 }
 
+impl fmt::Debug for Typexpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ref { scope, inner } => f
+                .debug_struct("Ref")
+                .field("scope", scope)
+                .field("inner", inner)
+                .finish(),
+            Self::Array { index, elem } => f
+                .debug_struct("Array")
+                .field("index", index)
+                .field("elem", elem)
+                .finish(),
+            Self::Tuple { members } => f.debug_struct("Tuple").field("members", members).finish(),
+            Self::Def { def: _, params } => f
+                .debug_struct("Def")
+                .field("params", params)
+                .finish_non_exhaustive(), // omit `def` because the graph might not be a tree
+        }
+    }
+}
+
 /// A referenceable type definition. Guaranteed to be well-formed.
+#[derive(Debug)]
 pub struct Typedef {
     generics: Vec<Option<Constraint>>,
     types: Vec<Typexpr>,
@@ -105,7 +128,16 @@ pub struct Func {
     pub generics: Vec<Type>,
 }
 
+impl fmt::Debug for Func {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Func")
+            .field("generics", &self.generics)
+            .finish_non_exhaustive() // omit `def` because the graph might not be a tree
+    }
+}
+
 /// A referenceable function definition. Guaranteed to be well-formed.
+#[derive(Debug)]
 pub struct Function {
     generics: Vec<Option<Constraint>>,
     types: Vec<Typexpr>,
