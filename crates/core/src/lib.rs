@@ -1,4 +1,3 @@
-pub mod build;
 pub mod id;
 
 use std::{fmt, rc::Rc};
@@ -91,35 +90,17 @@ impl fmt::Debug for Typexpr {
     }
 }
 
-/// A referenceable type definition. Guaranteed to be well-formed.
+/// A referenceable type definition.
 #[derive(Debug)]
 pub struct Typedef {
-    generics: Vec<Option<Constraint>>,
-    types: Vec<Typexpr>,
-    def: Type,
-    constraint: Option<Constraint>,
-}
-
-impl Typedef {
     /// Generic type parameters.
-    pub fn generics(&self) -> &[Option<Constraint>] {
-        &self.generics
-    }
-
+    pub generics: Vec<Option<Constraint>>,
     /// Nontrivial types used in this typedef.
-    pub fn types(&self) -> &[Typexpr] {
-        &self.types
-    }
-
+    pub types: Vec<Typexpr>,
     /// The definition of this type.
-    pub fn def(&self) -> Type {
-        self.def
-    }
-
+    pub def: Type,
     /// Constraint satisfied by this type, if any.
-    pub fn constraint(&self) -> Option<Constraint> {
-        self.constraint
-    }
+    pub constraint: Option<Constraint>,
 }
 
 /// Reference to a function, with types supplied for its generic parameters.
@@ -136,59 +117,25 @@ impl fmt::Debug for Func {
     }
 }
 
-/// A referenceable function definition. Guaranteed to be well-formed.
+/// A referenceable function definition.
 #[derive(Debug)]
 pub struct Function {
-    generics: Vec<Option<Constraint>>,
-    types: Vec<Typexpr>,
-    funcs: Vec<Func>,
-    param: Type,
-    ret: Type,
-    vars: Vec<Type>,
-    blocks: Vec<Block>,
-    main: id::Block,
-}
-
-impl Function {
     /// Generic type parameters.
-    pub fn generics(&self) -> &[Option<Constraint>] {
-        &self.generics
-    }
-
+    pub generics: Vec<Option<Constraint>>,
     /// Nontrivial types used in this function definition.
-    pub fn types(&self) -> &[Typexpr] {
-        &self.types
-    }
-
+    pub types: Vec<Typexpr>,
     /// Instantiations referenced functions with generic type parameters.
-    pub fn funcs(&self) -> &[Func] {
-        &self.funcs
-    }
-
+    pub funcs: Vec<Func>,
     /// Parameter types.
-    pub fn param(&self) -> Type {
-        self.param
-    }
-
+    pub param: Type,
     /// Return types.
-    pub fn ret(&self) -> Type {
-        self.ret
-    }
-
+    pub ret: Type,
     /// Local variable types.
-    pub fn vars(&self) -> &[Type] {
-        &self.vars
-    }
-
+    pub vars: Vec<Type>,
     /// Blocks of code.
-    pub fn blocks(&self) -> &[Block] {
-        &self.blocks
-    }
-
+    pub blocks: Vec<Block>,
     /// Main block.
-    pub fn main(&self) -> id::Block {
-        self.main
-    }
+    pub main: id::Block,
 }
 
 #[cfg_attr(test, derive(TS), ts(export))]

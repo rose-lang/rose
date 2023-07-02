@@ -1,4 +1,4 @@
-use rose::{build, id};
+use rose::id;
 use serde::Serialize;
 use std::rc::Rc;
 use wasm_bindgen::prelude::{wasm_bindgen, JsError, JsValue};
@@ -36,7 +36,7 @@ pub struct Context {
 }
 
 #[wasm_bindgen]
-pub fn bake(ctx: Context, main: usize) -> Result<Func, JsError> {
+pub fn bake(ctx: Context, main: usize) -> Func {
     let Context {
         generics,
         types,
@@ -46,19 +46,16 @@ pub fn bake(ctx: Context, main: usize) -> Result<Func, JsError> {
         vars,
         blocks,
     } = ctx;
-    Ok(Func(Rc::new(
-        build::Function {
-            generics,
-            types,
-            funcs,
-            param,
-            ret,
-            vars,
-            blocks,
-            main: id::block(main),
-        }
-        .check()?,
-    )))
+    Func(Rc::new(rose::Function {
+        generics,
+        types,
+        funcs,
+        param,
+        ret,
+        vars,
+        blocks,
+        main: id::block(main),
+    }))
 }
 
 /// A block under construction. Implicitly refers to the current `Context`.

@@ -133,7 +133,7 @@ struct Interpreter<'a> {
 impl<'a> Interpreter<'a> {
     fn new(f: &'a Function, generics: &'a [Typeval]) -> Self {
         let mut types = vec![];
-        for t in f.types() {
+        for t in &f.types {
             let v = match t {
                 &Typexpr::Ref { scope: _, inner } => Typeval::Ref {
                     inner: Rc::new(resolve(generics, &types, inner)),
@@ -158,7 +158,7 @@ impl<'a> Interpreter<'a> {
             f,
             generics,
             types,
-            vars: vec![None; f.vars().len()],
+            vars: vec![None; f.vars.len()],
         }
     }
 
@@ -233,7 +233,7 @@ impl<'a> Interpreter<'a> {
             }
 
             &Expr::Call { func, arg } => {
-                let f = &self.f.funcs()[func.func()];
+                let f = &self.f.funcs[func.func()];
                 let generics: Vec<Typeval> = f.generics.iter().map(|&t| self.resolve(t)).collect();
                 call(&f.def, &generics, self.get(arg).clone())
             }
@@ -269,7 +269,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn block(&mut self, b: id::Block, arg: Val) -> &Val {
-        let block = &self.f.blocks()[b.block()];
+        let block = &self.f.blocks[b.block()];
         self.vars[block.arg.var()] = Some(arg);
         for instr in &block.code {
             self.vars[instr.var.var()] = Some(self.expr(&instr.expr));
@@ -280,7 +280,7 @@ impl<'a> Interpreter<'a> {
 
 /// Assumes `generics` and `arg` are valid.
 fn call(f: &Function, generics: &[Typeval], arg: Val) -> Val {
-    Interpreter::new(f, generics).block(f.main(), arg).clone()
+    Interpreter::new(f, generics).block(f.main, arg).clone()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -295,11 +295,11 @@ pub fn interp(f: &Function, generics: &[Typeval], arg: Val) -> Result<Val, Error
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rose::{build, Block, Func, Instr};
+    use rose::{Block, Func, Instr};
 
     #[test]
     fn test_two_plus_two() {
-        let f = build::Function {
+        let f = Function {
             generics: vec![],
             types: vec![Typexpr::Tuple {
                 members: vec![Type::F64, Type::F64],
@@ -342,9 +342,7 @@ mod tests {
                 ret: id::var(3),
             }],
             main: id::block(0),
-        }
-        .check()
-        .unwrap();
+        };
         let answer = interp(
             &f,
             &[],
@@ -356,28 +354,24 @@ mod tests {
 
     #[test]
     fn test_nested_call() {
-        let f = Rc::new(
-            build::Function {
-                generics: vec![],
-                types: vec![],
-                funcs: vec![],
-                param: Type::Unit,
-                ret: Type::F64,
-                vars: vec![Type::Unit, Type::F64],
-                blocks: vec![Block {
-                    arg: id::var(0),
-                    code: vec![Instr {
-                        var: id::var(1),
-                        expr: Expr::F64 { val: 42. },
-                    }],
-                    ret: id::var(1),
+        let f = Rc::new(Function {
+            generics: vec![],
+            types: vec![],
+            funcs: vec![],
+            param: Type::Unit,
+            ret: Type::F64,
+            vars: vec![Type::Unit, Type::F64],
+            blocks: vec![Block {
+                arg: id::var(0),
+                code: vec![Instr {
+                    var: id::var(1),
+                    expr: Expr::F64 { val: 42. },
                 }],
-                main: id::block(0),
-            }
-            .check()
-            .unwrap(),
-        );
-        let g = build::Function {
+                ret: id::var(1),
+            }],
+            main: id::block(0),
+        });
+        let g = Function {
             generics: vec![],
             types: vec![],
             funcs: vec![Func {
@@ -409,9 +403,7 @@ mod tests {
                 ret: id::var(2),
             }],
             main: id::block(0),
-        }
-        .check()
-        .unwrap();
+        };
         let answer = interp(&g, &[], Val::Unit).unwrap();
         assert_eq!(answer, Val::F64(1764.));
     }

@@ -398,17 +398,13 @@ impl<'input> Module<'input> {
                     id: id::typexpr(typevars.len()),
                 };
                 typevars.push(ir::Typexpr::Tuple { members: fields });
-                let t = Rc::new(
-                    ir::build::Typedef {
-                        generics: vec![Some(ir::Constraint::Index); genericnames.len()],
-                        types: typevars,
-                        def,
-                        // TODO: check constraints once the text syntax supports non-vector structs
-                        constraint: Some(ir::Constraint::Vector),
-                    }
-                    .check()
-                    .expect("typecheck should catch errors"),
-                );
+                let t = Rc::new(ir::Typedef {
+                    generics: vec![Some(ir::Constraint::Index); genericnames.len()],
+                    types: typevars,
+                    def,
+                    // TODO: check constraints once the text syntax supports non-vector structs
+                    constraint: Some(ir::Constraint::Vector),
+                });
                 // TODO: check for duplicate type names
                 self.types.insert(
                     name,
@@ -466,20 +462,16 @@ impl<'input> Module<'input> {
                     code: ctx.c,
                     ret: retvar,
                 });
-                let f = Rc::new(
-                    ir::build::Function {
-                        generics,
-                        types: ctx.t,
-                        funcs: ctx.f,
-                        param,
-                        ret,
-                        vars: ctx.v,
-                        blocks: ctx.b,
-                        main,
-                    }
-                    .check()
-                    .expect("typecheck should catch errors"),
-                );
+                let f = Rc::new(ir::Function {
+                    generics,
+                    types: ctx.t,
+                    funcs: ctx.f,
+                    param,
+                    ret,
+                    vars: ctx.v,
+                    blocks: ctx.b,
+                    main,
+                });
                 // TODO: check for duplicate function names
                 self.funcs.insert(name, f);
             }
