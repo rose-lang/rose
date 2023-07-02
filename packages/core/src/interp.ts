@@ -20,6 +20,7 @@ const unpack = (x: ffi.Val): Concrete => {
   throw Error("TODO");
 };
 
+// TODO: this doesn't work properly, e.g. `Resolve<Real>` is `boolean | number`
 type Resolve<T extends Val> = T extends Bool
   ? boolean
   : T extends Real

@@ -65,6 +65,21 @@ pub struct Block {
 }
 
 #[wasm_bindgen]
+impl Block {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self { code: vec![] }
+    }
+}
+
+// just to appease Clippy
+impl Default for Block {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[wasm_bindgen]
 pub struct Body {
     ctx: Option<Context>,
     main: Option<Block>,
@@ -165,6 +180,12 @@ impl Context {
         id::var(id)
     }
 
+    fn typexpr(&mut self, t: rose::Typexpr) -> id::Typexpr {
+        let id = self.types.len();
+        self.types.push(t);
+        id::typexpr(id)
+    }
+
     // for `If`
     #[wasm_bindgen(js_name = "varUnit")]
     pub fn var_unit(&mut self) -> usize {
@@ -218,15 +239,15 @@ impl Context {
     pub fn index(&mut self, b: &mut Block, arr: usize, idx: usize) -> Result<usize, JsError> {
         let array = id::var(arr);
         let index = id::var(idx);
-        let t = match self.get(array) {
-            rose::Type::Expr { id } => rose::Type::F64, // TODO
-            rose::Type::Unit
-            | rose::Type::Bool
-            | rose::Type::F64
-            | rose::Type::Fin { .. }
-            | rose::Type::Generic { .. } // we don't have an `Array` constraint
-            | rose::Type::Scope { .. } => return Err(JsError::new("not an array")),
-        };
+        let &t = match self.get(array) {
+            rose::Type::Expr { id } => match &self.types[id.typexpr()] {
+                rose::Typexpr::Array { index: _, elem } => Some(elem),
+                rose::Typexpr::Def { def: _, params: _ } => todo!(),
+                rose::Typexpr::Ref { .. } | rose::Typexpr::Tuple { .. } => None,
+            },
+            _ => None,
+        }
+        .ok_or_else(|| JsError::new("not an array"))?;
         Ok(self.instr(b, t, rose::Expr::Index { array, index }))
     }
 
@@ -235,14 +256,14 @@ impl Context {
         let tuple = id::var(tup);
         let member = id::member(mem);
         let t = match self.get(tuple) {
-            rose::Type::Expr { id } => rose::Type::F64, // TODO
-            rose::Type::Unit
-            | rose::Type::Bool
-            | rose::Type::F64
-            | rose::Type::Fin { .. }
-            | rose::Type::Generic { .. } // we don't have a `Tuple` constraint
-            | rose::Type::Scope { .. } => return Err(JsError::new("not a tuple")),
-        };
+            rose::Type::Expr { id } => match &self.types[id.typexpr()] {
+                rose::Typexpr::Tuple { members } => Some(members[mem]),
+                rose::Typexpr::Def { def: _, params: _ } => todo!(),
+                rose::Typexpr::Ref { .. } | rose::Typexpr::Array { .. } => None,
+            },
+            _ => None,
+        }
+        .ok_or_else(|| JsError::new("not a tuple"))?;
         Ok(self.instr(b, t, rose::Expr::Member { tuple, member }))
     }
 
@@ -435,32 +456,40 @@ impl Context {
     /// `rose::Expr::If`
     #[wasm_bindgen]
     pub fn cond(&mut self, b: &mut Block, cond: usize, then: usize, els: usize) -> usize {
+        let &t = self.get(self.blocks[then].ret); // arbitrary; could have used `els` instead
         let expr = rose::Expr::If {
             cond: id::var(cond),
             then: id::block(then),
             els: id::block(els),
         };
-        self.instr(b, rose::Type::F64, expr) // TODO
+        self.instr(b, t, expr)
+    }
+
+    // `rose::Expr::For`
+    fn arr(&mut self, b: &mut Block, index: rose::Type, body: usize) -> usize {
+        let rose::Block { arg, ret, .. } = self.blocks[body];
+        let t = self.typexpr(rose::Typexpr::Array {
+            index: *self.get(arg),
+            elem: *self.get(ret),
+        });
+        let expr = rose::Expr::For {
+            index,
+            body: id::block(body),
+        };
+        self.instr(b, rose::Type::Expr { id: t }, expr)
     }
 
     #[wasm_bindgen(js_name = "forFin")]
     pub fn for_fin(&mut self, b: &mut Block, size: usize, body: usize) -> usize {
-        let expr = rose::Expr::For {
-            index: rose::Type::Fin { size },
-            body: id::block(body),
-        };
-        self.instr(b, rose::Type::F64, expr) // TODO
+        self.arr(b, rose::Type::Fin { size }, body)
     }
 
     #[wasm_bindgen(js_name = "forGeneric")]
     pub fn for_generic(&mut self, b: &mut Block, id: usize, body: usize) -> usize {
-        let expr = rose::Expr::For {
-            index: rose::Type::Generic {
-                id: id::generic(id),
-            },
-            body: id::block(body),
+        let index = rose::Type::Generic {
+            id: id::generic(id),
         };
-        self.instr(b, rose::Type::F64, expr) // TODO
+        self.arr(b, index, body)
     }
 }
 
