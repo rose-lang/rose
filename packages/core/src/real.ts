@@ -1,71 +1,82 @@
 import { Bool } from "./bool.js";
-import { Local, getCtx, local } from "./context.js";
-import * as ffi from "./ffi.js";
-import { Vec, getVec } from "./vec.js";
+import { Var, getBlock, getCtx, getVar } from "./context.js";
 
-export type Real = number | Local;
+export type Real = number | Var;
 
-/** Emit instructions to push the value of `x` onto the stack. */
-export const getReal = (ctx: ffi.Context, x: Real): void => {
-  if (typeof x === "number") ctx.real(x);
-  else local(ctx, x);
+export const neg = (x: Real): Real => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.neg(b, getVar(ctx, b, x)) };
 };
 
-const unary =
-  (op: (ctx: ffi.Context) => void) =>
-  (x: Real): Real => {
-    const ctx = getCtx();
-    getReal(ctx, x);
-    op(ctx);
-    return { ctx, id: ctx.set("Real") };
-  };
+export const abs = (x: Real): Real => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.abs(b, getVar(ctx, b, x)) };
+};
 
-export const neg = unary((ctx) => ctx.negReal());
-export const abs = unary((ctx) => ctx.absReal());
-export const sqrt = unary((ctx) => ctx.sqrt());
+export const sqrt = (x: Real): Real => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.sqrt(b, getVar(ctx, b, x)) };
+};
 
-const binary =
-  (op: (ctx: ffi.Context) => void) =>
-  (x: Real, y: Real): Real => {
-    const ctx = getCtx();
-    getReal(ctx, x);
-    getReal(ctx, y);
-    op(ctx);
-    return { ctx, id: ctx.set("Real") };
-  };
+export const add = (x: Real, y: Real): Real => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.add(b, getVar(ctx, b, x), getVar(ctx, b, y)) };
+};
 
-export const add = binary((ctx) => ctx.addReal());
-export const sub = binary((ctx) => ctx.subReal());
-export const mul = binary((ctx) => ctx.mulReal());
-export const div = binary((ctx) => ctx.divReal());
+export const sub = (x: Real, y: Real): Real => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.sub(b, getVar(ctx, b, x), getVar(ctx, b, y)) };
+};
 
-const fold =
-  (op: (ctx: ffi.Context) => void) =>
-  (v: Vec<Real>): Real => {
-    const ctx = getCtx();
-    getVec(ctx, v);
-    op(ctx);
-    return { ctx, id: ctx.set("Real") };
-  };
+export const mul = (x: Real, y: Real): Real => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.mul(b, getVar(ctx, b, x), getVar(ctx, b, y)) };
+};
 
-export const sum = fold((ctx) => ctx.sumReal());
-export const prod = fold((ctx) => ctx.prodReal());
-export const max = fold((ctx) => ctx.maxReal());
-export const min = fold((ctx) => ctx.minReal());
+export const div = (x: Real, y: Real): Real => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.div(b, getVar(ctx, b, x), getVar(ctx, b, y)) };
+};
 
-const comp =
-  (op: (ctx: ffi.Context) => void) =>
-  (x: Real, y: Real): Bool => {
-    const ctx = getCtx();
-    getReal(ctx, x);
-    getReal(ctx, y);
-    op(ctx);
-    return { ctx, id: ctx.set("Bool") };
-  };
+export const neq = (x: Real, y: Real): Bool => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.neq(b, getVar(ctx, b, x), getVar(ctx, b, y)) };
+};
 
-export const neq = comp((ctx) => ctx.neqReal());
-export const lt = comp((ctx) => ctx.ltReal());
-export const leq = comp((ctx) => ctx.leqReal());
-export const eq = comp((ctx) => ctx.eqReal());
-export const gt = comp((ctx) => ctx.gtReal());
-export const geq = comp((ctx) => ctx.geqReal());
+export const lt = (x: Real, y: Real): Bool => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.lt(b, getVar(ctx, b, x), getVar(ctx, b, y)) };
+};
+
+export const leq = (x: Real, y: Real): Bool => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.leq(b, getVar(ctx, b, x), getVar(ctx, b, y)) };
+};
+
+export const eq = (x: Real, y: Real): Bool => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.eq(b, getVar(ctx, b, x), getVar(ctx, b, y)) };
+};
+
+export const gt = (x: Real, y: Real): Bool => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.gt(b, getVar(ctx, b, x), getVar(ctx, b, y)) };
+};
+
+export const geq = (x: Real, y: Real): Bool => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.geq(b, getVar(ctx, b, x), getVar(ctx, b, y)) };
+};

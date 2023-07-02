@@ -13,14 +13,28 @@ export const setCtx = (ctx: ffi.Context | undefined): void => {
   context = ctx;
 };
 
-/** A local that remembers the context in which it was created. */
-export interface Local {
+/** A local variable that remembers the context in which it was created. */
+export interface Var {
   ctx: ffi.Context;
   id: number;
 }
 
-/** Push the value of `x` onto the stack if it's still in the right context. */
-export const local = (ctx: ffi.Context, x: Local): void => {
-  if (x.ctx !== ctx) throw Error("value escaped its context");
-  ctx.get(x.id);
+export let block: ffi.Block | undefined = undefined;
+
+export const getBlock = (): ffi.Block => {
+  if (block === undefined) throw Error("no block found");
+  return block;
+};
+
+export const setBlock = (b: ffi.Block | undefined): void => {
+  block = b;
+};
+
+export type Val = boolean | number | Var;
+
+export const getVar = (ctx: ffi.Context, b: ffi.Block, x: Val): number => {
+  if (typeof x === "boolean") return ctx.bool(b, x);
+  if (typeof x === "number") return ctx.f64(b, x);
+  if (x.ctx === ctx) return x.id;
+  throw Error("value escaped its context");
 };

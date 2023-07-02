@@ -68,42 +68,94 @@ pub struct Block {
 }
 
 #[wasm_bindgen]
-impl Context {
-    /// The `generic_constraints` argument is Serde-converted to `Vec<Option<rose::Constraint>>`.
-    /// The `param_type` and `ret_type` arguments are each Serde-converted to `rose::Type`.
-    ///
-    /// TODO: currently no support for
-    /// - non-primitive types
-    /// - calling other functions
-    #[wasm_bindgen(constructor)]
-    pub fn new(
-        generic_constraints: JsValue,
-        param_type: JsValue,
-        ret_type: JsValue,
-    ) -> Result<Context, JsError> {
-        let generics: Vec<Option<rose::Constraint>> =
-            serde_wasm_bindgen::from_value(generic_constraints)?;
-        let param: rose::Type = serde_wasm_bindgen::from_value(param_type)?;
-        let ret: rose::Type = serde_wasm_bindgen::from_value(ret_type)?;
-        Ok(Self {
-            generics,
-            types: vec![],
-            funcs: vec![],
-            param,
-            ret,
-            vars: vec![],
-            blocks: vec![],
-        })
+pub struct Body {
+    ctx: Option<Context>,
+    main: Option<Block>,
+    pub arg: usize,
+    args: Option<Vec<usize>>,
+}
+
+#[wasm_bindgen]
+impl Body {
+    #[wasm_bindgen]
+    pub fn ctx(&mut self) -> Result<Context, JsError> {
+        self.ctx
+            .take()
+            .ok_or_else(|| JsError::new("context already taken"))
     }
 
     #[wasm_bindgen]
-    pub fn block(&mut self, b: Block, arg: usize, ret: usize) {
+    pub fn main(&mut self) -> Result<Block, JsError> {
+        self.main
+            .take()
+            .ok_or_else(|| JsError::new("block already taken"))
+    }
+
+    #[wasm_bindgen]
+    pub fn args(&mut self) -> Result<Vec<usize>, JsError> {
+        self.args
+            .take()
+            .ok_or_else(|| JsError::new("args already taken"))
+    }
+}
+
+/// The `param_types` argument is Serde-converted to `Vec<rose::Type>`, and the `ret_type`
+/// argument is Serde-converted to `rose::Type`.
+///
+/// TODO: currently no support for
+/// - non-primitive types
+/// - calling other functions
+#[wasm_bindgen]
+pub fn make(generics: usize, param_types: JsValue, ret_type: JsValue) -> Result<Body, JsError> {
+    let params: Vec<rose::Type> = serde_wasm_bindgen::from_value(param_types)?;
+    let ret: rose::Type = serde_wasm_bindgen::from_value(ret_type)?;
+
+    let param = rose::Type::Expr { id: id::typexpr(0) };
+    let mut ctx = Context {
+        generics: vec![Some(rose::Constraint::Index); generics],
+        types: vec![], // we populate this further down
+        funcs: vec![],
+        param,
+        ret,
+        vars: vec![],
+        blocks: vec![],
+    };
+
+    let arg = ctx.var(param);
+    let mut main = Block { code: vec![] };
+    let args = params
+        .iter()
+        .enumerate()
+        .map(|(i, &t)| {
+            let expr = rose::Expr::Member {
+                tuple: arg,
+                member: id::member(i),
+            };
+            ctx.instr(&mut main, t, expr)
+        })
+        .collect();
+    ctx.types.push(rose::Typexpr::Tuple { members: params });
+
+    Ok(Body {
+        ctx: Some(ctx),
+        main: Some(main),
+        arg: arg.var(),
+        args: Some(args),
+    })
+}
+
+#[wasm_bindgen]
+impl Context {
+    #[wasm_bindgen]
+    pub fn block(&mut self, b: Block, arg_id: usize, ret_id: usize) -> usize {
         let Block { code } = b;
+        let id = self.blocks.len();
         self.blocks.push(rose::Block {
-            arg: id::var(arg),
+            arg: id::var(arg_id),
             code,
-            ret: id::var(ret),
+            ret: id::var(ret_id),
         });
+        id
     }
 
     fn get(&self, var: id::Var) -> &rose::Type {
@@ -114,6 +166,27 @@ impl Context {
         let id = self.vars.len();
         self.vars.push(t);
         id::var(id)
+    }
+
+    // for `If`
+    #[wasm_bindgen(js_name = "varUnit")]
+    pub fn var_unit(&mut self) -> usize {
+        self.var(rose::Type::Unit).var()
+    }
+
+    // for `For`
+    #[wasm_bindgen(js_name = "varFin")]
+    pub fn var_fin(&mut self, size: usize) -> usize {
+        self.var(rose::Type::Fin { size }).var()
+    }
+
+    // for `For`
+    #[wasm_bindgen(js_name = "varGeneric")]
+    pub fn var_generic(&mut self, id: usize) -> usize {
+        self.var(rose::Type::Generic {
+            id: id::generic(id),
+        })
+        .var()
     }
 
     fn instr(&mut self, b: &mut Block, t: rose::Type, expr: rose::Expr) -> usize {
@@ -373,8 +446,8 @@ impl Context {
         self.instr(b, rose::Type::F64, expr) // TODO
     }
 
-    #[wasm_bindgen(js_name = "forConst")]
-    pub fn for_const(&mut self, b: &mut Block, size: usize, body: usize) -> usize {
+    #[wasm_bindgen(js_name = "forFin")]
+    pub fn for_fin(&mut self, b: &mut Block, size: usize, body: usize) -> usize {
         let expr = rose::Expr::For {
             index: rose::Type::Fin { size },
             body: id::block(body),

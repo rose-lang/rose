@@ -1,5 +1,6 @@
 import * as wasm from "@rose-lang/wasm";
 import { Type } from "@rose-lang/wasm/core/Type";
+import { Typeval } from "@rose-lang/wasm/interp/Typeval";
 import { Val } from "@rose-lang/wasm/interp/Val";
 
 /**
@@ -24,33 +25,36 @@ export interface Fn {
   f: wasm.Func;
 }
 
-/**
- * Unlike `Fn`, the `Context` type shouldn't be held onto in any public APIs, so
- * we don't give it a canonical wrapper; every instance must always be `bake`d
- * or `free`d.
- */
-export class Context extends wasm.Context {
-  constructor(params: Type[], ret: Type) {
-    super(params, ret);
-  }
-
-  set(t: Type): number {
-    return super.set(t);
-  }
-
-  // for some reason errors happen when adding methods to this class that don't
-  // already exist in `wasm.Context`; not sure why, but that's why `bake` is
-  // just a function in this module instead of a method here
-}
-
-export const bake = (ctx: Context): Fn => {
-  const f = wasm.bake(ctx);
+export const bake = (ctx: wasm.Context, main: number): Fn => {
+  const f = wasm.bake(ctx, main);
   const fn: Fn = { f };
   registry.register(fn, () => f.free());
   return fn;
 };
 
-export const interp = (f: Fn, args: Val[]): Val =>
-  wasm.interp(f.f, new Uint32Array(), args); // TODO: support generics
+export interface Body {
+  ctx: wasm.Context;
+  main: wasm.Block;
+  arg: number;
+  args: number[];
+}
 
-export type { Type, Val };
+export const make = (generics: number, params: Type[], ret: Type): Body => {
+  const x = wasm.make(generics, params, ret);
+  try {
+    return {
+      ctx: x.ctx(),
+      main: x.main(),
+      arg: x.arg,
+      args: Array.from(x.args()),
+    };
+  } finally {
+    x.free();
+  }
+};
+
+export const interp = (f: Fn, generics: Typeval[], arg: Val): Val =>
+  wasm.interp(f.f, generics, arg);
+
+export { Block, Context } from "@rose-lang/wasm";
+export type { Type, Typeval, Val };

@@ -1,74 +1,74 @@
-import { context, setCtx } from "./context.js";
+import { Bool } from "./bool.js";
+import { Var, context, getVar, setBlock, setCtx } from "./context.js";
 import * as ffi from "./ffi.js";
-import { Int } from "./int.js";
-import { Real, getReal } from "./real.js";
+import { Real } from "./real.js";
 
 export type Bools = { tag: "Bool" };
-export type Ints = { tag: "Int" };
 export type Reals = { tag: "Real" };
 
-export interface Vecs<T> {
-  tag: "Vec";
-  t: T;
-  n: Int;
-}
-
-export type Type = Bools | Ints | Reals | Vecs<Type>;
+export type Type = Bools | Reals;
 
 export interface Fn {
   params: Type[];
   f: ffi.Fn;
 }
 
-type Resolve<T extends readonly Reals[]> = {
-  [K in keyof T]: Real;
+type Resolve<T extends Type> = T extends Bools
+  ? Bool
+  : T extends Reals
+  ? Real
+  : unknown; // TODO: is `unknown` the right default here? what about `never`?
+
+type Args<T extends readonly Type[]> = {
+  [K in keyof T]: Resolve<T[K]>;
 };
 
 const ffiType = (t: Type): ffi.Type => {
   switch (t.tag) {
-    case "Bool":
-    case "Int":
-    case "Real": {
-      return t.tag;
+    case "Bool": {
+      return "Bool";
     }
-    case "Vec": {
-      throw Error("TODO");
+    case "Real": {
+      return "F64";
     }
   }
 };
 
 /** Constructs an abstract function with the given `types` for parameters. */
-// TODO: allow args other than `Real`
-export const fn = <const T extends readonly Reals[]>(
-  types: T,
-  f: (...args: Resolve<T>) => Real // TODO: allow return other than `Real`
-): Fn & ((...args: Resolve<T>) => Real) => {
+export const fn = <const A extends readonly Type[], R extends Type>(
+  // TODO: support generics
+  params: A,
+  ret: R,
+  f: (...args: Args<A>) => Resolve<R>
+): Fn & ((...args: Args<A>) => Resolve<R>) => {
   // TODO: support closures
   if (context !== undefined)
     throw Error("can't define a function while defining another function");
-  const paramTypes = types.map(ffiType);
+  const paramTypes = params.map(ffiType);
+  const retType = ffiType(ret);
   let func: ffi.Fn;
-  const ctx = new ffi.Context(paramTypes, "Real");
+  const { ctx, main, arg, args: ids } = ffi.make(0, paramTypes, retType);
   try {
     setCtx(ctx);
-    const params: Real[] = [];
-    // reverse because stack is LIFO
-    for (let i = types.length - 1; i >= 0; --i)
-      params.push({ ctx, id: ctx.set(paramTypes[i]) });
-    getReal(ctx, f(...(params.reverse() as Resolve<T>)));
-    func = ffi.bake(ctx);
+    setBlock(main);
+    const x = f(...(ids.map((id): Var => ({ ctx, id })) as Args<A>));
+    const y = getVar(ctx, main, x);
+    const b = ctx.block(main, arg, y);
+    func = ffi.bake(ctx, b);
   } catch (e) {
-    // `ctx` points into Wasm memory, so if we didn't finish the `ffi.bake` call
-    // above then we need to be sure to `free` it
+    // `ctx` and `main` point into Wasm memory, so if we didn't finish the
+    // `ffi.bake` call above then we need to be sure to `free` them
+    main.free();
     ctx.free();
     throw e;
   } finally {
+    setBlock(undefined);
     setCtx(undefined);
   }
-  const g = (...args: Resolve<T>): Real => {
+  const g = (...args: Args<A>): Resolve<R> => {
     throw Error("TODO");
   };
-  g.params = types as unknown as Type[];
+  g.params = params as unknown as Type[];
   g.f = func;
   return g;
 };
