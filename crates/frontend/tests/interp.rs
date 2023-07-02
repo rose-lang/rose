@@ -1,5 +1,6 @@
 use rose_frontend::parse;
 use rose_interp::{interp, Val};
+use std::rc::Rc;
 
 #[test]
 fn test_add() {
@@ -8,10 +9,10 @@ fn test_add() {
     let answer = interp(
         module.funcs.get("add").unwrap(),
         &[],
-        vec![Val::F64(2.), Val::F64(2.)],
+        Val::Tuple(Rc::new(vec![Val::F64(2.), Val::F64(2.)])),
     )
     .unwrap();
-    assert_eq!(answer, vec![Val::F64(4.)]);
+    assert_eq!(answer, Val::F64(4.));
 }
 
 #[test]
@@ -21,8 +22,8 @@ fn test_sub() {
     let answer = interp(
         module.funcs.get("sub").unwrap(),
         &[],
-        vec![Val::F64(2.), Val::F64(2.)],
+        Val::Tuple(Rc::new(vec![Val::F64(2.), Val::F64(2.)])),
     )
     .unwrap();
-    assert_eq!(answer, vec![Val::F64(0.)]);
+    assert_eq!(answer, Val::F64(0.));
 }
