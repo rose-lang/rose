@@ -20,143 +20,200 @@ pub struct Func(Rc<rose::Function>);
 #[cfg(feature = "debug")]
 #[wasm_bindgen(js_name = "js2Rust")]
 pub fn js_to_rust(Func(f): &Func) -> String {
-    let def: &rose::Def<rose::Function> = f;
-    let func: &rose::Function = &def.def;
-    format!("{:#?}", func)
+    format!("{:#?}", f)
 }
 
 /// A function under construction.
 #[wasm_bindgen]
-pub struct FuncBuilder {
-    f: build::Function,
+pub struct Context {
+    generics: Vec<Option<rose::Constraint>>,
+    types: Vec<rose::Typexpr>,
+    funcs: Vec<rose::Func>,
+    param: rose::Type,
+    ret: rose::Type,
+    vars: Vec<rose::Type>,
+    blocks: Vec<rose::Block>,
 }
 
+#[wasm_bindgen]
+pub fn bake(ctx: Context, main: usize) -> Result<Func, JsError> {
+    let Context {
+        generics,
+        types,
+        funcs,
+        param,
+        ret,
+        vars,
+        blocks,
+    } = ctx;
+    Ok(Func(Rc::new(
+        build::Function {
+            generics,
+            types,
+            funcs,
+            param,
+            ret,
+            vars,
+            blocks,
+            main: id::block(main),
+        }
+        .check()?,
+    )))
+}
+
+/// A block under construction. Implicitly refers to the current `Context`.
 #[wasm_bindgen]
 pub struct Block {
-    f: FuncBuilder,
-}
-
-#[wasm_bindgen]
-pub fn bake(ctx: Context) -> Func {
-    Func(Rc::new(rose::Def {
-        generics: ctx.generics,
-        types: ctx.types,
-        def: rose::Function {
-            params: ctx.params,
-            ret: vec![ctx.ret],
-            locals: ctx.locals,
-            funcs: ctx.funcs,
-            body: ctx.body,
-        },
-    }))
+    code: Vec<rose::Instr>,
 }
 
 #[wasm_bindgen]
 impl Context {
-    /// The `param_types` argument is Serde-converted to `Vec<rose::Type>`, and the `ret_type`
-    /// argument is Serde-converted to `rose::Type`.
+    /// The `generic_constraints` argument is Serde-converted to `Vec<Option<rose::Constraint>>`.
+    /// The `param_type` and `ret_type` arguments are each Serde-converted to `rose::Type`.
     ///
     /// TODO: currently no support for
-    /// - generics
     /// - non-primitive types
     /// - calling other functions
     #[wasm_bindgen(constructor)]
-    pub fn new(param_types: JsValue, ret_type: JsValue) -> Result<Context, JsError> {
-        let params: Vec<rose::Type> = serde_wasm_bindgen::from_value(param_types)?;
+    pub fn new(
+        generic_constraints: JsValue,
+        param_type: JsValue,
+        ret_type: JsValue,
+    ) -> Result<Context, JsError> {
+        let generics: Vec<Option<rose::Constraint>> =
+            serde_wasm_bindgen::from_value(generic_constraints)?;
+        let param: rose::Type = serde_wasm_bindgen::from_value(param_type)?;
         let ret: rose::Type = serde_wasm_bindgen::from_value(ret_type)?;
         Ok(Self {
-            generics: 0,
+            generics,
             types: vec![],
-            params,
-            ret,
-            locals: vec![],
             funcs: vec![],
-            body: vec![],
+            param,
+            ret,
+            vars: vec![],
+            blocks: vec![],
         })
     }
 
-    /// Create a new local and then emit a `rose::Instr::Set` instruction.
-    ///
-    /// The `t` argument is Serde-converted to `rose::Type`.
     #[wasm_bindgen]
-    pub fn set(&mut self, t: JsValue) -> Result<usize, JsError> {
-        let local: rose::Type = serde_wasm_bindgen::from_value(t)?;
-        let id = self.locals.len();
-        self.locals.push(local);
-        self.body.push(rose::Instr::Set { id: id::local(id) });
-        Ok(id)
-    }
-
-    #[wasm_bindgen]
-    pub fn generic(&mut self, id: usize) {
-        self.body.push(rose::Instr::Generic {
-            id: id::generic(id),
+    pub fn block(&mut self, b: Block, arg: usize, ret: usize) {
+        let Block { code } = b;
+        self.blocks.push(rose::Block {
+            arg: id::var(arg),
+            code,
+            ret: id::var(ret),
         });
     }
 
-    #[wasm_bindgen]
-    pub fn get(&mut self, id: usize) {
-        self.body.push(rose::Instr::Get { id: id::local(id) });
+    fn get(&self, var: id::Var) -> &rose::Type {
+        &self.vars[var.var()]
+    }
+
+    fn var(&mut self, t: rose::Type) -> id::Var {
+        let id = self.vars.len();
+        self.vars.push(t);
+        id::var(id)
+    }
+
+    fn instr(&mut self, b: &mut Block, t: rose::Type, expr: rose::Expr) -> usize {
+        let var = self.var(t);
+        b.code.push(rose::Instr { var, expr });
+        var.var()
     }
 
     #[wasm_bindgen]
-    pub fn bool(&mut self, val: bool) {
-        self.body.push(rose::Instr::Bool { val });
+    pub fn unit(&mut self, b: &mut Block) -> usize {
+        self.instr(b, rose::Type::Unit, rose::Expr::Unit)
     }
 
     #[wasm_bindgen]
-    pub fn real(&mut self, val: f64) {
-        self.body.push(rose::Instr::Real { val });
+    pub fn bool(&mut self, b: &mut Block, val: bool) -> usize {
+        self.instr(b, rose::Type::Bool, rose::Expr::Bool { val })
     }
 
     #[wasm_bindgen]
-    pub fn vector(&mut self, id: usize) {
-        self.body.push(rose::Instr::Vector { id: id::typ(id) });
+    pub fn f64(&mut self, b: &mut Block, val: f64) -> usize {
+        self.instr(b, rose::Type::F64, rose::Expr::F64 { val })
     }
 
     #[wasm_bindgen]
-    pub fn tuple(&mut self, id: usize) {
-        self.body.push(rose::Instr::Tuple { id: id::typ(id) });
+    pub fn fin(&mut self, b: &mut Block, size: usize, val: usize) -> usize {
+        self.instr(b, rose::Type::Fin { size }, rose::Expr::Fin { val })
+    }
+
+    // TODO: support `Expr::Array` and `Expr::Tuple`
+
+    #[wasm_bindgen]
+    pub fn index(&mut self, b: &mut Block, arr: usize, idx: usize) -> Result<usize, JsError> {
+        let array = id::var(arr);
+        let index = id::var(idx);
+        let t = match self.get(array) {
+            rose::Type::Expr { id } => rose::Type::F64, // TODO
+            rose::Type::Unit
+            | rose::Type::Bool
+            | rose::Type::F64
+            | rose::Type::Fin { .. }
+            | rose::Type::Generic { .. } // we don't have an `Array` constraint
+            | rose::Type::Scope { .. } => return Err(JsError::new("not an array")),
+        };
+        Ok(self.instr(b, t, rose::Expr::Index { array, index }))
     }
 
     #[wasm_bindgen]
-    pub fn index(&mut self) {
-        self.body.push(rose::Instr::Index);
+    pub fn member(&mut self, b: &mut Block, tup: usize, mem: usize) -> Result<usize, JsError> {
+        let tuple = id::var(tup);
+        let member = id::member(mem);
+        let t = match self.get(tuple) {
+            rose::Type::Expr { id } => rose::Type::F64, // TODO
+            rose::Type::Unit
+            | rose::Type::Bool
+            | rose::Type::F64
+            | rose::Type::Fin { .. }
+            | rose::Type::Generic { .. } // we don't have a `Tuple` constraint
+            | rose::Type::Scope { .. } => return Err(JsError::new("not a tuple")),
+        };
+        Ok(self.instr(b, t, rose::Expr::Member { tuple, member }))
     }
 
-    #[wasm_bindgen]
-    pub fn member(&mut self, id: usize) {
-        self.body.push(rose::Instr::Member { id: id::member(id) });
-    }
+    // no method for `Expr::Slice` here, because we don't currently expose mutation to JS
 
     // unary
 
     #[wasm_bindgen]
-    pub fn not(&mut self) {
-        self.body.push(rose::Instr::Unary {
+    pub fn not(&mut self, b: &mut Block, arg: usize) -> usize {
+        let expr = rose::Expr::Unary {
             op: rose::Unop::Not,
-        });
-    }
-
-    #[wasm_bindgen(js_name = "negReal")]
-    pub fn neg(&mut self) {
-        self.body.push(rose::Instr::Unary {
-            op: rose::Unop::NegReal,
-        });
-    }
-
-    #[wasm_bindgen(js_name = "absReal")]
-    pub fn abs(&mut self) {
-        self.body.push(rose::Instr::Unary {
-            op: rose::Unop::AbsReal,
-        });
+            arg: id::var(arg),
+        };
+        self.instr(b, rose::Type::Bool, expr)
     }
 
     #[wasm_bindgen]
-    pub fn sqrt(&mut self) {
-        self.body.push(rose::Instr::Unary {
+    pub fn neg(&mut self, b: &mut Block, arg: usize) -> usize {
+        let expr = rose::Expr::Unary {
+            op: rose::Unop::Neg,
+            arg: id::var(arg),
+        };
+        self.instr(b, rose::Type::F64, expr)
+    }
+
+    #[wasm_bindgen]
+    pub fn abs(&mut self, b: &mut Block, arg: usize) -> usize {
+        let expr = rose::Expr::Unary {
+            op: rose::Unop::Abs,
+            arg: id::var(arg),
+        };
+        self.instr(b, rose::Type::F64, expr)
+    }
+
+    #[wasm_bindgen]
+    pub fn sqrt(&mut self, b: &mut Block, arg: usize) -> usize {
+        let expr = rose::Expr::Unary {
             op: rose::Unop::Sqrt,
-        });
+            arg: id::var(arg),
+        };
+        self.instr(b, rose::Type::F64, expr)
     }
 
     // end of unary
@@ -164,147 +221,187 @@ impl Context {
     // binary
 
     #[wasm_bindgen]
-    pub fn and(&mut self) {
-        self.body.push(rose::Instr::Binary {
+    pub fn and(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
             op: rose::Binop::And,
-        });
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::Bool, expr)
     }
 
     #[wasm_bindgen]
-    pub fn or(&mut self) {
-        self.body.push(rose::Instr::Binary {
+    pub fn or(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
             op: rose::Binop::Or,
-        });
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::Bool, expr)
     }
 
-    #[wasm_bindgen(js_name = "eqBool")]
-    pub fn eq_bool(&mut self) {
-        self.body.push(rose::Instr::Binary {
-            op: rose::Binop::EqBool,
-        });
+    #[wasm_bindgen]
+    pub fn iff(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Iff,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::Bool, expr)
     }
 
-    #[wasm_bindgen(js_name = "neqBool")]
-    pub fn neq_bool(&mut self) {
-        self.body.push(rose::Instr::Binary {
-            op: rose::Binop::NeqBool,
-        });
+    #[wasm_bindgen]
+    pub fn xor(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Xor,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::Bool, expr)
     }
 
-    #[wasm_bindgen(js_name = "neqReal")]
-    pub fn neq(&mut self) {
-        self.body.push(rose::Instr::Binary {
-            op: rose::Binop::NeqReal,
-        });
+    #[wasm_bindgen]
+    pub fn neq(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Neq,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::F64, expr)
     }
 
-    #[wasm_bindgen(js_name = "ltReal")]
-    pub fn lt(&mut self) {
-        self.body.push(rose::Instr::Binary {
-            op: rose::Binop::LtReal,
-        });
+    #[wasm_bindgen]
+    pub fn lt(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Lt,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::F64, expr)
     }
 
-    #[wasm_bindgen(js_name = "leqReal")]
-    pub fn leq(&mut self) {
-        self.body.push(rose::Instr::Binary {
-            op: rose::Binop::LeqReal,
-        });
+    #[wasm_bindgen]
+    pub fn leq(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Leq,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::F64, expr)
     }
 
-    #[wasm_bindgen(js_name = "eqReal")]
-    pub fn eq(&mut self) {
-        self.body.push(rose::Instr::Binary {
-            op: rose::Binop::EqReal,
-        });
+    #[wasm_bindgen]
+    pub fn eq(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Eq,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::F64, expr)
     }
 
-    #[wasm_bindgen(js_name = "gtReal")]
-    pub fn gt(&mut self) {
-        self.body.push(rose::Instr::Binary {
-            op: rose::Binop::GtReal,
-        });
+    #[wasm_bindgen]
+    pub fn gt(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Gt,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::F64, expr)
     }
 
-    #[wasm_bindgen(js_name = "geqReal")]
-    pub fn geq(&mut self) {
-        self.body.push(rose::Instr::Binary {
-            op: rose::Binop::GeqReal,
-        });
+    #[wasm_bindgen]
+    pub fn geq(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Geq,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::F64, expr)
     }
 
-    #[wasm_bindgen(js_name = "addReal")]
-    pub fn add(&mut self) {
-        self.body.push(rose::Instr::Binary {
-            op: rose::Binop::AddReal,
-        });
+    #[wasm_bindgen]
+    pub fn add(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Add,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::F64, expr)
     }
 
-    #[wasm_bindgen(js_name = "subReal")]
-    pub fn sub(&mut self) {
-        self.body.push(rose::Instr::Binary {
-            op: rose::Binop::SubReal,
-        });
+    #[wasm_bindgen]
+    pub fn sub(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Sub,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::F64, expr)
     }
 
-    #[wasm_bindgen(js_name = "mulReal")]
-    pub fn mul(&mut self) {
-        self.body.push(rose::Instr::Binary {
-            op: rose::Binop::MulReal,
-        });
+    #[wasm_bindgen]
+    pub fn mul(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Mul,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::F64, expr)
     }
 
-    #[wasm_bindgen(js_name = "divReal")]
-    pub fn div(&mut self) {
-        self.body.push(rose::Instr::Binary {
-            op: rose::Binop::DivReal,
-        });
+    #[wasm_bindgen]
+    pub fn div(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Div,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(b, rose::Type::F64, expr)
     }
 
     // end of binary
 
-    /// `rose::Instr::If`
+    /// `rose::Expr::If`
     #[wasm_bindgen]
-    pub fn cond(&mut self) {
-        self.body.push(rose::Instr::If);
-    }
-
-    /// `rose::Instr::Else`
-    #[wasm_bindgen]
-    pub fn alt(&mut self) {
-        self.body.push(rose::Instr::Else);
-    }
-
-    #[wasm_bindgen]
-    pub fn end(&mut self) {
-        self.body.push(rose::Instr::End);
+    pub fn cond(&mut self, b: &mut Block, cond: usize, then: usize, els: usize) -> usize {
+        let expr = rose::Expr::If {
+            cond: id::var(cond),
+            then: id::block(then),
+            els: id::block(els),
+        };
+        self.instr(b, rose::Type::F64, expr) // TODO
     }
 
     #[wasm_bindgen(js_name = "forConst")]
-    pub fn for_const(&mut self, val: usize) {
-        self.body.push(rose::Instr::For {
-            limit: rose::Size::Const { val },
-        });
+    pub fn for_const(&mut self, b: &mut Block, size: usize, body: usize) -> usize {
+        let expr = rose::Expr::For {
+            index: rose::Type::Fin { size },
+            body: id::block(body),
+        };
+        self.instr(b, rose::Type::F64, expr) // TODO
     }
 
     #[wasm_bindgen(js_name = "forGeneric")]
-    pub fn for_generic(&mut self, id: usize) {
-        self.body.push(rose::Instr::For {
-            limit: rose::Size::Generic {
+    pub fn for_generic(&mut self, b: &mut Block, id: usize, body: usize) -> usize {
+        let expr = rose::Expr::For {
+            index: rose::Type::Generic {
                 id: id::generic(id),
             },
-        });
+            body: id::block(body),
+        };
+        self.instr(b, rose::Type::F64, expr) // TODO
     }
 }
 
 /// Interpret a function with the given arguments.
 ///
-/// The `args` are each Serde-converted to `Vec<rose_interp::Val>`, and the return value is
-/// Serde-converted from `rose_interp::Val`.
+/// The `generics` are Serde-converted to `Vec<rose_interp::Typeval>`, the `arg` is Serde-converted
+/// to `rose_interp::Val`, and the return value is Serde-converted from `rose_interp::Val`.
 #[wasm_bindgen]
-pub fn interp(Func(f): &Func, generics: &[usize], args: JsValue) -> Result<JsValue, JsError> {
-    let vals: Vec<rose_interp::Val> = serde_wasm_bindgen::from_value(args)?;
-    let ret = rose_interp::interp(f, generics, vals)?;
-    assert_eq!(ret.len(), 1);
-    Ok(to_js_value(&ret[0])?)
+pub fn interp(Func(f): &Func, generics: JsValue, arg: JsValue) -> Result<JsValue, JsError> {
+    let types: Vec<rose_interp::Typeval> = serde_wasm_bindgen::from_value(generics)?;
+    let val: rose_interp::Val = serde_wasm_bindgen::from_value(arg)?;
+    let ret = rose_interp::interp(f, &types, val)?;
+    Ok(to_js_value(&ret)?)
 }
