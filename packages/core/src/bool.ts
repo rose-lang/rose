@@ -48,7 +48,7 @@ export const cond = <T extends Val>(
   let nt: number;
   try {
     setBlock(bt);
-    const rt = getVar(ctx, b, then());
+    const rt = getVar(ctx, bt, then());
     nt = ctx.block(bt, at, rt);
   } catch (e) {
     bt.free();
@@ -62,7 +62,7 @@ export const cond = <T extends Val>(
   let nf: number;
   try {
     setBlock(bf);
-    const rf = getVar(ctx, b, els());
+    const rf = getVar(ctx, bf, els());
     nf = ctx.block(bf, af, rf);
   } catch (e) {
     bf.free();
