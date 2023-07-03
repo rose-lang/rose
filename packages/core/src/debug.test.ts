@@ -2,6 +2,15 @@ import * as wasm from "@rose-lang/wasm";
 import { expect, test } from "vitest";
 import { Real, add, fn, mul } from "./index.js";
 
+test("core IR type layouts", () => {
+  expect(Object.fromEntries(wasm.layouts())).toEqual({
+    Expr: { size: 16, align: 8 },
+    Instr: { size: 24, align: 8 },
+    Type: { size: 8, align: 4 },
+    Typexpr: { size: 20, align: 4 },
+  });
+});
+
 test("test rose to rust formatting", () => {
   const f = fn([Real, Real], Real, (x, y) => add(mul(x, 2), y));
   const g = wasm.js2Rust(f.f.f);

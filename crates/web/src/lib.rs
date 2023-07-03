@@ -14,6 +14,30 @@ fn to_js_value(value: &impl Serialize) -> Result<JsValue, serde_wasm_bindgen::Er
     value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
 }
 
+#[cfg(feature = "debug")]
+#[wasm_bindgen]
+pub fn layouts() -> Result<JsValue, serde_wasm_bindgen::Error> {
+    #[derive(Serialize)]
+    struct Layout {
+        size: usize,
+        align: usize,
+    }
+
+    fn layout<T>() -> Layout {
+        Layout {
+            size: std::mem::size_of::<T>(),
+            align: std::mem::align_of::<T>(),
+        }
+    }
+
+    to_js_value(&[
+        ("Expr", layout::<rose::Expr>()),
+        ("Instr", layout::<rose::Instr>()),
+        ("Type", layout::<rose::Type>()),
+        ("Typexpr", layout::<rose::Typexpr>()),
+    ])
+}
+
 /// A reference-counted pointer to a function.
 #[wasm_bindgen]
 pub struct Func(Rc<rose::Function>);
