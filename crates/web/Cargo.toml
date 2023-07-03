@@ -18,4 +18,5 @@ ts-rs = "6"
 wasm-bindgen = "=0.2.87" # Must be this version of wbg
 
 [features]
+default = ["debug"]
 debug = ["dep:console_error_panic_hook"]
