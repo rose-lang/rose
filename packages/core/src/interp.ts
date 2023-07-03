@@ -1,8 +1,6 @@
-import { Bool } from "./bool.js";
-import { Val } from "./context.js";
+import { Val, Var } from "./context.js";
 import * as ffi from "./ffi.js";
 import { Fn } from "./fn.js";
-import { Real } from "./real.js";
 
 type Concrete = null | boolean | number;
 
@@ -20,12 +18,7 @@ const unpack = (x: ffi.Val): Concrete => {
   throw Error("TODO");
 };
 
-// TODO: this doesn't work properly, e.g. `Resolve<Real>` is `boolean | number`
-type Resolve<T extends Val> = T extends Bool
-  ? boolean
-  : T extends Real
-  ? number
-  : unknown; // TODO: is `unknown` the right default here? what about `never`?
+type Resolve<T> = Exclude<T, Var>;
 
 type Args<T extends readonly Val[]> = {
   [K in keyof T]: Resolve<T[K]>;
