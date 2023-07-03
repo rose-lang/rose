@@ -43,7 +43,7 @@ pub struct Ty {
     rc: Rc<(Vec<Ty>, rose::Typedef)>,
 }
 
-impl rose::TypeNode for Ty {
+impl rose::TypeNode for &Ty {
     fn def(&self) -> &rose::Typedef {
         let (_, def) = self.rc.as_ref();
         def
@@ -51,7 +51,7 @@ impl rose::TypeNode for Ty {
 
     fn ty(&self, id: id::Typedef) -> Option<Self> {
         let (types, _) = self.rc.as_ref();
-        types.get(id.typedef()).cloned()
+        types.get(id.typedef())
     }
 }
 
@@ -62,8 +62,8 @@ pub struct Func {
     rc: Rc<(Vec<Ty>, Vec<Func>, rose::Function)>,
 }
 
-impl rose::FuncNode for Func {
-    type Ty = Ty;
+impl<'a> rose::FuncNode for &'a Func {
+    type Ty = &'a Ty;
 
     fn def(&self) -> &rose::Function {
         let (_, _, def) = self.rc.as_ref();
@@ -72,12 +72,12 @@ impl rose::FuncNode for Func {
 
     fn ty(&self, id: id::Typedef) -> Option<Self::Ty> {
         let (types, _, _) = self.rc.as_ref();
-        types.get(id.typedef()).cloned()
+        types.get(id.typedef())
     }
 
     fn func(&self, id: id::Function) -> Option<Self> {
         let (_, funcs, _) = self.rc.as_ref();
-        funcs.get(id.function()).cloned()
+        funcs.get(id.function())
     }
 }
 

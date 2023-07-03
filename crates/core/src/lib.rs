@@ -83,9 +83,12 @@ pub struct Typedef {
 }
 
 /// Wrapper for a `Typedef` that knows how to resolve its `id::Typedef`s.
+///
+/// Should be cheap to clone, ideally `Copy`.
 pub trait TypeNode {
     fn def(&self) -> &Typedef;
 
+    /// Only valid with `id::Typedef`s from `self.def().types`.
     fn ty(&self, id: id::Typedef) -> Option<Self>
     where
         Self: Sized;
@@ -120,13 +123,17 @@ pub struct Function {
 }
 
 /// Wrapper for a `Function` that knows how to resolve its `id::Typedef`s and `id::Function`s.
+///
+/// Should be cheap to clone, ideally `Copy`.
 pub trait FuncNode {
     type Ty: TypeNode;
 
     fn def(&self) -> &Function;
 
+    /// Only valid with `id::Typedef`s from `self.def().types`.
     fn ty(&self, id: id::Typedef) -> Option<Self::Ty>;
 
+    /// Only valid with `id::Function`s from `self.def().funcs`.
     fn func(&self, id: id::Function) -> Option<Self>
     where
         Self: Sized;

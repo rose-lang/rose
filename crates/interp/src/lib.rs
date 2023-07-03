@@ -124,7 +124,7 @@ fn resolve(generics: &[Typeval], types: &[Typeval], t: Type) -> Typeval {
 }
 
 struct Interpreter<'a, F: FuncNode> {
-    f: &'a F,
+    f: &'a F, // reference instead of value because otherwise borrow checker complains in `fn block`
     generics: &'a [Typeval],
     types: Vec<Typeval>,
     vars: Vec<Option<Val>>,
@@ -235,11 +235,7 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
             &Expr::Call { func, arg } => {
                 let f = &self.f.def().funcs[func.func()];
                 let generics: Vec<Typeval> = f.generics.iter().map(|&t| self.resolve(t)).collect();
-                call(
-                    &self.f.func(f.id).unwrap(),
-                    &generics,
-                    self.get(arg).clone(),
-                )
+                call(self.f.func(f.id).unwrap(), &generics, self.get(arg).clone())
             }
             &Expr::If { cond, then, els } => {
                 if self.get(cond).bool() {
@@ -283,8 +279,8 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
 }
 
 /// Assumes `generics` and `arg` are valid.
-fn call(f: &impl FuncNode, generics: &[Typeval], arg: Val) -> Val {
-    Interpreter::new(f, generics)
+fn call(f: impl FuncNode, generics: &[Typeval], arg: Val) -> Val {
+    Interpreter::new(&f, generics)
         .block(f.def().main, arg)
         .clone()
 }
@@ -293,7 +289,7 @@ fn call(f: &impl FuncNode, generics: &[Typeval], arg: Val) -> Val {
 pub enum Error {}
 
 /// Guaranteed not to panic if `f` is valid.
-pub fn interp(f: &impl FuncNode, generics: &[Typeval], arg: Val) -> Result<Val, Error> {
+pub fn interp(f: impl FuncNode, generics: &[Typeval], arg: Val) -> Result<Val, Error> {
     // TODO: check that `generics` and `arg` are valid
     Ok(call(f, generics, arg))
 }
@@ -303,6 +299,7 @@ mod tests {
     use super::*;
     use rose::{Block, Func, Function, Instr, TypeNode};
 
+    #[derive(Clone, Copy, Debug)]
     enum NoTypedefs {}
 
     impl TypeNode for NoTypedefs {
@@ -315,6 +312,7 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy, Debug)]
     struct FuncInSlice<'a> {
         funcs: &'a [Function],
         id: id::Function,
@@ -386,7 +384,7 @@ mod tests {
             main: id::block(0),
         }];
         let answer = interp(
-            &FuncInSlice {
+            FuncInSlice {
                 funcs: &funcs,
                 id: id::function(0),
             },
@@ -452,7 +450,7 @@ mod tests {
             },
         ];
         let answer = interp(
-            &FuncInSlice {
+            FuncInSlice {
                 funcs: &funcs,
                 id: id::function(1),
             },
