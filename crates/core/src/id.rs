@@ -26,6 +26,46 @@ impl Member {
     }
 }
 
+/// Index of a typedef in a definition context.
+#[cfg_attr(test, derive(TS), ts(export))]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename = "TypedefId")
+)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Typedef(usize);
+
+pub fn typedef(id: usize) -> Typedef {
+    Typedef(id)
+}
+
+impl Typedef {
+    pub fn typedef(self) -> usize {
+        self.0
+    }
+}
+
+/// Index of an uninstantiated function reference in a definition context.
+#[cfg_attr(test, derive(TS), ts(export))]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(rename = "FunctionId")
+)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Function(usize);
+
+pub fn function(id: usize) -> Function {
+    Function(id)
+}
+
+impl Function {
+    pub fn function(self) -> usize {
+        self.0
+    }
+}
+
 /// Index of a generic type parameter in a definition context.
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(
@@ -66,7 +106,7 @@ impl Typexpr {
     }
 }
 
-/// Index of a function reference in a definition context.
+/// Index of an instantiated function reference in a definition context.
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(
     feature = "serde",

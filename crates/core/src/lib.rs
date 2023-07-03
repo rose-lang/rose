@@ -1,7 +1,6 @@
 pub mod id;
 
 use enumset::{EnumSet, EnumSetType};
-use std::{fmt, rc::Rc};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -48,6 +47,7 @@ pub enum Type {
 }
 
 /// A more complicated type.
+#[derive(Debug)]
 pub enum Typexpr {
     Ref {
         /// Must satisfy `Constraint::Scope`.
@@ -63,35 +63,13 @@ pub enum Typexpr {
     /// Satisfies `Constraint::Vector` if all `members` do.
     Tuple { members: Vec<Type> },
     Def {
-        def: Rc<Typedef>,
+        id: id::Typedef,
         /// Instantiations of the typedef's generic type parameters.
         params: Vec<Type>,
     },
 }
 
-impl fmt::Debug for Typexpr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Ref { scope, inner } => f
-                .debug_struct("Ref")
-                .field("scope", scope)
-                .field("inner", inner)
-                .finish(),
-            Self::Array { index, elem } => f
-                .debug_struct("Array")
-                .field("index", index)
-                .field("elem", elem)
-                .finish(),
-            Self::Tuple { members } => f.debug_struct("Tuple").field("members", members).finish(),
-            Self::Def { def: _, params } => f
-                .debug_struct("Def")
-                .field("params", params)
-                .finish_non_exhaustive(), // omit `def` because the graph might not be a tree
-        }
-    }
-}
-
-/// A referenceable type definition.
+/// A type definition.
 #[derive(Debug)]
 pub struct Typedef {
     /// Generic type parameters.
@@ -104,21 +82,23 @@ pub struct Typedef {
     pub constraints: EnumSet<Constraint>,
 }
 
+/// Wrapper for a `Typedef` that knows how to resolve its `id::Typedef`s.
+pub trait TypeNode {
+    fn def(&self) -> &Typedef;
+
+    fn ty(&self, id: id::Typedef) -> Option<Self>
+    where
+        Self: Sized;
+}
+
 /// Reference to a function, with types supplied for its generic parameters.
+#[derive(Debug)]
 pub struct Func {
-    pub def: Rc<Function>,
+    pub id: id::Function,
     pub generics: Vec<Type>,
 }
 
-impl fmt::Debug for Func {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Func")
-            .field("generics", &self.generics)
-            .finish_non_exhaustive() // omit `def` because the graph might not be a tree
-    }
-}
-
-/// A referenceable function definition.
+/// A function definition.
 #[derive(Debug)]
 pub struct Function {
     /// Generic type parameters.
@@ -137,6 +117,19 @@ pub struct Function {
     pub blocks: Vec<Block>,
     /// Main block.
     pub main: id::Block,
+}
+
+/// Wrapper for a `Function` that knows how to resolve its `id::Typedef`s and `id::Function`s.
+pub trait FuncNode {
+    type Ty: TypeNode;
+
+    fn def(&self) -> &Function;
+
+    fn ty(&self, id: id::Typedef) -> Option<Self::Ty>;
+
+    fn func(&self, id: id::Function) -> Option<Self>
+    where
+        Self: Sized;
 }
 
 #[cfg_attr(test, derive(TS), ts(export))]

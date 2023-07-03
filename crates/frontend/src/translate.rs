@@ -1,7 +1,7 @@
 use crate::{ast, tokens};
 use enumset::EnumSet;
 use rose::{self as ir, id};
-use std::{collections::HashMap, ops::Range, rc::Rc};
+use std::{collections::HashMap, ops::Range};
 
 #[derive(Debug, thiserror::Error)]
 pub enum TypeError {
@@ -56,18 +56,15 @@ type ParsedTypes<'input> = (
 );
 
 fn parse_types<'input>(
-    lookup: impl Fn(&'input str) -> Option<Rc<ir::Typedef>>,
+    lookup: impl Fn(&'input str) -> Option<id::Typedef>,
     typenames: impl Iterator<Item = ast::Spanned<&'input str>>,
 ) -> Result<ParsedTypes<'input>, TypeError> {
     let mut generics = HashMap::new();
     let mut typevars = vec![];
     let mut types = vec![];
     for typ in typenames {
-        types.push(if let Some(def) = lookup(typ.val) {
-            let typexpr = ir::Typexpr::Def {
-                def,
-                params: vec![],
-            };
+        types.push(if let Some(id) = lookup(typ.val) {
+            let typexpr = ir::Typexpr::Def { id, params: vec![] };
             let id = id::typexpr(typevars.len());
             typevars.push(typexpr);
             ir::Type::Expr { id }
@@ -111,15 +108,67 @@ fn parse_types<'input>(
 
 #[derive(Debug)]
 pub struct Type<'input> {
-    pub def: Rc<rose::Typedef>,
+    pub def: rose::Typedef,
     /// Sorted lexicographically.
     pub fields: Vec<&'input str>,
 }
 
 #[derive(Debug)]
 pub struct Module<'input> {
-    pub types: HashMap<&'input str, Type<'input>>,
-    pub funcs: HashMap<&'input str, Rc<rose::Function>>,
+    types: Vec<Type<'input>>,
+    funcs: Vec<rose::Function>,
+    typenames: HashMap<&'input str, id::Typedef>,
+    funcnames: HashMap<&'input str, id::Function>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct TypeRef<'input, 'a> {
+    m: &'a Module<'input>,
+    id: id::Typedef,
+}
+
+impl rose::TypeNode for TypeRef<'_, '_> {
+    fn def(&self) -> &rose::Typedef {
+        &self.m.types[self.id.typedef()].def
+    }
+
+    fn ty(&self, _id: id::Typedef) -> Option<Self> {
+        None
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct FuncRef<'input, 'a> {
+    m: &'a Module<'input>,
+    id: id::Function,
+}
+
+impl<'input, 'a> rose::FuncNode for FuncRef<'input, 'a> {
+    type Ty = TypeRef<'input, 'a>;
+
+    fn def(&self) -> &rose::Function {
+        &self.m.funcs[self.id.function()]
+    }
+
+    fn ty(&self, id: id::Typedef) -> Option<Self::Ty> {
+        Some(TypeRef { m: self.m, id })
+    }
+
+    fn func(&self, id: id::Function) -> Option<Self> {
+        Some(Self { m: self.m, id })
+    }
+}
+
+impl Module<'_> {
+    pub fn get_type(&self, name: &str) -> Option<TypeRef> {
+        let &id = self.typenames.get(name)?;
+        Some(TypeRef { m: self, id })
+    }
+
+    pub fn get_func(&self, name: &str) -> Option<FuncRef> {
+        let &id = self.funcnames.get(name)?;
+        Some(FuncRef { m: self, id })
+    }
 }
 
 struct BlockCtx<'input, 'a> {
@@ -218,7 +267,7 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                         ir::Typexpr::Ref { .. } => Err(TypeError::IndexRef),
                         ir::Typexpr::Array { elem, .. } => Ok(*elem),
                         ir::Typexpr::Tuple { .. } => Err(TypeError::IndexTuple),
-                        ir::Typexpr::Def { def: _, params: _ } => todo!(),
+                        ir::Typexpr::Def { id: _, params: _ } => todo!(),
                     },
                     t => Err(TypeError::IndexPrimitive { t }),
                 }?;
@@ -250,7 +299,7 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                             ))
                         }
                         ir::Typexpr::Tuple { members: _ } => todo!(),
-                        ir::Typexpr::Def { def: _, params: _ } => todo!(),
+                        ir::Typexpr::Def { id: _, params: _ } => todo!(),
                     },
                     t => Err(TypeError::MemberPrimitive { t }),
                 }
@@ -266,12 +315,9 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                     .map(|elem| self.typecheck(elem))
                     .collect::<Result<Vec<id::Var>, TypeError>>()?;
                 let types: Vec<ir::Type> = vars.iter().map(|&v| self.getlocal(v)).collect();
-                if let Some(def) = self.m.funcs.get(func.val) {
-                    let (generics, ret) = self.unify(def, &types)?;
-                    let func = self.newfunc(ir::Func {
-                        def: Rc::clone(def),
-                        generics,
-                    });
+                if let Some(&id) = self.m.funcnames.get(func.val) {
+                    let (generics, ret) = self.unify(&self.m.funcs[id.function()], &types)?;
+                    let func = self.newfunc(ir::Func { id, generics });
                     let t = self.newtype(ir::Typexpr::Tuple { members: types });
                     let arg =
                         self.instr(ir::Type::Expr { id: t }, ir::Expr::Tuple { members: vars });
@@ -392,31 +438,30 @@ impl<'input> Module<'input> {
                 // TODO: check for duplicate field names
                 members.sort_by_key(|&(name, _)| name); // to ignore field order in literals
                 let (genericnames, mut typevars, fields) = parse_types(
-                    |s| self.types.get(s).map(|Type { def, .. }| Rc::clone(def)),
+                    |s| self.typenames.get(s).copied(),
                     members.iter().map(|&(_, t)| t),
                 )?;
                 let def = ir::Type::Expr {
                     id: id::typexpr(typevars.len()),
                 };
                 typevars.push(ir::Typexpr::Tuple { members: fields });
-                let t = Rc::new(ir::Typedef {
+                let t = ir::Typedef {
                     generics: vec![EnumSet::only(ir::Constraint::Index); genericnames.len()],
                     types: typevars,
                     def,
                     // TODO: check constraints once the text syntax supports non-vector structs
                     constraints: EnumSet::only(ir::Constraint::Vector),
+                };
+                let id = id::typedef(self.types.len());
+                self.types.push(Type {
+                    def: t,
+                    fields: members
+                        .into_iter()
+                        .map(|(name, _)| name)
+                        .collect::<Vec<_>>(),
                 });
                 // TODO: check for duplicate type names
-                self.types.insert(
-                    name,
-                    Type {
-                        def: t,
-                        fields: members
-                            .into_iter()
-                            .map(|(name, _)| name)
-                            .collect::<Vec<_>>(),
-                    },
-                );
+                self.typenames.insert(name, id);
             }
             ast::Def::Func {
                 name,
@@ -425,7 +470,7 @@ impl<'input> Module<'input> {
                 body,
             } => {
                 let (genericnames, mut typevars, mut paramtypes) = parse_types(
-                    |s| self.types.get(s).map(|Type { def, .. }| Rc::clone(def)),
+                    |s| self.typenames.get(s).copied(),
                     // TODO: handle return type separately from params w.r.t. generics
                     params.iter().map(|&(_, t)| t).chain([typ]),
                 )?;
@@ -463,7 +508,7 @@ impl<'input> Module<'input> {
                     code: ctx.c,
                     ret: retvar,
                 });
-                let f = Rc::new(ir::Function {
+                let f = ir::Function {
                     generics,
                     types: ctx.t,
                     funcs: ctx.f,
@@ -472,9 +517,11 @@ impl<'input> Module<'input> {
                     vars: ctx.v,
                     blocks: ctx.b,
                     main,
-                });
+                };
+                let id = id::function(self.funcs.len());
+                self.funcs.push(f);
                 // TODO: check for duplicate function names
-                self.funcs.insert(name, f);
+                self.funcnames.insert(name, id);
             }
         }
         Ok(())
@@ -483,8 +530,10 @@ impl<'input> Module<'input> {
 
 pub fn translate(ast: ast::Module) -> Result<Module, TypeError> {
     let mut m = Module {
-        types: HashMap::new(),
-        funcs: HashMap::new(),
+        types: vec![],
+        funcs: vec![],
+        typenames: HashMap::new(),
+        funcnames: HashMap::new(),
     };
     for def in ast.defs {
         m.define(def)?;

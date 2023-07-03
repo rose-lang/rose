@@ -7,7 +7,7 @@ fn test_add() {
     let src = include_str!("add.rose");
     let module = parse(src).unwrap();
     let answer = interp(
-        module.funcs.get("add").unwrap(),
+        &module.get_func("add").unwrap(),
         &[],
         Val::Tuple(Rc::new(vec![Val::F64(2.), Val::F64(2.)])),
     )
@@ -20,7 +20,7 @@ fn test_sub() {
     let src = include_str!("sub.rose");
     let module = parse(src).unwrap();
     let answer = interp(
-        module.funcs.get("sub").unwrap(),
+        &module.get_func("sub").unwrap(),
         &[],
         Val::Tuple(Rc::new(vec![Val::F64(2.), Val::F64(2.)])),
     )

@@ -38,14 +38,54 @@ pub fn layouts() -> Result<JsValue, serde_wasm_bindgen::Error> {
     ])
 }
 
-/// A reference-counted pointer to a function.
+#[derive(Clone, Debug)]
+pub struct Ty {
+    rc: Rc<(Vec<Ty>, rose::Typedef)>,
+}
+
+impl rose::TypeNode for Ty {
+    fn def(&self) -> &rose::Typedef {
+        let (_, def) = self.rc.as_ref();
+        def
+    }
+
+    fn ty(&self, id: id::Typedef) -> Option<Self> {
+        let (types, _) = self.rc.as_ref();
+        types.get(id.typedef()).cloned()
+    }
+}
+
+/// A node in a reference-counted acyclic digraph of functions.
 #[wasm_bindgen]
-pub struct Func(Rc<rose::Function>);
+#[derive(Clone, Debug)]
+pub struct Func {
+    rc: Rc<(Vec<Ty>, Vec<Func>, rose::Function)>,
+}
+
+impl rose::FuncNode for Func {
+    type Ty = Ty;
+
+    fn def(&self) -> &rose::Function {
+        let (_, _, def) = self.rc.as_ref();
+        def
+    }
+
+    fn ty(&self, id: id::Typedef) -> Option<Self::Ty> {
+        let (types, _, _) = self.rc.as_ref();
+        types.get(id.typedef()).cloned()
+    }
+
+    fn func(&self, id: id::Function) -> Option<Self> {
+        let (_, funcs, _) = self.rc.as_ref();
+        funcs.get(id.function()).cloned()
+    }
+}
 
 #[cfg(feature = "debug")]
 #[wasm_bindgen(js_name = "js2Rust")]
-pub fn js_to_rust(Func(f): &Func) -> String {
-    format!("{:#?}", f)
+pub fn js_to_rust(f: &Func) -> String {
+    let (_, _, def) = f.rc.as_ref();
+    format!("{:#?}", def)
 }
 
 /// A function under construction.
@@ -71,16 +111,22 @@ pub fn bake(ctx: Context, main: usize) -> Func {
         vars,
         blocks,
     } = ctx;
-    Func(Rc::new(rose::Function {
-        generics,
-        types,
-        funcs,
-        param,
-        ret,
-        vars,
-        blocks,
-        main: id::block(main),
-    }))
+    Func {
+        rc: Rc::new((
+            vec![], // TODO: support typedefs
+            vec![], // TODO: support function references
+            rose::Function {
+                generics,
+                types,
+                funcs,
+                param,
+                ret,
+                vars,
+                blocks,
+                main: id::block(main),
+            },
+        )),
+    }
 }
 
 /// A block under construction. Implicitly refers to the current `Context`.
@@ -267,7 +313,7 @@ impl Context {
         let &t = match self.get(array) {
             rose::Type::Expr { id } => match &self.types[id.typexpr()] {
                 rose::Typexpr::Array { index: _, elem } => Some(elem),
-                rose::Typexpr::Def { def: _, params: _ } => todo!(),
+                rose::Typexpr::Def { id: _, params: _ } => todo!(),
                 rose::Typexpr::Ref { .. } | rose::Typexpr::Tuple { .. } => None,
             },
             _ => None,
@@ -283,7 +329,7 @@ impl Context {
         let t = match self.get(tuple) {
             rose::Type::Expr { id } => match &self.types[id.typexpr()] {
                 rose::Typexpr::Tuple { members } => Some(members[mem]),
-                rose::Typexpr::Def { def: _, params: _ } => todo!(),
+                rose::Typexpr::Def { id: _, params: _ } => todo!(),
                 rose::Typexpr::Ref { .. } | rose::Typexpr::Array { .. } => None,
             },
             _ => None,
@@ -523,7 +569,7 @@ impl Context {
 /// The `generics` are Serde-converted to `Vec<rose_interp::Typeval>`, the `arg` is Serde-converted
 /// to `rose_interp::Val`, and the return value is Serde-converted from `rose_interp::Val`.
 #[wasm_bindgen]
-pub fn interp(Func(f): &Func, generics: JsValue, arg: JsValue) -> Result<JsValue, JsError> {
+pub fn interp(f: &Func, generics: JsValue, arg: JsValue) -> Result<JsValue, JsError> {
     let types: Vec<rose_interp::Typeval> = serde_wasm_bindgen::from_value(generics)?;
     let val: rose_interp::Val = serde_wasm_bindgen::from_value(arg)?;
     let ret = rose_interp::interp(f, &types, val)?;

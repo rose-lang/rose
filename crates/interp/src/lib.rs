@@ -1,4 +1,4 @@
-use rose::{id, Binop, Expr, Function, Type, Typexpr, Unop};
+use rose::{id, Binop, Expr, FuncNode, Type, Typexpr, Unop};
 use std::{cell::Cell, rc::Rc};
 
 #[cfg(feature = "serde")]
@@ -123,17 +123,17 @@ fn resolve(generics: &[Typeval], types: &[Typeval], t: Type) -> Typeval {
     }
 }
 
-struct Interpreter<'a> {
-    f: &'a Function,
+struct Interpreter<'a, F: FuncNode> {
+    f: &'a F,
     generics: &'a [Typeval],
     types: Vec<Typeval>,
     vars: Vec<Option<Val>>,
 }
 
-impl<'a> Interpreter<'a> {
-    fn new(f: &'a Function, generics: &'a [Typeval]) -> Self {
+impl<'a, F: FuncNode> Interpreter<'a, F> {
+    fn new(f: &'a F, generics: &'a [Typeval]) -> Self {
         let mut types = vec![];
-        for t in &f.types {
+        for t in &f.def().types {
             let v = match t {
                 &Typexpr::Ref { scope: _, inner } => Typeval::Ref {
                     inner: Rc::new(resolve(generics, &types, inner)),
@@ -150,7 +150,7 @@ impl<'a> Interpreter<'a> {
                             .collect(),
                     ),
                 },
-                Typexpr::Def { def: _, params: _ } => todo!(),
+                Typexpr::Def { id: _, params: _ } => todo!(),
             };
             types.push(v);
         }
@@ -158,7 +158,7 @@ impl<'a> Interpreter<'a> {
             f,
             generics,
             types,
-            vars: vec![None; f.vars.len()],
+            vars: vec![None; f.def().vars.len()],
         }
     }
 
@@ -233,9 +233,13 @@ impl<'a> Interpreter<'a> {
             }
 
             &Expr::Call { func, arg } => {
-                let f = &self.f.funcs[func.func()];
+                let f = &self.f.def().funcs[func.func()];
                 let generics: Vec<Typeval> = f.generics.iter().map(|&t| self.resolve(t)).collect();
-                call(&f.def, &generics, self.get(arg).clone())
+                call(
+                    &self.f.func(f.id).unwrap(),
+                    &generics,
+                    self.get(arg).clone(),
+                )
             }
             &Expr::If { cond, then, els } => {
                 if self.get(cond).bool() {
@@ -269,7 +273,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn block(&mut self, b: id::Block, arg: Val) -> &Val {
-        let block = &self.f.blocks[b.block()];
+        let block = &self.f.def().blocks[b.block()];
         self.vars[block.arg.var()] = Some(arg);
         for instr in &block.code {
             self.vars[instr.var.var()] = Some(self.expr(&instr.expr));
@@ -279,15 +283,17 @@ impl<'a> Interpreter<'a> {
 }
 
 /// Assumes `generics` and `arg` are valid.
-fn call(f: &Function, generics: &[Typeval], arg: Val) -> Val {
-    Interpreter::new(f, generics).block(f.main, arg).clone()
+fn call(f: &impl FuncNode, generics: &[Typeval], arg: Val) -> Val {
+    Interpreter::new(f, generics)
+        .block(f.def().main, arg)
+        .clone()
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {}
 
 /// Guaranteed not to panic if `f` is valid.
-pub fn interp(f: &Function, generics: &[Typeval], arg: Val) -> Result<Val, Error> {
+pub fn interp(f: &impl FuncNode, generics: &[Typeval], arg: Val) -> Result<Val, Error> {
     // TODO: check that `generics` and `arg` are valid
     Ok(call(f, generics, arg))
 }
@@ -295,11 +301,47 @@ pub fn interp(f: &Function, generics: &[Typeval], arg: Val) -> Result<Val, Error
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rose::{Block, Func, Instr};
+    use rose::{Block, Func, Function, Instr, TypeNode};
+
+    enum NoTypedefs {}
+
+    impl TypeNode for NoTypedefs {
+        fn def(&self) -> &rose::Typedef {
+            match *self {}
+        }
+
+        fn ty(&self, _id: id::Typedef) -> Option<Self> {
+            None
+        }
+    }
+
+    struct FuncInSlice<'a> {
+        funcs: &'a [Function],
+        id: id::Function,
+    }
+
+    impl FuncNode for FuncInSlice<'_> {
+        type Ty = NoTypedefs;
+
+        fn def(&self) -> &Function {
+            &self.funcs[self.id.function()]
+        }
+
+        fn ty(&self, _id: id::Typedef) -> Option<Self::Ty> {
+            None
+        }
+
+        fn func(&self, id: id::Function) -> Option<Self> {
+            Some(Self {
+                funcs: self.funcs,
+                id,
+            })
+        }
+    }
 
     #[test]
     fn test_two_plus_two() {
-        let f = Function {
+        let funcs = vec![Function {
             generics: vec![],
             types: vec![Typexpr::Tuple {
                 members: vec![Type::F64, Type::F64],
@@ -342,9 +384,12 @@ mod tests {
                 ret: id::var(3),
             }],
             main: id::block(0),
-        };
+        }];
         let answer = interp(
-            &f,
+            &FuncInSlice {
+                funcs: &funcs,
+                id: id::function(0),
+            },
             &[],
             Val::Tuple(Rc::new(vec![Val::F64(2.), Val::F64(2.)])),
         )
@@ -354,57 +399,67 @@ mod tests {
 
     #[test]
     fn test_nested_call() {
-        let f = Rc::new(Function {
-            generics: vec![],
-            types: vec![],
-            funcs: vec![],
-            param: Type::Unit,
-            ret: Type::F64,
-            vars: vec![Type::Unit, Type::F64],
-            blocks: vec![Block {
-                arg: id::var(0),
-                code: vec![Instr {
-                    var: id::var(1),
-                    expr: Expr::F64 { val: 42. },
-                }],
-                ret: id::var(1),
-            }],
-            main: id::block(0),
-        });
-        let g = Function {
-            generics: vec![],
-            types: vec![],
-            funcs: vec![Func {
-                def: f,
+        let funcs = vec![
+            Function {
                 generics: vec![],
-            }],
-            param: Type::Unit,
-            ret: Type::F64,
-            vars: vec![Type::Unit, Type::F64, Type::F64],
-            blocks: vec![Block {
-                arg: id::var(0),
-                code: vec![
-                    Instr {
+                types: vec![],
+                funcs: vec![],
+                param: Type::Unit,
+                ret: Type::F64,
+                vars: vec![Type::Unit, Type::F64],
+                blocks: vec![Block {
+                    arg: id::var(0),
+                    code: vec![Instr {
                         var: id::var(1),
-                        expr: Expr::Call {
-                            func: id::func(0),
-                            arg: id::var(0),
+                        expr: Expr::F64 { val: 42. },
+                    }],
+                    ret: id::var(1),
+                }],
+                main: id::block(0),
+            },
+            Function {
+                generics: vec![],
+                types: vec![],
+                funcs: vec![Func {
+                    id: id::function(0),
+                    generics: vec![],
+                }],
+                param: Type::Unit,
+                ret: Type::F64,
+                vars: vec![Type::Unit, Type::F64, Type::F64],
+                blocks: vec![Block {
+                    arg: id::var(0),
+                    code: vec![
+                        Instr {
+                            var: id::var(1),
+                            expr: Expr::Call {
+                                func: id::func(0),
+                                arg: id::var(0),
+                            },
                         },
-                    },
-                    Instr {
-                        var: id::var(2),
-                        expr: Expr::Binary {
-                            op: Binop::Mul,
-                            left: id::var(1),
-                            right: id::var(1),
+                        Instr {
+                            var: id::var(2),
+                            expr: Expr::Binary {
+                                op: Binop::Mul,
+                                left: id::var(1),
+                                right: id::var(1),
+                            },
                         },
-                    },
-                ],
-                ret: id::var(2),
-            }],
-            main: id::block(0),
-        };
-        let answer = interp(&g, &[], Val::Unit).unwrap();
+                    ],
+                    ret: id::var(2),
+                }],
+                main: id::block(0),
+            },
+        ];
+        let answer = interp(
+            &FuncInSlice {
+                funcs: &funcs,
+                id: id::function(1),
+            },
+            &[],
+            Val::Unit,
+        )
+        .unwrap();
         assert_eq!(answer, Val::F64(1764.));
     }
 }
