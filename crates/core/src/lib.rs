@@ -1,5 +1,6 @@
 pub mod id;
 
+use enumset::{EnumSet, EnumSetType};
 use std::{fmt, rc::Rc};
 
 #[cfg(feature = "serde")]
@@ -11,7 +12,7 @@ use ts_rs::TS;
 /// A type constraint.
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, EnumSetType)]
 pub enum Constraint {
     /// Can be the `index` type of an `Array`.
     Index,
@@ -94,13 +95,13 @@ impl fmt::Debug for Typexpr {
 #[derive(Debug)]
 pub struct Typedef {
     /// Generic type parameters.
-    pub generics: Vec<Option<Constraint>>,
+    pub generics: Vec<EnumSet<Constraint>>,
     /// Nontrivial types used in this typedef.
     pub types: Vec<Typexpr>,
     /// The definition of this type.
     pub def: Type,
-    /// Constraint satisfied by this type, if any.
-    pub constraint: Option<Constraint>,
+    /// Constraints satisfied by this type, if any.
+    pub constraints: EnumSet<Constraint>,
 }
 
 /// Reference to a function, with types supplied for its generic parameters.
@@ -121,7 +122,7 @@ impl fmt::Debug for Func {
 #[derive(Debug)]
 pub struct Function {
     /// Generic type parameters.
-    pub generics: Vec<Option<Constraint>>,
+    pub generics: Vec<EnumSet<Constraint>>,
     /// Nontrivial types used in this function definition.
     pub types: Vec<Typexpr>,
     /// Instantiations referenced functions with generic type parameters.

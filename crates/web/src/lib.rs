@@ -1,3 +1,4 @@
+use enumset::EnumSet;
 use rose::id;
 use serde::Serialize;
 use std::rc::Rc;
@@ -26,7 +27,7 @@ pub fn js_to_rust(Func(f): &Func) -> String {
 /// A function under construction.
 #[wasm_bindgen]
 pub struct Context {
-    generics: Vec<Option<rose::Constraint>>,
+    generics: Vec<EnumSet<rose::Constraint>>,
     types: Vec<rose::Typexpr>,
     funcs: Vec<rose::Func>,
     param: rose::Type,
@@ -124,7 +125,7 @@ pub fn make(generics: usize, param_types: JsValue, ret_type: JsValue) -> Result<
 
     let param = rose::Type::Expr { id: id::typexpr(0) };
     let mut ctx = Context {
-        generics: vec![Some(rose::Constraint::Index); generics],
+        generics: vec![EnumSet::only(rose::Constraint::Index); generics],
         types: vec![], // we populate this further down
         funcs: vec![],
         param,

@@ -1,4 +1,5 @@
 use crate::{ast, tokens};
+use enumset::EnumSet;
 use rose::{self as ir, id};
 use std::{collections::HashMap, ops::Range, rc::Rc};
 
@@ -399,11 +400,11 @@ impl<'input> Module<'input> {
                 };
                 typevars.push(ir::Typexpr::Tuple { members: fields });
                 let t = Rc::new(ir::Typedef {
-                    generics: vec![Some(ir::Constraint::Index); genericnames.len()],
+                    generics: vec![EnumSet::only(ir::Constraint::Index); genericnames.len()],
                     types: typevars,
                     def,
                     // TODO: check constraints once the text syntax supports non-vector structs
-                    constraint: Some(ir::Constraint::Vector),
+                    constraints: EnumSet::only(ir::Constraint::Vector),
                 });
                 // TODO: check for duplicate type names
                 self.types.insert(
@@ -428,7 +429,7 @@ impl<'input> Module<'input> {
                     // TODO: handle return type separately from params w.r.t. generics
                     params.iter().map(|&(_, t)| t).chain([typ]),
                 )?;
-                let generics = vec![Some(ir::Constraint::Index); genericnames.len()];
+                let generics = vec![EnumSet::only(ir::Constraint::Index); genericnames.len()];
                 let ret = paramtypes.pop().expect("`parse_types` should preserve len");
                 let param = ir::Type::Expr {
                     id: id::typexpr(typevars.len()),

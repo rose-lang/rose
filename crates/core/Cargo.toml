@@ -7,6 +7,7 @@ license = "MIT"
 include = ["src/lib.rs"]
 
 [dependencies]
+enumset = "1"
 serde = { version = "1", features = ["derive"], optional = true }
 thiserror = "1"
 
@@ -15,4 +16,4 @@ ts-rs = "6"
 
 [features]
 default = ["serde"]
-serde = ["dep:serde"]
+serde = ["dep:serde", "enumset/serde"]
