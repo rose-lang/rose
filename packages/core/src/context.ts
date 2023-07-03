@@ -19,6 +19,7 @@ export interface Var {
   id: number;
 }
 
+/** Context for the current block under construction. */
 export let block: ffi.Block | undefined = undefined;
 
 export const getBlock = (): ffi.Block => {
@@ -30,8 +31,13 @@ export const setBlock = (b: ffi.Block | undefined): void => {
   block = b;
 };
 
+/** An abstract value. */
 export type Val = boolean | number | Var;
 
+/**
+ * Return the ID of a var for an abstract value, emitting instructions if
+ * necessary.
+ */
 export const getVar = (ctx: ffi.Context, b: ffi.Block, x: Val): number => {
   if (typeof x === "boolean") return ctx.bool(b, x);
   if (typeof x === "number") return ctx.f64(b, x);

@@ -33,6 +33,11 @@ export const bake = (ctx: wasm.Context, main: number): Fn => {
 };
 
 export interface Body {
+  /**
+   * Unlike `Fn`, the `Context` type shouldn't be held onto in any public APIs,
+   * so we don't give it a canonical wrapper; every instance must always be
+   * `bake`d or `free`d.
+   */
   ctx: wasm.Context;
   main: wasm.Block;
   arg: number;

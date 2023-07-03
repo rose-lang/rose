@@ -346,6 +346,8 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
             ast::Expr::If { cond, then, els } => {
                 let c = self.typecheck(*cond)?; // TODO: ensure this is `Bool`
                 let code = std::mem::take(&mut self.c);
+                // the `BlockCtx` type can only think about one under-construction block at a time,
+                // so when constructing an `If`, we keep swapping them out until we're done
 
                 let arg_then = self.newlocal(ir::Type::Unit);
                 let ret_then = self.typecheck(*then)?;

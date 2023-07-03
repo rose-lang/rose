@@ -83,8 +83,6 @@ pub struct Typedef {
 }
 
 /// Wrapper for a `Typedef` that knows how to resolve its `id::Typedef`s.
-///
-/// Should be cheap to clone, ideally `Copy`.
 pub trait TypeNode {
     fn def(&self) -> &Typedef;
 
@@ -123,8 +121,6 @@ pub struct Function {
 }
 
 /// Wrapper for a `Function` that knows how to resolve its `id::Typedef`s and `id::Function`s.
-///
-/// Should be cheap to clone, ideally `Copy`.
 pub trait FuncNode {
     type Ty: TypeNode;
 
@@ -193,6 +189,11 @@ pub enum Expr {
         /// Must actually be a `Ref` of an array, not just an array.
         array: id::Var,
         index: id::Var,
+    },
+    Field {
+        /// Must actually be a `Ref` of a tuple, not just a tuple.
+        tuple: id::Var,
+        field: id::Member,
     },
 
     Unary {

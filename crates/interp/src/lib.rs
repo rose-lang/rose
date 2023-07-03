@@ -198,6 +198,10 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
                 (Val::Array(v), &Val::Fin(i)) => v[i].clone(),
                 _ => unreachable!(),
             },
+            &Expr::Field { tuple, field } => match self.get(tuple) {
+                Val::Tuple(x) => x[field.member()].clone(),
+                _ => unreachable!(),
+            },
 
             &Expr::Unary { op, arg } => {
                 let x = self.get(arg);

@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import { Real, add, fn, mul } from "./index.js";
 
 test("core IR type layouts", () => {
+  // these don't matter too much, but it's good to notice if sizes increase
   expect(Object.fromEntries(wasm.layouts())).toEqual({
     Expr: { size: 16, align: 8 },
     Instr: { size: 24, align: 8 },
@@ -14,6 +15,7 @@ test("core IR type layouts", () => {
 test("test rose to rust formatting", () => {
   const f = fn([Real, Real], Real, (x, y) => add(mul(x, 2), y));
   const g = wasm.js2Rust(f.f.f);
+  // TODO: maybe make a more readable IR text format
   expect(g).toBe(
     `Function {
     generics: [],

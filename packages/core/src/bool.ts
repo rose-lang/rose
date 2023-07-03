@@ -43,9 +43,9 @@ export const cond = <T extends Val>(
 
   const p = getVar(ctx, b, cond);
 
-  const at = ctx.varUnit();
+  const at = ctx.varUnit(); // `then` and `els` blocks take in `Unit`-type arg
   const bt = new ffi.Block();
-  let nt: number;
+  let nt: number; // block ID
   try {
     setBlock(bt);
     const rt = getVar(ctx, bt, then());

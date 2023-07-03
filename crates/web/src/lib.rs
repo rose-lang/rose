@@ -14,6 +14,7 @@ fn to_js_value(value: &impl Serialize) -> Result<JsValue, serde_wasm_bindgen::Er
     value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
 }
 
+// for regression testing purposes only
 #[cfg(feature = "debug")]
 #[wasm_bindgen]
 pub fn layouts() -> Result<JsValue, serde_wasm_bindgen::Error> {
@@ -150,6 +151,7 @@ impl Default for Block {
     }
 }
 
+// just an ephemeral struct return several things which we then unpack on the JS side
 #[wasm_bindgen]
 pub struct Body {
     ctx: Option<Context>,
@@ -338,7 +340,7 @@ impl Context {
         Ok(self.instr(b, t, rose::Expr::Member { tuple, member }))
     }
 
-    // no method for `Expr::Slice` here, because we don't currently expose mutation to JS
+    // no `Expr::Slice` or `Expr::Field` here, because we don't currently expose mutation to JS
 
     // unary
 
