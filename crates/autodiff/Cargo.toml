@@ -1,0 +1,8 @@
+[package]
+name = "rose-autodiff"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+enumset = "1"
+rose = { path = "../core" }

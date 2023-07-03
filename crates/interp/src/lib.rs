@@ -210,6 +210,7 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
 
                     Unop::Neg => Val::F64(-x.f64()),
                     Unop::Abs => Val::F64(x.f64().abs()),
+                    Unop::Sign => Val::F64(x.f64().signum()), // TODO: ensure this matches compiler
                     Unop::Sqrt => Val::F64(x.f64().sqrt()),
                 }
             }

@@ -613,6 +613,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rose-autodiff"
+version = "0.0.0"
+dependencies = [
+ "enumset",
+ "rose",
+]
+
+[[package]]
 name = "rose-cli"
 version = "0.0.0"
 dependencies = [
@@ -650,6 +658,7 @@ dependencies = [
  "console_error_panic_hook",
  "enumset",
  "rose",
+ "rose-autodiff",
  "rose-interp",
  "serde",
  "serde-wasm-bindgen",

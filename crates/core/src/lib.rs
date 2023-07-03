@@ -47,7 +47,7 @@ pub enum Type {
 }
 
 /// A more complicated type.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Typexpr {
     Ref {
         /// Must satisfy `Constraint::Scope`.
@@ -93,14 +93,14 @@ pub trait TypeNode {
 }
 
 /// Reference to a function, with types supplied for its generic parameters.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Func {
     pub id: id::Function,
     pub generics: Vec<Type>,
 }
 
 /// A function definition.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Function {
     /// Generic type parameters.
     pub generics: Vec<EnumSet<Constraint>>,
@@ -137,7 +137,7 @@ pub trait FuncNode {
 
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Block {
     /// Input variable to this block.
     pub arg: id::Var,
@@ -148,7 +148,7 @@ pub struct Block {
 
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Instr {
     pub var: id::Var,
     pub expr: Expr,
@@ -156,7 +156,7 @@ pub struct Instr {
 
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Expr {
     Unit,
     Bool {
@@ -251,6 +251,7 @@ pub enum Unop {
     // `F64` -> `F64`
     Neg,
     Abs,
+    Sign,
     Sqrt,
 }
 

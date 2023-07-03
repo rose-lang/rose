@@ -577,3 +577,14 @@ pub fn interp(f: &Func, generics: JsValue, arg: JsValue) -> Result<JsValue, JsEr
     let ret = rose_interp::interp(f, &types, val)?;
     Ok(to_js_value(&ret)?)
 }
+
+#[wasm_bindgen]
+pub fn derivative(f: &Func) -> Func {
+    Func {
+        rc: Rc::new((
+            vec![],
+            vec![],
+            rose_autodiff::forward(rose_autodiff::derivative(f)),
+        )),
+    }
+}

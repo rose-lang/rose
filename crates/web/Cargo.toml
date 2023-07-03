@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 console_error_panic_hook = { version = "0.1", optional = true }
 enumset = "1"
 rose = { path = "../core", features = ["serde"] }
+rose-autodiff = { path = "../autodiff" }
 rose-interp = { path = "../interp", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.4"
