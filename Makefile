@@ -61,7 +61,7 @@ core: yarn wasm
 
 # test
 test-core: yarn wasm
-	yarn workspace rose test run
+	yarn workspace rose test run --no-threads
 
 ## `packages/site`
 
