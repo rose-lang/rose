@@ -431,7 +431,7 @@ impl Context {
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, rose::Type::F64, expr)
+        self.instr(b, rose::Type::Bool, expr)
     }
 
     #[wasm_bindgen]
@@ -441,7 +441,7 @@ impl Context {
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, rose::Type::F64, expr)
+        self.instr(b, rose::Type::Bool, expr)
     }
 
     #[wasm_bindgen]
@@ -451,7 +451,7 @@ impl Context {
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, rose::Type::F64, expr)
+        self.instr(b, rose::Type::Bool, expr)
     }
 
     #[wasm_bindgen]
@@ -461,7 +461,7 @@ impl Context {
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, rose::Type::F64, expr)
+        self.instr(b, rose::Type::Bool, expr)
     }
 
     #[wasm_bindgen]
@@ -471,7 +471,7 @@ impl Context {
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, rose::Type::F64, expr)
+        self.instr(b, rose::Type::Bool, expr)
     }
 
     #[wasm_bindgen]
@@ -481,7 +481,7 @@ impl Context {
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, rose::Type::F64, expr)
+        self.instr(b, rose::Type::Bool, expr)
     }
 
     #[wasm_bindgen]
