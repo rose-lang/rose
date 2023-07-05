@@ -1,5 +1,17 @@
 import { expect, test } from "vitest";
-import { Bool, Real, add, cond, div, fn, interp, mul, sub } from "./index.js";
+import {
+  Bool,
+  Real,
+  add,
+  cond,
+  div,
+  fn,
+  interp,
+  lt,
+  mul,
+  neg,
+  sub,
+} from "./index.js";
 
 test("2 + 2 = 4", () => {
   const f = fn([Real, Real], Real, (x, y) => add(x, y));
@@ -24,4 +36,19 @@ test("branch", () => {
   const g = interp(f);
   expect(g(false)).toBe(2);
   expect(g(true)).toBe(1);
+});
+
+test("call", () => {
+  const ifCond = fn([Bool, Real, Real], Real, (p, x, y) =>
+    cond(
+      p,
+      () => x,
+      () => y
+    )
+  );
+  const f = fn([Real], Real, (x) => ifCond(lt(x, 0), neg(x), x));
+  const g = interp(f);
+  expect(g(-1)).toBe(1);
+  expect(g(0)).toBe(0);
+  expect(g(1)).toBe(1);
 });
