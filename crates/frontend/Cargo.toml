@@ -5,6 +5,7 @@ publish = false
 edition = "2021"
 
 [dependencies]
+enumset = "1"
 lalrpop-util = "0.19"
 logos = "0.13"
 rose = { path = "../core" }

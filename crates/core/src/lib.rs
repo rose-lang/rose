@@ -1,6 +1,6 @@
 pub mod id;
 
-use std::rc::Rc;
+use enumset::{EnumSet, EnumSetType};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -8,153 +8,273 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use ts_rs::TS;
 
+/// A type constraint.
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
-pub enum Size {
-    Const { val: usize },
-    Generic { id: id::Generic },
+#[derive(Debug, EnumSetType)]
+pub enum Constraint {
+    /// Can be the `index` type of an `Array`.
+    Index,
+    /// Has a zero value and an addition operation.
+    Vector,
+    /// Can be the `scope` type of a `Ref`.
+    Scope,
 }
 
+/// A basic type or an index of a more complicated type.
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug)]
 pub enum Type {
+    Unit,
     Bool,
-    Int,
-    Real,
-    Size { val: Size },
-    Nat { bound: Size },
-    Var { id: id::Typ },
+    /// Satisfies `Constraint::Vector`.
+    F64,
+    /// A nonnegative integer less than `size`. Satisfies `Constraint::Index`.
+    Fin {
+        size: usize,
+    },
+    Generic {
+        id: id::Generic,
+    },
+    /// Satisfies `Constraint::Scope`.
+    Scope {
+        id: id::Block,
+    },
+    Expr {
+        id: id::Typexpr,
+    },
 }
 
+/// A more complicated type.
 #[derive(Debug)]
 pub enum Typexpr {
-    Vector {
+    Ref {
+        /// Must satisfy `Constraint::Scope`.
+        scope: Type,
+        inner: Type,
+    },
+    /// Satisfies `Constraint::Vector` if `elem` does.
+    Array {
+        /// Must satisfy `Constraint::Index`.
+        index: Type,
         elem: Type,
-        size: Size,
     },
-    Tuple {
-        members: Vec<Type>,
-    },
-    Typedef {
-        def: Rc<Def<Typexpr>>,
-        params: Vec<Size>,
+    /// Satisfies `Constraint::Vector` if all `members` do.
+    Tuple { members: Vec<Type> },
+    Def {
+        id: id::Typedef,
+        /// Instantiations of the typedef's generic type parameters.
+        params: Vec<Type>,
     },
 }
 
+/// A type definition.
 #[derive(Debug)]
-pub struct Inst {
-    pub def: Rc<Def<Function>>,
-    /// Generic size parameters.
-    pub params: Vec<Size>,
-}
-
-#[derive(Debug)]
-pub struct Def<T> {
-    /// Number of generic size parameters.
-    pub generics: usize,
+pub struct Typedef {
+    /// Generic type parameters.
+    pub generics: Vec<EnumSet<Constraint>>,
+    /// Nontrivial types used in this typedef.
     pub types: Vec<Typexpr>,
-    pub def: T,
+    /// The definition of this type.
+    pub def: Type,
+    /// Constraints satisfied by this type, if any.
+    pub constraints: EnumSet<Constraint>,
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
-pub enum Unop {
-    // Bool -> Bool
-    Not,
+/// Wrapper for a `Typedef` that knows how to resolve its `id::Typedef`s.
+pub trait TypeNode {
+    fn def(&self) -> &Typedef;
 
-    // Int -> Int
-    NegInt,
-    AbsInt,
-
-    // Real -> Real
-    NegReal,
-    AbsReal,
-    Sqrt,
-
-    // Vec<Int> -> Int
-    SumInt,
-    ProdInt,
-    MaxInt,
-    MinInt,
-
-    // Vec<Real> -> Real
-    SumReal,
-    ProdReal,
-    MaxReal,
-    MinReal,
+    /// Only valid with `id::Typedef`s from `self.def().types`.
+    fn ty(&self, id: id::Typedef) -> Option<Self>
+    where
+        Self: Sized;
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
-pub enum Binop {
-    // Bool -> Bool -> Bool
-    And,
-    Or,
-    EqBool,
-    NeqBool,
-
-    // Int -> Int -> Bool
-    NeqInt,
-    LtInt,
-    LeqInt,
-    EqInt,
-    GtInt,
-    GeqInt,
-
-    // Real -> Real -> Bool
-    NeqReal,
-    LtReal,
-    LeqReal,
-    EqReal,
-    GtReal,
-    GeqReal,
-
-    // Int -> Int -> Int
-    AddInt,
-    SubInt,
-    MulInt,
-    DivInt,
-    Mod,
-
-    // Real -> Real -> Real
-    AddReal,
-    SubReal,
-    MulReal,
-    DivReal,
+/// Reference to a function, with types supplied for its generic parameters.
+#[derive(Debug)]
+pub struct Func {
+    pub id: id::Function,
+    pub generics: Vec<Type>,
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
-pub enum Instr {
-    Generic { id: id::Generic },
-    Get { id: id::Local },
-    Set { id: id::Local },
-    Bool { val: bool },
-    Int { val: u32 },
-    Real { val: f64 },
-    Vector { id: id::Typ },
-    Tuple { id: id::Typ },
-    Index,
-    Member { id: id::Member },
-    Call { id: id::Func },
-    Unary { op: Unop },
-    Binary { op: Binop },
-    If,
-    Else,
-    End,
-    For { limit: Size },
-}
-
+/// A function definition.
 #[derive(Debug)]
 pub struct Function {
-    pub params: Vec<Type>,
-    pub ret: Vec<Type>,
-    pub locals: Vec<Type>,
-    pub funcs: Vec<Inst>,
-    pub body: Vec<Instr>,
+    /// Generic type parameters.
+    pub generics: Vec<EnumSet<Constraint>>,
+    /// Nontrivial types used in this function definition.
+    pub types: Vec<Typexpr>,
+    /// Instantiations referenced functions with generic type parameters.
+    pub funcs: Vec<Func>,
+    /// Parameter types.
+    pub param: Type,
+    /// Return types.
+    pub ret: Type,
+    /// Local variable types.
+    pub vars: Vec<Type>,
+    /// Blocks of code.
+    pub blocks: Vec<Block>,
+    /// Main block.
+    pub main: id::Block,
+}
+
+/// Wrapper for a `Function` that knows how to resolve its `id::Typedef`s and `id::Function`s.
+pub trait FuncNode {
+    type Ty: TypeNode;
+
+    fn def(&self) -> &Function;
+
+    /// Only valid with `id::Typedef`s from `self.def().types`.
+    fn ty(&self, id: id::Typedef) -> Option<Self::Ty>;
+
+    /// Only valid with `id::Function`s from `self.def().funcs`.
+    fn func(&self, id: id::Function) -> Option<Self>
+    where
+        Self: Sized;
+}
+
+#[cfg_attr(test, derive(TS), ts(export))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug)]
+pub struct Block {
+    /// Input variable to this block.
+    pub arg: id::Var,
+    pub code: Vec<Instr>,
+    /// Output variable from this block.
+    pub ret: id::Var,
+}
+
+#[cfg_attr(test, derive(TS), ts(export))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug)]
+pub struct Instr {
+    pub var: id::Var,
+    pub expr: Expr,
+}
+
+#[cfg_attr(test, derive(TS), ts(export))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug)]
+pub enum Expr {
+    Unit,
+    Bool {
+        val: bool,
+    },
+    F64 {
+        val: f64,
+    },
+    Fin {
+        val: usize,
+    },
+
+    Array {
+        elems: Vec<id::Var>,
+    },
+    Tuple {
+        members: Vec<id::Var>,
+    },
+
+    Index {
+        array: id::Var,
+        index: id::Var,
+    },
+    Member {
+        tuple: id::Var,
+        member: id::Member,
+    },
+
+    Slice {
+        /// Must actually be a `Ref` of an array, not just an array.
+        array: id::Var,
+        index: id::Var,
+    },
+    Field {
+        /// Must actually be a `Ref` of a tuple, not just a tuple.
+        tuple: id::Var,
+        field: id::Member,
+    },
+
+    Unary {
+        op: Unop,
+        arg: id::Var,
+    },
+    Binary {
+        op: Binop,
+        left: id::Var,
+        right: id::Var,
+    },
+
+    Call {
+        func: id::Func,
+        arg: id::Var,
+    },
+    If {
+        cond: id::Var,
+        /// `arg` has type `Unit`.
+        then: id::Block,
+        /// `arg` has type `Unit`.
+        els: id::Block,
+    },
+    For {
+        /// Must satisfy `Constraint::Index`.
+        index: Type,
+        /// `arg` has type `index`.
+        body: id::Block,
+    },
+    Accum {
+        /// Final contents of the `Ref`.
+        var: id::Var,
+        /// Must satisfy `Constraint::Vector`.
+        vector: Type,
+        /// `arg` has type `Ref` with scope `body` and inner type `vector`.
+        body: id::Block,
+    },
+
+    /// Accumulate into a `Ref`. Returned type is `Unit`.
+    Add {
+        /// The `Ref`, which must be in scope.
+        accum: id::Var,
+        /// Must be of the `Ref`'s inner type, which must satisfy `Constraint::Vector`.
+        addend: id::Var,
+    },
+}
+
+#[cfg_attr(test, derive(TS), ts(export))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Unop {
+    // `Bool` -> `Bool`
+    Not,
+
+    // `F64` -> `F64`
+    Neg,
+    Abs,
+    Sqrt,
+}
+
+#[cfg_attr(test, derive(TS), ts(export))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Binop {
+    // `Bool` -> `Bool` -> `Bool`
+    And,
+    Or,
+    Iff,
+    Xor,
+
+    // `F64` -> `F64` -> `Bool`
+    Neq,
+    Lt,
+    Leq,
+    Eq,
+    Gt,
+    Geq,
+
+    // `F64` -> `F64` -> `F64`
+    Add,
+    Sub,
+    Mul,
+    Div,
 }

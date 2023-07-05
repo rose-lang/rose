@@ -1,43 +1,75 @@
-import { Local, getCtx, local } from "./context.js";
+import { Val, Var, getBlock, getCtx, getVar, setBlock } from "./context.js";
 import * as ffi from "./ffi.js";
 
-export type Bool = boolean | Local;
-
-/** Emit instructions to push the value of `x` onto the stack. */
-const getBool = (ctx: ffi.Context, x: Bool): void => {
-  if (typeof x === "boolean") ctx.bool(x);
-  else local(ctx, x);
-};
+export type Bool = boolean | Var;
 
 export const not = (p: Bool): Bool => {
   const ctx = getCtx();
-  getBool(ctx, p);
-  ctx.not();
-  return { ctx, id: ctx.set("Bool") };
+  const b = getBlock();
+  return { ctx, id: ctx.not(b, getVar(ctx, b, p)) };
 };
 
-const logic =
-  (op: (ctx: ffi.Context) => void) =>
-  (p: Bool, q: Bool): Bool => {
-    const ctx = getCtx();
-    getBool(ctx, p);
-    getBool(ctx, q);
-    op(ctx);
-    return { ctx, id: ctx.set("Bool") };
-  };
-
-export const and = logic((ctx) => ctx.and());
-export const or = logic((ctx) => ctx.or());
-export const iff = logic((ctx) => ctx.eqBool());
-export const xor = logic((ctx) => ctx.neqBool());
-
-export const cond = <T>(cond: Bool, then: () => T, els: () => T): Local => {
+export const and = (p: Bool, q: Bool): Bool => {
   const ctx = getCtx();
-  getBool(ctx, cond);
-  ctx.cond();
-  then();
-  ctx.alt();
-  els();
-  ctx.end();
-  return { ctx, id: ctx.set("Real") }; // TODO: support other types
+  const b = getBlock();
+  return { ctx, id: ctx.and(b, getVar(ctx, b, p), getVar(ctx, b, q)) };
+};
+
+export const or = (p: Bool, q: Bool): Bool => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.or(b, getVar(ctx, b, p), getVar(ctx, b, q)) };
+};
+
+export const iff = (p: Bool, q: Bool): Bool => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.iff(b, getVar(ctx, b, p), getVar(ctx, b, q)) };
+};
+
+export const xor = (p: Bool, q: Bool): Bool => {
+  const ctx = getCtx();
+  const b = getBlock();
+  return { ctx, id: ctx.xor(b, getVar(ctx, b, p), getVar(ctx, b, q)) };
+};
+
+export const cond = <T extends Val>(
+  cond: Bool,
+  then: () => T,
+  els: () => T
+): T | Var => {
+  const ctx = getCtx();
+  const b = getBlock();
+
+  const p = getVar(ctx, b, cond);
+
+  const at = ctx.varUnit(); // `then` and `els` blocks take in `Unit`-type arg
+  const bt = new ffi.Block();
+  let nt: number; // block ID
+  try {
+    setBlock(bt);
+    const rt = getVar(ctx, bt, then());
+    nt = ctx.block(bt, at, rt);
+  } catch (e) {
+    bt.free();
+    throw e;
+  } finally {
+    setBlock(b);
+  }
+
+  const af = ctx.varUnit();
+  const bf = new ffi.Block();
+  let nf: number;
+  try {
+    setBlock(bf);
+    const rf = getVar(ctx, bf, els());
+    nf = ctx.block(bf, af, rf);
+  } catch (e) {
+    bf.free();
+    throw e;
+  } finally {
+    setBlock(b);
+  }
+
+  return { ctx, id: ctx.cond(b, p, nt, nf) };
 };
