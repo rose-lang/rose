@@ -9,7 +9,6 @@ import {
   interp,
   lt,
   mul,
-  neg,
   sub,
 } from "./index.js";
 
@@ -46,9 +45,9 @@ test("call", () => {
       () => y
     )
   );
-  const f = fn([Real], Real, (x) => ifCond(lt(x, 0), neg(x), x));
-  const g = interp(f);
-  expect(g(-1)).toBe(1);
-  expect(g(0)).toBe(0);
-  expect(g(1)).toBe(1);
+  const f = fn([Real], Real, (x) => ifCond(lt(x, 0), 0, x));
+  const relu = interp(f);
+  expect(relu(-1)).toBe(0);
+  expect(relu(0)).toBe(0);
+  expect(relu(1)).toBe(1);
 });
