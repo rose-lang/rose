@@ -242,6 +242,7 @@ impl Context {
     pub fn func(&mut self, f: &Func, generics: JsValue) -> Result<usize, JsError> {
         let types: Vec<rose::Type> = serde_wasm_bindgen::from_value(generics)?;
 
+        // only valid if indeed the `for` loop below calls `push` exactly once per iteration
         let n = self.types.len();
         let translate = |t: rose::Type| -> rose::Type {
             match t {
