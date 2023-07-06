@@ -244,6 +244,7 @@ impl Context {
 
         // only valid if indeed the `for` loop below calls `push` exactly once per iteration
         let n = self.types.len();
+        // translate types from the callee to the caller
         let translate = |t: rose::Type| -> rose::Type {
             match t {
                 rose::Type::Unit | rose::Type::Bool | rose::Type::F64 | rose::Type::Fin { .. } => t,
@@ -256,6 +257,7 @@ impl Context {
         };
 
         let (_, _, def) = f.rc.as_ref();
+        // push a corresponding type onto our own `types` for each type in the callee
         for callee_type in &def.types {
             let caller_type = match callee_type {
                 &rose::Typexpr::Ref { scope, inner } => rose::Typexpr::Ref {
@@ -274,9 +276,11 @@ impl Context {
             self.types.push(caller_type);
         }
 
+        // push the function reference to the callee
         let function_id = id::function(self.functions.len());
         self.functions.push(f.clone());
 
+        // push data about the callee's interface types
         let func_id = self.funcs.len();
         self.ret_types.push(translate(def.ret));
         self.funcs.push(rose::Func {
