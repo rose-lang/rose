@@ -1,5 +1,14 @@
 import { Bool } from "./bool.js";
-import { Var, context, getVar, setBlock, setCtx } from "./context.js";
+import {
+  Val,
+  Var,
+  context,
+  getBlock,
+  getCtx,
+  getVar,
+  setBlock,
+  setCtx,
+} from "./context.js";
 import * as ffi from "./ffi.js";
 import { Real } from "./real.js";
 
@@ -12,6 +21,18 @@ export interface Fn {
   params: Type[];
   f: ffi.Fn;
 }
+
+const call = (f: Fn, args: Val[]): Val => {
+  const ctx = getCtx();
+  const b = getBlock();
+  const x = ctx.tuple(
+    b,
+    new Uint32Array(args.map((arg) => getVar(ctx, b, arg)))
+  );
+  const i = ctx.func(f.f.f, []);
+  const y: Var = { ctx, id: ctx.call(b, i, x) };
+  return y;
+};
 
 type Resolve<T extends Type> = T extends Bools
   ? Bool
@@ -65,9 +86,8 @@ export const fn = <const A extends readonly Type[], R extends Type>(
     setBlock(undefined);
     setCtx(undefined);
   }
-  const g = (...args: Args<A>): Resolve<R> => {
-    throw Error("TODO");
-  };
+  const g = (...args: Args<A>): Resolve<R> =>
+    call(g, args as Val[]) as Resolve<R>;
   g.params = params as unknown as Type[];
   g.f = func;
   return g;
