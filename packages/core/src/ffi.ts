@@ -61,5 +61,12 @@ export const make = (generics: number, params: Type[], ret: Type): Body => {
 export const interp = (f: Fn, generics: Typeval[], arg: Val): Val =>
   wasm.interp(f.f, generics, arg);
 
+export const derivative = (f: Fn): Fn => {
+  const g = wasm.derivative(f.f);
+  const fn: Fn = { f: g };
+  registry.register(fn, () => g.free());
+  return fn;
+};
+
 export { Block, Context } from "@rose-lang/wasm";
 export type { Type, Typeval, Val };

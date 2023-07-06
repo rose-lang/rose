@@ -580,11 +580,113 @@ pub fn interp(f: &Func, generics: JsValue, arg: JsValue) -> Result<JsValue, JsEr
 
 #[wasm_bindgen]
 pub fn derivative(f: &Func) -> Func {
-    Func {
+    let g = Func {
         rc: Rc::new((
             vec![],
             vec![],
             rose_autodiff::forward(rose_autodiff::derivative(f)),
         )),
+    };
+    let (_, _, inner) = g.rc.as_ref();
+    let mems = |t: rose::Type| -> &[rose::Type] {
+        match t {
+            rose::Type::Expr { id } => match &inner.types[id.typexpr()] {
+                rose::Typexpr::Tuple { members } => members,
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    };
+    let outer = mems(inner.param);
+    let primal = mems(outer[0])[0];
+    let tangent = mems(outer[1])[0];
+    let mut types = inner.types.clone();
+    let param = rose::Type::Expr {
+        id: id::typexpr(types.len()),
+    };
+    let ret = mems(inner.ret)[1];
+    types.push(rose::Typexpr::Tuple {
+        members: vec![primal, tangent],
+    });
+    let wrapper = rose::Function {
+        generics: inner.generics.clone(),
+        types,
+        funcs: vec![rose::Func {
+            id: id::function(0),
+            generics: inner
+                .generics
+                .iter()
+                .enumerate()
+                .map(|(i, _)| rose::Type::Generic { id: id::generic(i) })
+                .collect(),
+        }],
+        param,
+        ret,
+        vars: vec![
+            param,
+            primal,
+            tangent,
+            outer[0],
+            outer[1],
+            inner.param,
+            inner.ret,
+            ret,
+        ],
+        blocks: vec![rose::Block {
+            arg: id::var(0),
+            code: vec![
+                rose::Instr {
+                    var: id::var(1),
+                    expr: rose::Expr::Member {
+                        tuple: id::var(0),
+                        member: id::member(0),
+                    },
+                },
+                rose::Instr {
+                    var: id::var(2),
+                    expr: rose::Expr::Member {
+                        tuple: id::var(0),
+                        member: id::member(1),
+                    },
+                },
+                rose::Instr {
+                    var: id::var(3),
+                    expr: rose::Expr::Tuple {
+                        members: vec![id::var(1)],
+                    },
+                },
+                rose::Instr {
+                    var: id::var(4),
+                    expr: rose::Expr::Tuple {
+                        members: vec![id::var(2)],
+                    },
+                },
+                rose::Instr {
+                    var: id::var(5),
+                    expr: rose::Expr::Tuple {
+                        members: vec![id::var(3), id::var(4)],
+                    },
+                },
+                rose::Instr {
+                    var: id::var(6),
+                    expr: rose::Expr::Call {
+                        func: id::func(0),
+                        arg: id::var(5),
+                    },
+                },
+                rose::Instr {
+                    var: id::var(7),
+                    expr: rose::Expr::Member {
+                        tuple: id::var(6),
+                        member: id::member(1),
+                    },
+                },
+            ],
+            ret: id::var(7),
+        }],
+        main: id::block(0),
+    };
+    Func {
+        rc: Rc::new((vec![], vec![g], wrapper)),
     }
 }

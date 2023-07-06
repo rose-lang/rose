@@ -15,6 +15,7 @@ pub fn derivative(f: impl FuncNode) -> Derivative {
 struct Forward<'a> {
     generics: Vec<EnumSet<Constraint>>,
     types: Vec<Typexpr>,
+    tangents: Vec<id::Typexpr>,
     old_vars: &'a [Type],
     vars: Vec<Type>,
     mapping: Vec<Option<(id::Var, id::Var)>>,
@@ -35,15 +36,18 @@ impl Forward<'_> {
         id
     }
 
-    fn tangent(&mut self, t: Type) -> Type {
+    fn tangent(&self, t: Type) -> Result<Type, &Typexpr> {
         match t {
-            Type::Unit => Type::Unit,
-            Type::Bool => Type::Unit,
-            Type::F64 => Type::F64,
-            Type::Fin { .. } => Type::Unit,
+            Type::Unit => Ok(Type::Unit),
+            Type::Bool => Ok(Type::Unit),
+            Type::F64 => Ok(Type::F64),
+            Type::Fin { .. } => Ok(Type::Unit),
             Type::Generic { id: _ } => todo!(),
-            Type::Scope { .. } => Type::Unit,
-            Type::Expr { id: _ } => todo!(),
+            Type::Scope { .. } => Ok(Type::Unit),
+            Type::Expr { id } => match self.tangents.get(id.typexpr()) {
+                Some(&tan) => Ok(Type::Expr { id: tan }),
+                None => Err(&self.types[id.typexpr()]),
+            },
         }
     }
 
@@ -82,14 +86,14 @@ impl Forward<'_> {
             Expr::Array { elems } => {
                 let (xs, dxs) = elems.iter().map(|&elem| self.map(elem)).unzip();
                 let x = self.set(code, t, Expr::Array { elems: xs });
-                let tan = self.tangent(t);
+                let tan = self.tangent(t).unwrap();
                 let dx = self.set(code, tan, Expr::Array { elems: dxs });
                 (x, dx)
             }
             Expr::Tuple { members } => {
                 let (xs, dxs) = members.iter().map(|&member| self.map(member)).unzip();
                 let x = self.set(code, t, Expr::Tuple { members: xs });
-                let tan = self.tangent(t);
+                let tan = self.tangent(t).unwrap();
                 let dx = self.set(code, tan, Expr::Tuple { members: dxs });
                 (x, dx)
             }
@@ -105,7 +109,7 @@ impl Forward<'_> {
                         index: i,
                     },
                 );
-                let tan = self.tangent(t);
+                let tan = self.tangent(t).unwrap();
                 let dx = self.set(
                     code,
                     tan,
@@ -119,7 +123,7 @@ impl Forward<'_> {
             &Expr::Member { tuple, member } => {
                 let (z, dz) = self.map(tuple);
                 let x = self.set(code, t, Expr::Member { tuple: z, member });
-                let tan = self.tangent(t);
+                let tan = self.tangent(t).unwrap();
                 let dx = self.set(code, tan, Expr::Member { tuple: dz, member });
                 (x, dx)
             }
@@ -445,17 +449,43 @@ pub fn forward(f: Derivative) -> Function {
     let mut g = Forward {
         generics: f.generics,
         types: f.types,
+        tangents: vec![],
         old_vars: &f.vars,
         vars: vec![],
         mapping: vec![None; f.vars.len()],
         old_blocks: &f.blocks,
         blocks: vec![],
     };
+    let mut tangents = vec![];
+    let mut tan_ids = vec![];
+    for (i, typexpr) in g.types.iter().enumerate() {
+        let tan = match typexpr {
+            &Typexpr::Ref { scope, inner } => Typexpr::Ref {
+                scope,
+                inner: g.tangent(inner).unwrap(),
+            },
+            &Typexpr::Array { index, elem } => Typexpr::Array {
+                index: g.tangent(index).unwrap(),
+                elem: g.tangent(elem).unwrap(),
+            },
+            Typexpr::Tuple { members } => Typexpr::Tuple {
+                members: members
+                    .iter()
+                    .map(|&member| g.tangent(member).unwrap())
+                    .collect(),
+            },
+            Typexpr::Def { id: _, params: _ } => todo!(),
+        };
+        tangents.push(tan);
+        tan_ids.push(id::typexpr(g.types.len() + i));
+    }
+    g.types.extend(tangents);
+    g.tangents.extend(tan_ids);
 
     let old = &f.blocks[f.main.block()];
     let mut code = vec![];
     let t_arg = g.old_vars[old.arg.var()];
-    let tan_arg = g.tangent(t_arg);
+    let tan_arg = g.tangent(t_arg).unwrap();
     let tup_arg = g.newtype(Typexpr::Tuple {
         members: vec![t_arg, tan_arg],
     });
