@@ -21,11 +21,11 @@ pub enum Constraint {
     Scope,
 }
 
-/// A basic type or an index of a more complicated type.
+/// A type.
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug)]
-pub enum Type {
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Ty {
     Unit,
     Bool,
     /// Satisfies `Constraint::Vector`.
@@ -41,62 +41,28 @@ pub enum Type {
     Scope {
         id: id::Block,
     },
-    Expr {
-        id: id::Typexpr,
-    },
-}
-
-/// A more complicated type.
-#[derive(Debug)]
-pub enum Typexpr {
     Ref {
         /// Must satisfy `Constraint::Scope`.
-        scope: Type,
-        inner: Type,
+        scope: id::Ty,
+        inner: id::Ty,
     },
     /// Satisfies `Constraint::Vector` if `elem` does.
     Array {
         /// Must satisfy `Constraint::Index`.
-        index: Type,
-        elem: Type,
+        index: id::Ty,
+        elem: id::Ty,
     },
     /// Satisfies `Constraint::Vector` if all `members` do.
-    Tuple { members: Vec<Type> },
-    Def {
-        id: id::Typedef,
-        /// Instantiations of the typedef's generic type parameters.
-        params: Vec<Type>,
+    Tuple {
+        members: Vec<id::Ty>,
     },
-}
-
-/// A type definition.
-#[derive(Debug)]
-pub struct Typedef {
-    /// Generic type parameters.
-    pub generics: Vec<EnumSet<Constraint>>,
-    /// Nontrivial types used in this typedef.
-    pub types: Vec<Typexpr>,
-    /// The definition of this type.
-    pub def: Type,
-    /// Constraints satisfied by this type, if any.
-    pub constraints: EnumSet<Constraint>,
-}
-
-/// Wrapper for a `Typedef` that knows how to resolve its `id::Typedef`s.
-pub trait TypeNode {
-    fn def(&self) -> &Typedef;
-
-    /// Only valid with `id::Typedef`s from `self.def().types`.
-    fn ty(&self, id: id::Typedef) -> Option<Self>
-    where
-        Self: Sized;
 }
 
 /// Reference to a function, with types supplied for its generic parameters.
 #[derive(Debug)]
 pub struct Func {
     pub id: id::Function,
-    pub generics: Vec<Type>,
+    pub generics: Vec<id::Ty>,
 }
 
 /// A function definition.
@@ -104,33 +70,28 @@ pub struct Func {
 pub struct Function {
     /// Generic type parameters.
     pub generics: Vec<EnumSet<Constraint>>,
-    /// Nontrivial types used in this function definition.
-    pub types: Vec<Typexpr>,
+    /// Types used in this function definition.
+    pub types: Vec<Ty>,
     /// Instantiations referenced functions with generic type parameters.
     pub funcs: Vec<Func>,
-    /// Parameter types.
-    pub param: Type,
-    /// Return types.
-    pub ret: Type,
+    /// Parameter type.
+    pub param: id::Ty,
+    /// Return type.
+    pub ret: id::Ty,
     /// Local variable types.
-    pub vars: Vec<Type>,
+    pub vars: Vec<id::Ty>,
     /// Blocks of code.
     pub blocks: Vec<Block>,
     /// Main block.
     pub main: id::Block,
 }
 
-/// Wrapper for a `Function` that knows how to resolve its `id::Typedef`s and `id::Function`s.
+/// Wrapper for a `Function` that knows how to resolve its `id::Function`s.
 pub trait FuncNode {
-    type Ty: TypeNode;
-
     fn def(&self) -> &Function;
 
-    /// Only valid with `id::Typedef`s from `self.def().types`.
-    fn ty(&self, id: id::Typedef) -> Option<Self::Ty>;
-
     /// Only valid with `id::Function`s from `self.def().funcs`.
-    fn func(&self, id: id::Function) -> Option<Self>
+    fn get(&self, id: id::Function) -> Option<Self>
     where
         Self: Sized;
 }
@@ -219,7 +180,7 @@ pub enum Expr {
     },
     For {
         /// Must satisfy `Constraint::Index`.
-        index: Type,
+        index: id::Ty,
         /// `arg` has type `index`.
         body: id::Block,
     },
@@ -227,7 +188,7 @@ pub enum Expr {
         /// Final contents of the `Ref`.
         var: id::Var,
         /// Must satisfy `Constraint::Vector`.
-        vector: Type,
+        vector: id::Ty,
         /// `arg` has type `Ref` with scope `body` and inner type `vector`.
         body: id::Block,
     },
@@ -243,7 +204,7 @@ pub enum Expr {
 
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Unop {
     // `Bool` -> `Bool`
     Not,
@@ -256,7 +217,7 @@ pub enum Unop {
 
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Binop {
     // `Bool` -> `Bool` -> `Bool`
     And,

@@ -1,3 +1,4 @@
+use indexmap::IndexSet;
 use rose_frontend::parse;
 use rose_interp::{interp, Val};
 use std::rc::Rc;
@@ -8,6 +9,7 @@ fn test_add() {
     let module = parse(src).unwrap();
     let answer = interp(
         module.get_func("add").unwrap(),
+        IndexSet::new(),
         &[],
         Val::Tuple(Rc::new(vec![Val::F64(2.), Val::F64(2.)])),
     )
@@ -21,6 +23,7 @@ fn test_sub() {
     let module = parse(src).unwrap();
     let answer = interp(
         module.get_func("sub").unwrap(),
+        IndexSet::new(),
         &[],
         Val::Tuple(Rc::new(vec![Val::F64(2.), Val::F64(2.)])),
     )
