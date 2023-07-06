@@ -71,7 +71,7 @@ impl Generic {
 #[cfg_attr(
     feature = "serde",
     derive(Serialize, Deserialize),
-    serde(rename = "TypexprId")
+    serde(rename = "TyId")
 )]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ty(usize);

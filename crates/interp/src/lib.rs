@@ -89,6 +89,14 @@ fn zero(types: &IndexSet<Ty>, ty: id::Ty) -> Val {
     }
 }
 
+/// Resolve `ty` via `generics` and `types`, then return its ID in `typemap`, inserting if need be.
+///
+/// This is meant to be used to pull all the types from a callee into a broader context. The
+/// `generics` are the IDs of all the types provided as generic type parameters for the callee. The
+/// `types are the IDs of all the types that have been pulled in so far.
+///
+/// The interpreter is meant to be used with no generic "free variables," and does not do any scope
+/// checking, so all scopes are replaced with a block ID of zero.
 fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty: &Ty) -> id::Ty {
     let resolved = match ty {
         Ty::Generic { id } => return generics[id.generic()],

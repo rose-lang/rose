@@ -58,7 +58,7 @@ fn parse_types<'input>(
     let mut generics = HashMap::new();
     let mut params = vec![];
     for typ in typenames {
-        params.push(if let Some(_) = lookup(typ.val) {
+        params.push(if lookup(typ.val).is_some() {
             todo!()
         } else {
             let (real, _) = types.insert_full(ir::Ty::F64);
