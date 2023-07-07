@@ -4,5 +4,7 @@ version = "0.0.0"
 edition = "2021"
 
 [dependencies]
+enumset = "1"
+indexmap = "2"
 rose = { path = "../core" }
 thiserror = "1"

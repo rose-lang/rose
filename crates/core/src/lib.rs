@@ -154,7 +154,7 @@ pub enum Expr {
     Field {
         /// Must actually be a `Ref` of a tuple, not just a tuple.
         tuple: id::Var,
-        field: id::Member,
+        member: id::Member,
     },
 
     Unary {

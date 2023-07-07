@@ -672,6 +672,8 @@ dependencies = [
 name = "rose-validate"
 version = "0.0.0"
 dependencies = [
+ "enumset",
+ "indexmap 2.0.0",
  "rose",
  "thiserror",
 ]
