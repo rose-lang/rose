@@ -92,9 +92,12 @@ pub fn js_to_rust(f: &Func) -> String {
 /// A function under construction.
 #[wasm_bindgen]
 pub struct Context {
+    functions: Vec<Func>,
     generics: Vec<EnumSet<rose::Constraint>>,
     types: Vec<rose::Typexpr>,
     funcs: Vec<rose::Func>,
+    /// Return type for every function in `funcs`. Must always be the same length as `funcs`.
+    ret_types: Vec<rose::Type>,
     param: rose::Type,
     ret: rose::Type,
     vars: Vec<rose::Type>,
@@ -104,9 +107,11 @@ pub struct Context {
 #[wasm_bindgen]
 pub fn bake(ctx: Context, main: usize) -> Func {
     let Context {
+        functions,
         generics,
         types,
         funcs,
+        ret_types: _,
         param,
         ret,
         vars,
@@ -115,7 +120,7 @@ pub fn bake(ctx: Context, main: usize) -> Func {
     Func {
         rc: Rc::new((
             vec![], // TODO: support typedefs
-            vec![], // TODO: support function references
+            functions,
             rose::Function {
                 generics,
                 types,
@@ -187,9 +192,7 @@ impl Body {
 /// The `param_types` argument is Serde-converted to `Vec<rose::Type>`, and the `ret_type`
 /// argument is Serde-converted to `rose::Type`.
 ///
-/// TODO: currently no support for
-/// - non-primitive types
-/// - calling other functions
+/// TODO: currently no support for non-primitive types
 #[wasm_bindgen]
 pub fn make(generics: usize, param_types: JsValue, ret_type: JsValue) -> Result<Body, JsError> {
     let params: Vec<rose::Type> = serde_wasm_bindgen::from_value(param_types)?;
@@ -197,9 +200,11 @@ pub fn make(generics: usize, param_types: JsValue, ret_type: JsValue) -> Result<
 
     let param = rose::Type::Expr { id: id::typexpr(0) };
     let mut ctx = Context {
+        functions: vec![],
         generics: vec![EnumSet::only(rose::Constraint::Index); generics],
         types: vec![], // we populate this further down
         funcs: vec![],
+        ret_types: vec![],
         param,
         ret,
         vars: vec![],
@@ -229,8 +234,62 @@ pub fn make(generics: usize, param_types: JsValue, ret_type: JsValue) -> Result<
     })
 }
 
+// TODO: catch invalid user-given indices instead of panicking
 #[wasm_bindgen]
 impl Context {
+    /// `generics` is Serde-converted to `Vec<rose::Type>`.
+    #[wasm_bindgen]
+    pub fn func(&mut self, f: &Func, generics: JsValue) -> Result<usize, JsError> {
+        let types: Vec<rose::Type> = serde_wasm_bindgen::from_value(generics)?;
+
+        // only valid if indeed the `for` loop below calls `push` exactly once per iteration
+        let n = self.types.len();
+        // translate types from the callee to the caller
+        let translate = |t: rose::Type| -> rose::Type {
+            match t {
+                rose::Type::Unit | rose::Type::Bool | rose::Type::F64 | rose::Type::Fin { .. } => t,
+                rose::Type::Generic { id } => types[id.generic()],
+                rose::Type::Scope { id: _ } => todo!(),
+                rose::Type::Expr { id } => rose::Type::Expr {
+                    id: id::typexpr(id.typexpr() - n),
+                },
+            }
+        };
+
+        let (_, _, def) = f.rc.as_ref();
+        // push a corresponding type onto our own `types` for each type in the callee
+        for callee_type in &def.types {
+            let caller_type = match callee_type {
+                &rose::Typexpr::Ref { scope, inner } => rose::Typexpr::Ref {
+                    scope: translate(scope),
+                    inner: translate(inner),
+                },
+                &rose::Typexpr::Array { index, elem } => rose::Typexpr::Array {
+                    index: translate(index),
+                    elem: translate(elem),
+                },
+                rose::Typexpr::Tuple { members } => rose::Typexpr::Tuple {
+                    members: members.iter().map(|&t| translate(t)).collect(),
+                },
+                rose::Typexpr::Def { id: _, params: _ } => todo!(),
+            };
+            self.types.push(caller_type);
+        }
+
+        // push the function reference to the callee
+        let function_id = id::function(self.functions.len());
+        self.functions.push(f.clone());
+
+        // push data about the callee's interface types
+        let func_id = self.funcs.len();
+        self.ret_types.push(translate(def.ret));
+        self.funcs.push(rose::Func {
+            generics: types,
+            id: function_id,
+        });
+        Ok(func_id)
+    }
+
     #[wasm_bindgen]
     pub fn block(&mut self, b: Block, arg_id: usize, ret_id: usize) -> usize {
         let Block { code } = b;
@@ -243,8 +302,8 @@ impl Context {
         id
     }
 
-    fn get(&self, var: id::Var) -> &rose::Type {
-        &self.vars[var.var()]
+    fn get(&self, var: id::Var) -> rose::Type {
+        self.vars[var.var()]
     }
 
     fn var(&mut self, t: rose::Type) -> id::Var {
@@ -306,7 +365,28 @@ impl Context {
         self.instr(b, rose::Type::Fin { size }, rose::Expr::Fin { val })
     }
 
-    // TODO: support `Expr::Array` and `Expr::Tuple`
+    #[wasm_bindgen]
+    pub fn array(&mut self, b: &mut Block, elems: Vec<usize>) -> Result<usize, JsError> {
+        // TODO: it would be nice if we could just reuse `elems` instead of making `xs`
+        let xs: Vec<id::Var> = elems.iter().map(|&x| id::var(x)).collect();
+        let &x = xs.get(0).ok_or_else(|| JsError::new("empty array"))?;
+        let t = self.typexpr(rose::Typexpr::Array {
+            index: rose::Type::Fin { size: xs.len() },
+            elem: self.get(x),
+        });
+        let expr = rose::Expr::Array { elems: xs };
+        Ok(self.instr(b, rose::Type::Expr { id: t }, expr))
+    }
+
+    #[wasm_bindgen]
+    pub fn tuple(&mut self, b: &mut Block, members: Vec<usize>) -> usize {
+        // TODO: it would be nice if we could just reuse `members` instead of making `xs`
+        let xs: Vec<id::Var> = members.iter().map(|&x| id::var(x)).collect();
+        let types = xs.iter().map(|&x| self.get(x)).collect();
+        let t = self.typexpr(rose::Typexpr::Tuple { members: types });
+        let expr = rose::Expr::Tuple { members: xs };
+        self.instr(b, rose::Type::Expr { id: t }, expr)
+    }
 
     #[wasm_bindgen]
     pub fn index(&mut self, b: &mut Block, arr: usize, idx: usize) -> Result<usize, JsError> {
@@ -526,10 +606,23 @@ impl Context {
 
     // end of binary
 
+    #[wasm_bindgen]
+    pub fn call(&mut self, b: &mut Block, func: usize, arg: usize) -> Result<usize, JsError> {
+        let &t = self
+            .ret_types
+            .get(func)
+            .ok_or_else(|| JsError::new("invalid function ID"))?;
+        let expr = rose::Expr::Call {
+            func: id::func(func),
+            arg: id::var(arg),
+        };
+        Ok(self.instr(b, t, expr))
+    }
+
     /// `rose::Expr::If`
     #[wasm_bindgen]
     pub fn cond(&mut self, b: &mut Block, cond: usize, then: usize, els: usize) -> usize {
-        let &t = self.get(self.blocks[then].ret); // arbitrary; could have used `els` instead
+        let t = self.get(self.blocks[then].ret); // arbitrary; could have used `els` instead
         let expr = rose::Expr::If {
             cond: id::var(cond),
             then: id::block(then),
@@ -542,8 +635,8 @@ impl Context {
     fn arr(&mut self, b: &mut Block, index: rose::Type, body: usize) -> usize {
         let rose::Block { arg, ret, .. } = self.blocks[body];
         let t = self.typexpr(rose::Typexpr::Array {
-            index: *self.get(arg),
-            elem: *self.get(ret),
+            index: self.get(arg),
+            elem: self.get(ret),
         });
         let expr = rose::Expr::For {
             index,
