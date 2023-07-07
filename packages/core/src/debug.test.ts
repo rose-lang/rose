@@ -7,8 +7,7 @@ test("core IR type layouts", () => {
   expect(Object.fromEntries(wasm.layouts())).toEqual({
     Expr: { size: 16, align: 8 },
     Instr: { size: 24, align: 8 },
-    Type: { size: 8, align: 4 },
-    Typexpr: { size: 20, align: 4 },
+    Ty: { size: 16, align: 4 },
   });
 });
 
@@ -20,31 +19,45 @@ test("test rose to rust formatting", () => {
     `Function {
     generics: [],
     types: [
+        Bool,
+        F64,
         Tuple {
             members: [
-                F64,
-                F64,
+                Ty(
+                    1,
+                ),
+                Ty(
+                    1,
+                ),
             ],
         },
     ],
     funcs: [],
-    param: Expr {
-        id: Typexpr(
-            0,
-        ),
-    },
-    ret: F64,
+    param: Ty(
+        2,
+    ),
+    ret: Ty(
+        1,
+    ),
     vars: [
-        Expr {
-            id: Typexpr(
-                0,
-            ),
-        },
-        F64,
-        F64,
-        F64,
-        F64,
-        F64,
+        Ty(
+            2,
+        ),
+        Ty(
+            1,
+        ),
+        Ty(
+            1,
+        ),
+        Ty(
+            1,
+        ),
+        Ty(
+            1,
+        ),
+        Ty(
+            1,
+        ),
     ],
     blocks: [
         Block {

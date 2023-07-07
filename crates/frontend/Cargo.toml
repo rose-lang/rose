@@ -6,6 +6,7 @@ edition = "2021"
 
 [dependencies]
 enumset = "1"
+indexmap = "2"
 lalrpop-util = "0.19"
 logos = "0.13"
 rose = { path = "../core" }
