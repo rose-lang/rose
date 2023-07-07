@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 [dependencies]
 console_error_panic_hook = { version = "0.1", optional = true }
 enumset = "1"
+indexmap = { version = "2", features = ["serde"] }
 rose = { path = "../core", features = ["serde"] }
 rose-autodiff = { path = "../autodiff" }
 rose-interp = { path = "../interp", features = ["serde"] }

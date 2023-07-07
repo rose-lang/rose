@@ -1,6 +1,5 @@
 import * as wasm from "@rose-lang/wasm";
-import { Type } from "@rose-lang/wasm/core/Type";
-import { Typeval } from "@rose-lang/wasm/interp/Typeval";
+import { Ty } from "@rose-lang/wasm/core/Ty";
 import { Val } from "@rose-lang/wasm/interp/Val";
 
 /**
@@ -44,8 +43,13 @@ export interface Body {
   args: number[];
 }
 
-export const make = (generics: number, params: Type[], ret: Type): Body => {
-  const x = wasm.make(generics, params, ret);
+export const make = (
+  generics: number,
+  types: Ty[],
+  params: Uint32Array,
+  ret: number
+): Body => {
+  const x = wasm.make(generics, types, params, ret);
   try {
     return {
       ctx: x.ctx(),
@@ -58,8 +62,12 @@ export const make = (generics: number, params: Type[], ret: Type): Body => {
   }
 };
 
-export const interp = (f: Fn, generics: Typeval[], arg: Val): Val =>
-  wasm.interp(f.f, generics, arg);
+export const interp = (
+  f: Fn,
+  types: Ty[],
+  generics: Uint32Array,
+  arg: Val
+): Val => wasm.interp(f.f, types, generics, arg);
 
 export const derivative = (f: Fn): Fn => {
   const g = wasm.derivative(f.f);
@@ -69,4 +77,4 @@ export const derivative = (f: Fn): Fn => {
 };
 
 export { Block, Context } from "@rose-lang/wasm";
-export type { Type, Typeval, Val };
+export type { Ty, Val };

@@ -13,7 +13,7 @@ use ts_rs::TS;
     derive(Serialize, Deserialize),
     serde(rename = "MemberId")
 )]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Member(usize);
 
 pub fn member(id: usize) -> Member {
@@ -26,26 +26,6 @@ impl Member {
     }
 }
 
-/// Index of a typedef in a definition context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename = "TypedefId")
-)]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Typedef(usize);
-
-pub fn typedef(id: usize) -> Typedef {
-    Typedef(id)
-}
-
-impl Typedef {
-    pub fn typedef(self) -> usize {
-        self.0
-    }
-}
-
 /// Index of an uninstantiated function reference in a definition context.
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(
@@ -53,7 +33,7 @@ impl Typedef {
     derive(Serialize, Deserialize),
     serde(rename = "FunctionId")
 )]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Function(usize);
 
 pub fn function(id: usize) -> Function {
@@ -73,7 +53,7 @@ impl Function {
     derive(Serialize, Deserialize),
     serde(rename = "GenericId")
 )]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Generic(usize);
 
 pub fn generic(id: usize) -> Generic {
@@ -86,22 +66,22 @@ impl Generic {
     }
 }
 
-/// Index of a typexpr in a definition context.
+/// Index of a type in a definition context.
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(
     feature = "serde",
     derive(Serialize, Deserialize),
-    serde(rename = "TypexprId")
+    serde(rename = "TyId")
 )]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Typexpr(usize);
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Ty(usize);
 
-pub fn typexpr(id: usize) -> Typexpr {
-    Typexpr(id)
+pub fn ty(id: usize) -> Ty {
+    Ty(id)
 }
 
-impl Typexpr {
-    pub fn typexpr(self) -> usize {
+impl Ty {
+    pub fn ty(self) -> usize {
         self.0
     }
 }
@@ -113,7 +93,7 @@ impl Typexpr {
     derive(Serialize, Deserialize),
     serde(rename = "FuncId")
 )]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Func(usize);
 
 pub fn func(id: usize) -> Func {
@@ -133,7 +113,7 @@ impl Func {
     derive(Serialize, Deserialize),
     serde(rename = "VarId")
 )]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Var(usize);
 
 pub fn var(id: usize) -> Var {
@@ -153,7 +133,7 @@ impl Var {
     derive(Serialize, Deserialize),
     serde(rename = "BlockId")
 )]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Block(usize);
 
 pub fn block(id: usize) -> Block {
