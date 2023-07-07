@@ -1,4 +1,5 @@
-use rose::{id, Binop, Expr, FuncNode, Type, Typexpr, Unop};
+use indexmap::IndexSet;
+use rose::{id, Binop, Expr, FuncNode, Ty, Unop};
 use std::{cell::Cell, rc::Rc};
 
 #[cfg(feature = "serde")]
@@ -6,30 +7,6 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 use ts_rs::TS;
-
-/// A resolved type.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug)]
-pub enum Typeval {
-    Unit,
-    Bool,
-    F64,
-    Fin {
-        size: usize,
-    },
-    Scope, // we erase scope info in the interpreter
-    Ref {
-        inner: Rc<Typeval>,
-    },
-    Array {
-        index: Rc<Typeval>,
-        elem: Rc<Typeval>,
-    },
-    Tuple {
-        members: Rc<Vec<Typeval>>,
-    },
-}
 
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -56,25 +33,6 @@ impl Val {
         match self {
             &Val::F64(x) => x,
             _ => unreachable!(),
-        }
-    }
-}
-
-impl Typeval {
-    /// Return zero a value of `Ref` type for this type, which must satisfy `Constraint::Vector`.
-    fn zero(&self) -> Val {
-        match self {
-            Self::F64 => Val::Ref(Rc::new(Cell::new(0.))),
-            Self::Array { index, elem } => match index.as_ref() {
-                &Typeval::Fin { size } => Val::Array(Rc::new(vec![elem.as_ref().zero(); size])),
-                _ => unreachable!(),
-            },
-            Self::Tuple { members } => {
-                Val::Tuple(Rc::new(members.iter().map(|x| x.zero()).collect()))
-            }
-            Self::Unit | Self::Bool | Self::Fin { .. } | Self::Scope | Self::Ref { .. } => {
-                unreachable!()
-            }
         }
     }
 }
@@ -111,59 +69,79 @@ impl Val {
     }
 }
 
-fn resolve(generics: &[Typeval], types: &[Typeval], t: Type) -> Typeval {
-    match t {
-        Type::Unit => Typeval::Unit,
-        Type::Bool => Typeval::Bool,
-        Type::F64 => Typeval::F64,
-        Type::Fin { size } => Typeval::Fin { size },
-        Type::Generic { id } => generics[id.generic()].clone(),
-        Type::Scope { id: _ } => Typeval::Scope,
-        Type::Expr { id } => types[id.typexpr()].clone(),
+/// Return zero a value of `Ref` type for this type, which must satisfy `Constraint::Vector`.
+fn zero(types: &IndexSet<Ty>, ty: id::Ty) -> Val {
+    match &types[ty.ty()] {
+        Ty::F64 => Val::Ref(Rc::new(Cell::new(0.))),
+        &Ty::Array { index, elem } => match types[index.ty()] {
+            Ty::Fin { size } => Val::Array(Rc::new((0..size).map(|_| zero(types, elem)).collect())),
+            _ => unreachable!(),
+        },
+        Ty::Tuple { members } => {
+            Val::Tuple(Rc::new(members.iter().map(|&x| zero(types, x)).collect()))
+        }
+        Ty::Unit
+        | Ty::Bool
+        | Ty::Fin { .. }
+        | Ty::Generic { .. }
+        | Ty::Scope { .. }
+        | Ty::Ref { .. } => unreachable!(),
     }
 }
 
+/// Resolve `ty` via `generics` and `types`, then return its ID in `typemap`, inserting if need be.
+///
+/// This is meant to be used to pull all the types from a callee into a broader context. The
+/// `generics` are the IDs of all the types provided as generic type parameters for the callee. The
+/// `types are the IDs of all the types that have been pulled in so far.
+///
+/// The interpreter is meant to be used with no generic "free variables," and does not do any scope
+/// checking, so all scopes are replaced with a block ID of zero.
+fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty: &Ty) -> id::Ty {
+    let resolved = match ty {
+        Ty::Generic { id } => return generics[id.generic()],
+
+        Ty::Unit => Ty::Unit,
+        Ty::Bool => Ty::Bool,
+        Ty::F64 => Ty::F64,
+        &Ty::Fin { size } => Ty::Fin { size },
+
+        Ty::Scope { id: _ } => Ty::Scope { id: id::block(0) }, // we erase scope info
+        Ty::Ref { scope, inner } => Ty::Ref {
+            scope: types[scope.ty()],
+            inner: types[inner.ty()],
+        },
+        Ty::Array { index, elem } => Ty::Array {
+            index: types[index.ty()],
+            elem: types[elem.ty()],
+        },
+        Ty::Tuple { members } => Ty::Tuple {
+            members: members.iter().map(|&x| types[x.ty()]).collect(),
+        },
+    };
+    let (i, _) = typemap.insert_full(resolved);
+    id::ty(i)
+}
+
 struct Interpreter<'a, F: FuncNode> {
+    typemap: &'a mut IndexSet<Ty>,
     f: &'a F, // reference instead of value because otherwise borrow checker complains in `fn block`
-    generics: &'a [Typeval],
-    types: Vec<Typeval>,
+    types: Vec<id::Ty>,
     vars: Vec<Option<Val>>,
 }
 
 impl<'a, F: FuncNode> Interpreter<'a, F> {
-    fn new(f: &'a F, generics: &'a [Typeval]) -> Self {
+    fn new(typemap: &'a mut IndexSet<Ty>, f: &'a F, generics: &'a [id::Ty]) -> Self {
         let mut types = vec![];
-        for t in &f.def().types {
-            let v = match t {
-                &Typexpr::Ref { scope: _, inner } => Typeval::Ref {
-                    inner: Rc::new(resolve(generics, &types, inner)),
-                },
-                &Typexpr::Array { index, elem } => Typeval::Array {
-                    index: Rc::new(resolve(generics, &types, index)),
-                    elem: Rc::new(resolve(generics, &types, elem)),
-                },
-                Typexpr::Tuple { members } => Typeval::Tuple {
-                    members: Rc::new(
-                        members
-                            .iter()
-                            .map(|x| resolve(generics, &types, *x))
-                            .collect(),
-                    ),
-                },
-                Typexpr::Def { id: _, params: _ } => todo!(),
-            };
-            types.push(v);
+        for ty in &f.def().types {
+            types.push(resolve(typemap, generics, &types, ty));
         }
         Self {
+            typemap,
             f,
-            generics,
             types,
             vars: vec![None; f.def().vars.len()],
         }
-    }
-
-    fn resolve(&self, t: Type) -> Typeval {
-        resolve(self.generics, &self.types, t)
     }
 
     fn get(&self, var: id::Var) -> &Val {
@@ -238,8 +216,14 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
 
             &Expr::Call { func, arg } => {
                 let f = &self.f.def().funcs[func.func()];
-                let generics: Vec<Typeval> = f.generics.iter().map(|&t| self.resolve(t)).collect();
-                call(self.f.func(f.id).unwrap(), &generics, self.get(arg).clone())
+                let generics: Vec<id::Ty> =
+                    f.generics.iter().map(|id| self.types[id.ty()]).collect();
+                call(
+                    self.f.get(f.id).unwrap(),
+                    self.typemap,
+                    &generics,
+                    self.get(arg).clone(),
+                )
             }
             &Expr::If { cond, then, els } => {
                 if self.get(cond).bool() {
@@ -249,8 +233,8 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
                 }
             }
             &Expr::For { index, body } => {
-                let n = match self.resolve(index) {
-                    Typeval::Fin { size } => size,
+                let n = match self.typemap[self.types[index.ty()].ty()] {
+                    Ty::Fin { size } => size,
                     _ => unreachable!(),
                 };
                 let v: Vec<Val> = (0..n)
@@ -259,7 +243,7 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
                 Val::Array(Rc::new(v))
             }
             &Expr::Accum { var, vector, body } => {
-                let x = self.resolve(vector).zero();
+                let x = zero(self.typemap, self.types[vector.ty()]);
                 let y = self.block(body, x.clone()).clone();
                 self.vars[var.var()] = Some(x.immut());
                 y
@@ -283,8 +267,8 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
 }
 
 /// Assumes `generics` and `arg` are valid.
-fn call(f: impl FuncNode, generics: &[Typeval], arg: Val) -> Val {
-    Interpreter::new(&f, generics)
+fn call(f: impl FuncNode, types: &mut IndexSet<Ty>, generics: &[id::Ty], arg: Val) -> Val {
+    Interpreter::new(types, &f, generics)
         .block(f.def().main, arg)
         .clone()
 }
@@ -293,28 +277,20 @@ fn call(f: impl FuncNode, generics: &[Typeval], arg: Val) -> Val {
 pub enum Error {}
 
 /// Guaranteed not to panic if `f` is valid.
-pub fn interp(f: impl FuncNode, generics: &[Typeval], arg: Val) -> Result<Val, Error> {
+pub fn interp(
+    f: impl FuncNode,
+    mut types: IndexSet<Ty>,
+    generics: &[id::Ty],
+    arg: Val,
+) -> Result<Val, Error> {
     // TODO: check that `generics` and `arg` are valid
-    Ok(call(f, generics, arg))
+    Ok(call(f, &mut types, generics, arg))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rose::{Block, Func, Function, Instr, TypeNode};
-
-    #[derive(Clone, Copy, Debug)]
-    enum NoTypedefs {}
-
-    impl TypeNode for NoTypedefs {
-        fn def(&self) -> &rose::Typedef {
-            match *self {}
-        }
-
-        fn ty(&self, _id: id::Typedef) -> Option<Self> {
-            None
-        }
-    }
+    use rose::{Block, Func, Function, Instr};
 
     #[derive(Clone, Copy, Debug)]
     struct FuncInSlice<'a> {
@@ -323,17 +299,11 @@ mod tests {
     }
 
     impl FuncNode for FuncInSlice<'_> {
-        type Ty = NoTypedefs;
-
         fn def(&self) -> &Function {
             &self.funcs[self.id.function()]
         }
 
-        fn ty(&self, _id: id::Typedef) -> Option<Self::Ty> {
-            None
-        }
-
-        fn func(&self, id: id::Function) -> Option<Self> {
+        fn get(&self, id: id::Function) -> Option<Self> {
             Some(Self {
                 funcs: self.funcs,
                 id,
@@ -345,18 +315,16 @@ mod tests {
     fn test_two_plus_two() {
         let funcs = vec![Function {
             generics: vec![],
-            types: vec![Typexpr::Tuple {
-                members: vec![Type::F64, Type::F64],
-            }],
-            funcs: vec![],
-            param: Type::Expr { id: id::typexpr(0) },
-            ret: Type::F64,
-            vars: vec![
-                Type::Expr { id: id::typexpr(0) },
-                Type::F64,
-                Type::F64,
-                Type::F64,
+            types: vec![
+                Ty::F64,
+                Ty::Tuple {
+                    members: vec![id::ty(0), id::ty(0)],
+                },
             ],
+            funcs: vec![],
+            param: id::ty(1),
+            ret: id::ty(0),
+            vars: vec![id::ty(1), id::ty(0), id::ty(0), id::ty(0)],
             blocks: vec![Block {
                 arg: id::var(0),
                 code: vec![
@@ -392,6 +360,7 @@ mod tests {
                 funcs: &funcs,
                 id: id::function(0),
             },
+            IndexSet::new(),
             &[],
             Val::Tuple(Rc::new(vec![Val::F64(2.), Val::F64(2.)])),
         )
@@ -404,11 +373,11 @@ mod tests {
         let funcs = vec![
             Function {
                 generics: vec![],
-                types: vec![],
+                types: vec![Ty::Unit, Ty::F64],
                 funcs: vec![],
-                param: Type::Unit,
-                ret: Type::F64,
-                vars: vec![Type::Unit, Type::F64],
+                param: id::ty(0),
+                ret: id::ty(1),
+                vars: vec![id::ty(0), id::ty(1)],
                 blocks: vec![Block {
                     arg: id::var(0),
                     code: vec![Instr {
@@ -421,14 +390,14 @@ mod tests {
             },
             Function {
                 generics: vec![],
-                types: vec![],
+                types: vec![Ty::Unit, Ty::F64],
                 funcs: vec![Func {
                     id: id::function(0),
                     generics: vec![],
                 }],
-                param: Type::Unit,
-                ret: Type::F64,
-                vars: vec![Type::Unit, Type::F64, Type::F64],
+                param: id::ty(0),
+                ret: id::ty(1),
+                vars: vec![id::ty(0), id::ty(1), id::ty(1)],
                 blocks: vec![Block {
                     arg: id::var(0),
                     code: vec![
@@ -458,6 +427,7 @@ mod tests {
                 funcs: &funcs,
                 id: id::function(1),
             },
+            IndexSet::new(),
             &[],
             Val::Unit,
         )
