@@ -61,7 +61,7 @@ impl<'a> rose::FuncNode for &'a Func {
 #[cfg(feature = "debug")]
 #[wasm_bindgen]
 pub fn pprint(f: &Func) -> Result<String, JsError> {
-    use std::fmt::Write as _;
+    use std::fmt::Write as _; // see https://doc.rust-lang.org/std/macro.write.html
 
     fn print_block(
         mut s: &mut String,
