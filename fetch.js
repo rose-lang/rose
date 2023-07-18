@@ -11,7 +11,7 @@ https
     try {
       await pipeline(
         response,
-        createWriteStream(fileURLToPath(new URL(outputPath, import.meta.url)))
+        createWriteStream(fileURLToPath(new URL(outputPath, import.meta.url))),
       );
     } catch (error) {
       console.error(`Error fetching resource: ${error}`);
