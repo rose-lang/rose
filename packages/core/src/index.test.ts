@@ -30,8 +30,8 @@ test("branch", () => {
     cond(
       x,
       () => 1,
-      () => 2
-    )
+      () => 2,
+    ),
   );
   const g = interp(f);
   expect(g(false)).toBe(2);
@@ -43,8 +43,8 @@ test("call", () => {
     cond(
       p,
       () => x,
-      () => y
-    )
+      () => y,
+    ),
   );
   const f = fn([Real], Real, (x) => ifCond(lt(x, 0), 0, x));
   const relu = interp(f);

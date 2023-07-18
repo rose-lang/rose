@@ -47,7 +47,7 @@ export const make = (
   generics: number,
   types: Ty[],
   params: Uint32Array,
-  ret: number
+  ret: number,
 ): Body => {
   const x = wasm.make(generics, types, params, ret);
   try {
@@ -66,7 +66,7 @@ export const interp = (
   f: Fn,
   types: Ty[],
   generics: Uint32Array,
-  arg: Val
+  arg: Val,
 ): Val => wasm.interp(f.f, types, generics, arg);
 
 export const derivative = (f: Fn): Fn => {

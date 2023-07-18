@@ -36,7 +36,7 @@ export const xor = (p: Bool, q: Bool): Bool => {
 export const cond = <T extends Val>(
   cond: Bool,
   then: () => T,
-  els: () => T
+  els: () => T,
 ): T | Var => {
   const ctx = getCtx();
   const b = getBlock();
