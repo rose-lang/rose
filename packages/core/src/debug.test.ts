@@ -23,7 +23,7 @@ test("pprint", () => {
       () => {
         const b = sub(y, x);
         return mul(b, y);
-      }
+      },
     );
     const w = add(z, x);
     return add(y, w);
@@ -54,6 +54,6 @@ x0: T2 -> T1 {
   x12: T1 = x2 + x11
   x12
 }
-`.trimStart()
+`.trimStart(),
   );
 });

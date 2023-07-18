@@ -45,6 +45,6 @@
     ]
   },
   "scripts": {
-    "build": "vsce package --yarn"
+    "build": "vsce package"
   }
 }

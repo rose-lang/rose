@@ -1,5 +1,0 @@
-/.cargo/
-/packages/wasm/wbg/
-/target/
-bindings/
-dist/

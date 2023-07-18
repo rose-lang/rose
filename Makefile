@@ -40,11 +40,11 @@ test-rust:
 ### JavaScript
 
 # fetch JavaScript dependencies
-yarn:
-	yarn
+npm:
+	npm i
 
 # check Prettier formatting
-prettier: yarn
+prettier: npm
 	npx prettier --check .
 
 # build `packages/`
@@ -56,37 +56,37 @@ test-js: test-core
 ## `packages/core`
 
 # build
-core: yarn wasm
-	yarn workspace rose build
+core: npm wasm
+	npm run --workspace=rose build
 
 # test
-test-core: yarn wasm
-	yarn workspace rose test run --no-threads
+test-core: npm wasm
+	npm run --workspace=rose test -- run --no-threads
 
 ## `packages/site`
 
-site-deps: yarn core
+site-deps: npm core
 
 site: site-deps
-	yarn workspace @rose-lang/site build
+	npm run --workspace=@rose-lang/site build
 
 ## `packages/vscode`
 
 # fetch encircled icon
 packages/vscode/encircled-rose.png:
-	curl -O --output-dir packages/vscode https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/encircled-rose.png
+	node fetch.js https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/encircled-rose.png $@
 
 # fetch plain icon
 packages/vscode/plain-rose.png:
-	curl -O --output-dir packages/vscode https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/plain-rose.png
+	node fetch.js https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/plain-rose.png $@
 
 # build
-vscode: yarn packages/vscode/encircled-rose.png packages/vscode/plain-rose.png
-	yarn workspace rose-vscode build
+vscode: npm packages/vscode/encircled-rose.png packages/vscode/plain-rose.png
+	npm run --workspace=rose-vscode build
 
 ## `packages/wasm`
 
 # build
-wasm: yarn bindings wbg
-	yarn workspace @rose-lang/wasm build
+wasm: npm bindings wbg
+	npm run --workspace=@rose-lang/wasm build
 	node bindings.js
