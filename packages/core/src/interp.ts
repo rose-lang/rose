@@ -29,7 +29,7 @@ type Args<T extends readonly Val[]> = {
  */
 export const interp =
   <const A extends readonly Val[], R extends Val>(
-    f: Fn & ((...args: A) => R)
+    f: Fn & ((...args: A) => R),
   ): ((...args: Args<A>) => Resolve<R>) =>
   // just return a closure that calls the interpreter
   (...args: Args<A>) => {

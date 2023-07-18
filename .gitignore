@@ -2,6 +2,8 @@
 *.tgz
 *.vsix
 /.cargo/
+/packages/vscode/*.png
+/packages/wasm/wbg/
 /target/
 bindings/
 dist/

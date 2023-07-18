@@ -21,7 +21,7 @@ for (const crate of crates) {
 
   // Read all .ts files in the bindings directory
   const files = (await fs.readdir(bindings_dir)).filter((f) =>
-    f.endsWith(".ts")
+    f.endsWith(".ts"),
   );
   for (const file of files) {
     const tsfile = path.join(bindings_dir, file);
@@ -38,7 +38,7 @@ for (const crate of crates) {
     // Write the updated content to the new location with .d.ts extension
     await fs.writeFile(
       path.join(dest_folder, `${base_name}.d.ts`),
-      prettier.format(updated_content, { parser: "typescript" })
+      await prettier.format(updated_content, { parser: "typescript" }),
     );
   }
 }
