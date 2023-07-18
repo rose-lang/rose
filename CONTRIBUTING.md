@@ -8,7 +8,6 @@ Make sure to have these tools installed:
 - [Make][]
 - [Rust][]
 - [Node.js][] v16-v18
-  - [Yarn][] v1.x
 
 ## Setup
 
@@ -71,7 +70,7 @@ an Internet connection.
 To develop the website locally:
 
 ```
-make site-deps && yarn workspace @rose-lang/site dev
+make site-deps && npm run --workspace=@rose-lang/site dev
 ```
 
 Then open http://localhost:5173/ in your browser.
@@ -79,7 +78,7 @@ Then open http://localhost:5173/ in your browser.
 Or, if you want to host on your local network, e.g. to test on your phone:
 
 ```
-make site-deps && yarn workspace @rose-lang/site dev --host
+make site-deps && npm run --workspace=@rose-lang/site dev -- --host
 ```
 
 Then open http://192.168.0.12:5173/ on your phone.
@@ -100,4 +99,3 @@ Code by right-clicking it and clicking the **Install Extension VSIX** button.
 [make]: https://en.wikipedia.org/wiki/Make_(software)
 [node.js]: https://nodejs.org/en/download
 [rust]: https://www.rust-lang.org/tools/install
-[yarn]: https://classic.yarnpkg.com/lang/en/docs/install

@@ -27,7 +27,7 @@ const call = (f: Fn, args: Val[]): Val => {
   const b = getBlock();
   const x = ctx.tuple(
     b,
-    new Uint32Array(args.map((arg) => getVar(ctx, b, arg)))
+    new Uint32Array(args.map((arg) => getVar(ctx, b, arg))),
   );
   const i = ctx.func(f.f.f, new Uint32Array());
   const y: Var = { ctx, id: ctx.call(b, i, x) };
@@ -46,7 +46,7 @@ type Args<T extends readonly Type[]> = {
 
 const makeSig = (
   params: readonly Type[],
-  ret: Type
+  ret: Type,
 ): { types: ffi.Ty[]; params: Uint32Array; ret: number } => {
   // TODO: support non-primitive types
   const types: ffi.Ty[] = ["Bool", "F64"];
@@ -74,7 +74,7 @@ export const fn = <const A extends readonly Type[], R extends Type>(
   // TODO: support generics
   params: A,
   ret: R,
-  f: (...args: Args<A>) => Resolve<R>
+  f: (...args: Args<A>) => Resolve<R>,
 ): Fn & ((...args: Args<A>) => Resolve<R>) => {
   // TODO: support closures
   if (context !== undefined)
