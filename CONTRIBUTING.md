@@ -4,7 +4,6 @@
 
 Make sure to have these tools installed:
 
-- [curl][]
 - [Git][]
 - [Make][]
 - [Rust][]
@@ -97,7 +96,6 @@ make vscode
 Then `packages/vscode` will contain a `*.vsix` file that you can install in VS
 Code by right-clicking it and clicking the **Install Extension VSIX** button.
 
-[curl]: https://curl.se/
 [git]: https://git-scm.com/downloads
 [make]: https://en.wikipedia.org/wiki/Make_(software)
 [node.js]: https://nodejs.org/en/download
