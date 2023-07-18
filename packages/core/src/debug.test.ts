@@ -136,6 +136,6 @@ test("test rose to rust formatting", () => {
     main: Block(
         0,
     ),
-}`
+}`,
   );
 });
