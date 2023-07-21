@@ -82,29 +82,13 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                 rose::Expr::Fin { val } => writeln!(&mut s, "{val}")?,
                 rose::Expr::Array { elems } => {
                     write!(&mut s, "[")?;
-                    let mut first = true;
-                    for elem in elems {
-                        if first {
-                            first = false;
-                        } else {
-                            write!(&mut s, ", ")?;
-                        }
-                        write!(&mut s, "x{}", elem.var())?;
-                    }
-                    writeln!(&mut s, "]")?
+                    print_elems(&mut s, &elems)?;
+                    writeln!(&mut s, "]")?;
                 }
                 rose::Expr::Tuple { members } => {
                     write!(&mut s, "(")?;
-                    let mut first = true;
-                    for member in members {
-                        if first {
-                            first = false;
-                        } else {
-                            write!(&mut s, ", ")?;
-                        }
-                        write!(&mut s, "x{}", member.var())?;
-                    }
-                    writeln!(&mut s, ")")?
+                    print_elems(&mut s, &members)?;
+                    writeln!(&mut s, ")")?;
                 }
                 rose::Expr::Index { array, index } => {
                     writeln!(&mut s, "x{}[x{}]", array.var(), index.var())?
@@ -201,6 +185,19 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
             write!(&mut s, " ")?;
         }
         writeln!(&mut s, "x{}", def.blocks[b.block()].ret.var())?;
+        Ok(())
+    }
+
+    fn print_elems(s: &mut String, items: &Vec<rose::id::Var>) -> std::fmt::Result {
+        let mut first = true;
+        for item in items {
+            if first {
+                first = false;
+            } else {
+                write!(s, ", ")?;
+            }
+            write!(s, "x{}", item.var())?;
+        }
         Ok(())
     }
 

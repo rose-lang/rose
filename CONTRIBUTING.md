@@ -7,7 +7,7 @@ Make sure to have these tools installed:
 - [Git][]
 - [Make][]
 - [Rust][]
-- [Node.js][] v16-v18
+- [Node.js][]
 
 ## Setup
 
