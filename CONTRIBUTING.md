@@ -73,15 +73,11 @@ To develop the website locally:
 make site-deps && npm run --workspace=@rose-lang/site dev
 ```
 
-Then open http://localhost:5173/ in your browser.
-
 Or, if you want to host on your local network, e.g. to test on your phone:
 
 ```
 make site-deps && npm run --workspace=@rose-lang/site dev -- --host
 ```
-
-Then open http://192.168.0.12:5173/ on your phone.
 
 ## VS Code
 
