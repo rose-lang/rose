@@ -6,8 +6,8 @@ Make sure to have these tools installed:
 
 - [Git][]
 - [Make][]
+- [Node][]
 - [Rust][]
-- [Node.js][] v16-v18
 
 ## Setup
 
@@ -97,5 +97,5 @@ Code by right-clicking it and clicking the **Install Extension VSIX** button.
 
 [git]: https://git-scm.com/downloads
 [make]: https://en.wikipedia.org/wiki/Make_(software)
-[node.js]: https://nodejs.org/en/download
+[node]: https://nodejs.org/en/download
 [rust]: https://www.rust-lang.org/tools/install
