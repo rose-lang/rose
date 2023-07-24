@@ -15,10 +15,10 @@ use ts_rs::TS;
 pub enum Constraint {
     /// Can be the `index` type of an `Array`.
     Index,
-    /// Has a zero value and an addition operation.
-    Vector,
-    /// Can be the `scope` type of a `Ref`.
-    Scope,
+    /// Allows a `Ref` to be read when used as its `scope` type.
+    Read,
+    /// Allows a `Ref` to be accumulated into when used as its `scope` type.
+    Accum,
 }
 
 /// A type.
@@ -26,9 +26,6 @@ pub enum Constraint {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Ty {
-    Unit,
-    Bool,
-    /// Satisfies `Constraint::Vector`.
     F64,
     /// A nonnegative integer less than `size`. Satisfies `Constraint::Index`.
     Fin {
@@ -37,24 +34,24 @@ pub enum Ty {
     Generic {
         id: id::Generic,
     },
-    /// Satisfies `Constraint::Scope`.
+    /// May satisfy `Constraint::Read` or `Constraint::Accum` depending on the block.
     Scope {
         id: id::Block,
     },
     Ref {
-        /// Must satisfy `Constraint::Scope`.
         scope: id::Ty,
         inner: id::Ty,
     },
-    /// Satisfies `Constraint::Vector` if `elem` does.
     Array {
         /// Must satisfy `Constraint::Index`.
         index: id::Ty,
         elem: id::Ty,
     },
-    /// Satisfies `Constraint::Vector` if all `members` do.
     Tuple {
         members: Vec<id::Ty>,
+    },
+    Enum {
+        variants: Vec<id::Ty>,
     },
 }
 
