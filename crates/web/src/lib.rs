@@ -82,12 +82,12 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                 rose::Expr::Fin { val } => writeln!(&mut s, "{val}")?,
                 rose::Expr::Array { elems } => {
                     write!(&mut s, "[")?;
-                    print_elems(&mut s, &elems)?;
+                    print_elems(s, elems)?;
                     writeln!(&mut s, "]")?;
                 }
                 rose::Expr::Tuple { members } => {
                     write!(&mut s, "(")?;
-                    print_elems(&mut s, &members)?;
+                    print_elems(s, members)?;
                     writeln!(&mut s, ")")?;
                 }
                 rose::Expr::Index { array, index } => {
