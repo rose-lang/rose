@@ -26,6 +26,8 @@ pub enum Constraint {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Ty {
+    Unit,
+    Bool,
     F64,
     /// A nonnegative integer less than `size`. Satisfies `Constraint::Index`.
     Fin {
@@ -134,20 +136,24 @@ pub enum Expr {
         members: Vec<id::Var>,
     },
 
+    /// Index into an `Array`.
     Index {
         array: id::Var,
         index: id::Var,
     },
+    /// Access a member of a `Tuple`.
     Member {
         tuple: id::Var,
         member: id::Member,
     },
 
+    /// Index into a `Ref`.
     Slice {
         /// Must actually be a `Ref` of an array, not just an array.
         array: id::Var,
         index: id::Var,
     },
+    /// Access a member of a `Ref`.
     Field {
         /// Must actually be a `Ref` of a tuple, not just a tuple.
         tuple: id::Var,
@@ -163,34 +169,58 @@ pub enum Expr {
         left: id::Var,
         right: id::Var,
     },
+    Select {
+        /// Must be of type `Bool`.
+        cond: id::Var,
+        then: id::Var,
+        els: id::Var,
+    },
 
     Call {
         func: id::Func,
         arg: id::Var,
     },
-    If {
-        cond: id::Var,
-        /// `arg` has type `Unit`.
-        then: id::Block,
-        /// `arg` has type `Unit`.
-        els: id::Block,
-    },
+
     For {
         /// Must satisfy `Constraint::Index`.
         index: id::Ty,
         /// `arg` has type `index`.
         body: id::Block,
     },
+    /// Scope for a `Ref` with `Constraint::Read`.
+    Read {
+        /// Contents of the `Ref`.
+        var: id::Var,
+        /// `arg` has type `Ref` with scope `body` and inner type same as `var`.
+        body: id::Block,
+    },
+    /// Scope for a `Ref` with `Constraint::Accum`.
     Accum {
         /// Final contents of the `Ref`.
         var: id::Var,
-        /// Must satisfy `Constraint::Vector`.
-        vector: id::Ty,
-        /// `arg` has type `Ref` with scope `body` and inner type `vector`.
+        /// Topology of the `Ref`.
+        shape: id::Var,
+        /// `arg` has type `Ref` with scope `body` and inner type same as `shape`.
         body: id::Block,
     },
 
-    /// Accumulate into a `Ref`. Returned type is `Unit`.
+    /// Pattern-matching on an `Enum`.
+    Match {
+        var: id::Var,
+        branches: Vec<id::Block>,
+    },
+    /// Pattern-matching on a `Ref`.
+    Narrow {
+        var: id::Var,
+        branches: Vec<id::Block>,
+    },
+
+    /// Read from a `Ref` whose `scope` satisfies `Constraint::Read`.
+    Ask {
+        /// The `Ref`, which must be in scope.
+        var: id::Var,
+    },
+    /// Accumulate into a `Ref` whose `scope` satisfies `Constraint::Accum`. Returns `Unit`.
     Add {
         /// The `Ref`, which must be in scope.
         accum: id::Var,
