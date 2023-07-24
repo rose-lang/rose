@@ -608,14 +608,15 @@ impl Context {
         Ok(self.instr(b, ty, expr))
     }
 
-    /// `rose::Expr::If`
     #[wasm_bindgen]
-    pub fn cond(&mut self, b: &mut Block, cond: usize, then: usize, els: usize) -> usize {
-        let t = self.get(self.blocks[then].ret); // arbitrary; could have used `els` instead
-        let expr = rose::Expr::If {
+    pub fn select(&mut self, b: &mut Block, cond: usize, then: usize, els: usize) -> usize {
+        let then = id::var(then);
+        let els = id::var(els);
+        let t = self.get(then); // arbitrary; could have used `els` instead
+        let expr = rose::Expr::Select {
             cond: id::var(cond),
-            then: id::block(then),
-            els: id::block(els),
+            then,
+            els,
         };
         self.instr(b, t, expr)
     }

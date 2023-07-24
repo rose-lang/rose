@@ -314,38 +314,17 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
             }
             ast::Expr::If { cond, then, els } => {
                 let c = self.typecheck(*cond)?; // TODO: ensure this is `Bool`
-                let code = std::mem::take(&mut self.c);
-                // the `BlockCtx` type can only think about one under-construction block at a time,
-                // so when constructing an `If`, we keep swapping them out until we're done
 
-                let unit = self.newtype(ir::Ty::Unit);
-
-                let arg_then = self.newlocal(unit);
-                let ret_then = self.typecheck(*then)?;
-                let block_then = id::block(self.b.len());
-                let code_then = std::mem::take(&mut self.c);
-                self.b.push(ir::Block {
-                    arg: arg_then,
-                    code: code_then,
-                    ret: ret_then,
-                });
-
-                let arg_els = self.newlocal(unit);
-                let ret_els = self.typecheck(*els)?;
-                let block_els = id::block(self.b.len());
-                let code_els = std::mem::replace(&mut self.c, code);
-                self.b.push(ir::Block {
-                    arg: arg_els,
-                    code: code_els,
-                    ret: ret_els,
-                });
+                // IR doesn't currently support branching, so just evaluate both branches
+                let t = self.typecheck(*then)?;
+                let e = self.typecheck(*els)?;
 
                 Ok(self.instr(
-                    self.getlocal(ret_then), // TODO: ensure this matches the type of `ret_els`
-                    ir::Expr::If {
+                    self.getlocal(t), // TODO: ensure this matches the type of `e`
+                    ir::Expr::Select {
                         cond: c,
-                        then: block_then,
-                        els: block_els,
+                        then: t,
+                        els: e,
                     },
                 ))
             }

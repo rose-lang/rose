@@ -15,10 +15,10 @@ use ts_rs::TS;
 pub enum Constraint {
     /// Can be the `index` type of an `Array`.
     Index,
-    /// Has a zero value and an addition operation.
-    Vector,
-    /// Can be the `scope` type of a `Ref`.
-    Scope,
+    /// Allows a `Ref` to be read when used as its `scope` type.
+    Read,
+    /// Allows a `Ref` to be accumulated into when used as its `scope` type.
+    Accum,
 }
 
 /// A type.
@@ -28,7 +28,6 @@ pub enum Constraint {
 pub enum Ty {
     Unit,
     Bool,
-    /// Satisfies `Constraint::Vector`.
     F64,
     /// A nonnegative integer less than `size`. Satisfies `Constraint::Index`.
     Fin {
@@ -37,22 +36,19 @@ pub enum Ty {
     Generic {
         id: id::Generic,
     },
-    /// Satisfies `Constraint::Scope`.
+    /// May satisfy `Constraint::Read` or `Constraint::Accum` depending on the block.
     Scope {
         id: id::Block,
     },
     Ref {
-        /// Must satisfy `Constraint::Scope`.
         scope: id::Ty,
         inner: id::Ty,
     },
-    /// Satisfies `Constraint::Vector` if `elem` does.
     Array {
         /// Must satisfy `Constraint::Index`.
         index: id::Ty,
         elem: id::Ty,
     },
-    /// Satisfies `Constraint::Vector` if all `members` do.
     Tuple {
         members: Vec<id::Ty>,
     },
@@ -166,17 +162,16 @@ pub enum Expr {
         left: id::Var,
         right: id::Var,
     },
+    Select {
+        /// Must be of type `Bool`.
+        cond: id::Var,
+        then: id::Var,
+        els: id::Var,
+    },
 
     Call {
         func: id::Func,
         arg: id::Var,
-    },
-    If {
-        cond: id::Var,
-        /// `arg` has type `Unit`.
-        then: id::Block,
-        /// `arg` has type `Unit`.
-        els: id::Block,
     },
     For {
         /// Must satisfy `Constraint::Index`.
@@ -184,20 +179,33 @@ pub enum Expr {
         /// `arg` has type `index`.
         body: id::Block,
     },
+    /// Scope for a `Ref` with `Constraint::Read`.
+    Read {
+        /// Contents of the `Ref`.
+        var: id::Var,
+        /// `arg` has type `Ref` with scope `body` and inner type same as `var`.
+        body: id::Block,
+    },
+    /// Scope for a `Ref` with `Constraint::Accum`.
     Accum {
         /// Final contents of the `Ref`.
         var: id::Var,
-        /// Must satisfy `Constraint::Vector`.
-        vector: id::Ty,
-        /// `arg` has type `Ref` with scope `body` and inner type `vector`.
+        /// Topology of the `Ref`.
+        shape: id::Var,
+        /// `arg` has type `Ref` with scope `body` and inner type same as `shape`.
         body: id::Block,
     },
 
-    /// Accumulate into a `Ref`. Returned type is `Unit`.
+    /// Read from a `Ref` whose `scope` satisfies `Constraint::Read`.
+    Ask {
+        /// The `Ref`, which must be in scope.
+        var: id::Var,
+    },
+    /// Accumulate into a `Ref` whose `scope` satisfies `Constraint::Accum`. Returns `Unit`.
     Add {
         /// The `Ref`, which must be in scope.
         accum: id::Var,
-        /// Must be of the `Ref`'s inner type, which must satisfy `Constraint::Vector`.
+        /// Must be of the `Ref`'s inner type.
         addend: id::Var,
     },
 }
