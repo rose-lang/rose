@@ -298,7 +298,102 @@ pub fn interp(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rose::{Block, Func, Function, Instr};
+    use enumset::EnumSet;
+    use rose::{Block, Constraint, Func, Function, Instr};
+
+    struct FuncBuilder {
+        types: Vec<Ty>,
+        vars: Vec<id::Ty>,
+        blocks: Vec<Option<Block>>,
+    }
+
+    impl FuncBuilder {
+        fn new() -> Self {
+            Self {
+                types: vec![],
+                vars: vec![],
+                blocks: vec![],
+            }
+        }
+
+        fn ty(&mut self, ty: Ty) -> id::Ty {
+            let i = self.types.len();
+            self.types.push(ty);
+            id::ty(i)
+        }
+
+        fn var(&mut self, var: id::Ty) -> id::Var {
+            let i = self.vars.len();
+            self.vars.push(var);
+            id::var(i)
+        }
+
+        fn block(&mut self, block: impl FnOnce(BlockBuilder) -> Block) -> id::Block {
+            let i = self.blocks.len();
+            let id = id::block(i);
+            self.blocks.push(None);
+            let b = block(BlockBuilder {
+                f: self,
+                id,
+                code: vec![],
+            });
+            self.blocks[i] = Some(b);
+            id
+        }
+
+        fn done(
+            self,
+            generics: Vec<EnumSet<Constraint>>,
+            funcs: Vec<Func>,
+            main: id::Block,
+        ) -> Function {
+            let b = self.blocks[main.block()].as_ref().unwrap();
+            Function {
+                generics,
+                types: self.types,
+                funcs,
+                param: self.vars[b.arg.var()],
+                ret: self.vars[b.ret.var()],
+                vars: self.vars,
+                blocks: self.blocks.into_iter().map(|b| b.unwrap()).collect(),
+                main,
+            }
+        }
+    }
+
+    struct BlockBuilder<'a> {
+        f: &'a mut FuncBuilder,
+        id: id::Block,
+        code: Vec<Instr>,
+    }
+
+    impl BlockBuilder<'_> {
+        fn ty(&mut self, ty: Ty) -> id::Ty {
+            self.f.ty(ty)
+        }
+
+        fn var(&mut self, var: id::Ty) -> id::Var {
+            self.f.var(var)
+        }
+
+        fn block(&mut self, block: impl FnOnce(BlockBuilder) -> Block) -> id::Block {
+            self.f.block(block)
+        }
+
+        fn instr(&mut self, ty: id::Ty, expr: Expr) -> id::Var {
+            let var = self.var(ty);
+            self.code.push(Instr { var, expr });
+            var
+        }
+
+        fn done(self, arg: id::Var, ret: id::Var) -> Block {
+            Block {
+                arg,
+                code: self.code,
+                ret,
+            }
+        }
+    }
 
     #[derive(Clone, Copy, Debug)]
     struct FuncInSlice<'a> {
@@ -445,111 +540,94 @@ mod tests {
 
     #[test]
     fn test_nested_ref() {
-        let funcs = vec![Function {
-            generics: vec![],
-            types: vec![
-                Ty::Unit,
-                Ty::F64,
-                Ty::Scope { id: id::block(1) },
-                Ty::Ref {
-                    scope: id::ty(2),
-                    inner: id::ty(1),
-                },
-                Ty::Tuple {
-                    members: vec![id::ty(1), id::ty(3)],
-                },
-                Ty::Scope { id: id::block(2) },
-                Ty::Ref {
-                    scope: id::ty(5),
-                    inner: id::ty(4),
-                },
-                Ty::Tuple {
-                    members: vec![id::ty(1), id::ty(1)],
-                },
-            ],
-            funcs: vec![],
-            param: id::ty(0),
-            ret: id::ty(7),
-            vars: vec![
-                id::ty(0),
-                id::ty(1),
-                id::ty(1),
-                id::ty(1),
-                id::ty(7),
-                id::ty(3),
-                id::ty(4),
-                id::ty(0),
-                id::ty(4),
-                id::ty(1),
-                id::ty(6),
-                id::ty(0),
-            ],
-            blocks: vec![
-                Block {
-                    arg: id::var(0),
-                    code: vec![
-                        Instr {
-                            var: id::var(1),
-                            expr: Expr::F64 { val: 42. },
+        let mut f = FuncBuilder::new();
+
+        let ty_unit = f.ty(Ty::Unit);
+        let ty_f64 = f.ty(Ty::F64);
+        let ty_vec2 = f.ty(Ty::Tuple {
+            members: vec![ty_f64, ty_f64],
+        });
+
+        let main = f.block(|mut b| {
+            let arg = b.var(ty_unit);
+
+            let forty_two = b.instr(ty_f64, Expr::F64 { val: 42. });
+
+            let outer = b.block(|mut b| {
+                let h1 = b.ty(Ty::Scope { id: b.id });
+                let ty_r1 = b.ty(Ty::Ref {
+                    scope: h1,
+                    inner: ty_f64,
+                });
+                let r1 = b.var(ty_r1);
+
+                let ty_tup = b.ty(Ty::Tuple {
+                    members: vec![ty_f64, ty_r1],
+                });
+                let tup = b.instr(
+                    ty_tup,
+                    Expr::Tuple {
+                        members: vec![forty_two, r1],
+                    },
+                );
+
+                let inner = b.block(|mut b| {
+                    let h2 = b.ty(Ty::Scope { id: b.id });
+                    let ty_r2 = b.ty(Ty::Ref {
+                        scope: h2,
+                        inner: ty_tup,
+                    });
+                    let r2 = b.var(ty_r2);
+
+                    let unit = b.instr(
+                        ty_unit,
+                        Expr::Add {
+                            accum: r2,
+                            addend: tup,
                         },
-                        Instr {
-                            var: id::var(2),
-                            expr: Expr::Accum {
-                                var: id::var(3),
-                                shape: id::var(1),
-                                body: id::block(1),
-                            },
-                        },
-                        Instr {
-                            var: id::var(4),
-                            expr: Expr::Tuple {
-                                members: vec![id::var(2), id::var(3)],
-                            },
-                        },
-                    ],
-                    ret: id::var(4),
+                    );
+                    b.done(r2, unit)
+                });
+                let accumed = b.var(ty_tup);
+                b.instr(
+                    ty_unit,
+                    Expr::Accum {
+                        var: accumed,
+                        shape: tup,
+                        body: inner,
+                    },
+                );
+
+                let first = b.instr(
+                    ty_f64,
+                    Expr::Member {
+                        tuple: accumed,
+                        member: id::member(0),
+                    },
+                );
+                b.done(r1, first)
+            });
+            let y = b.var(ty_f64);
+            let x = b.instr(
+                ty_f64,
+                Expr::Accum {
+                    var: y,
+                    shape: forty_two,
+                    body: outer,
                 },
-                Block {
-                    arg: id::var(5),
-                    code: vec![
-                        Instr {
-                            var: id::var(6),
-                            expr: Expr::Tuple {
-                                members: vec![id::var(1), id::var(5)],
-                            },
-                        },
-                        Instr {
-                            var: id::var(7),
-                            expr: Expr::Accum {
-                                var: id::var(8),
-                                shape: id::var(6),
-                                body: id::block(2),
-                            },
-                        },
-                        Instr {
-                            var: id::var(9),
-                            expr: Expr::Member {
-                                tuple: id::var(8),
-                                member: id::member(0),
-                            },
-                        },
-                    ],
-                    ret: id::var(9),
+            );
+
+            let ret = b.instr(
+                ty_vec2,
+                Expr::Tuple {
+                    members: vec![x, y],
                 },
-                Block {
-                    arg: id::var(10),
-                    code: vec![Instr {
-                        var: id::var(11),
-                        expr: Expr::Add {
-                            accum: id::var(10),
-                            addend: id::var(6),
-                        },
-                    }],
-                    ret: id::var(11),
-                },
-            ],
-            main: id::block(0), // TODO
-        }];
+            );
+            b.done(arg, ret)
+        });
+
+        let funcs = vec![f.done(vec![], vec![], main)];
+
         let answer = interp(
             FuncInSlice {
                 funcs: &funcs,
