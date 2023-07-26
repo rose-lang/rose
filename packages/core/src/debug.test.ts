@@ -1,6 +1,29 @@
 import * as wasm from "@rose-lang/wasm";
-import { expect, test } from "vitest";
-import { Real, add, fn, mul } from "./index.js";
+import { describe, expect, test } from "vitest";
+import {
+  Bool,
+  Real,
+  abs,
+  add,
+  and,
+  cond,
+  div,
+  eq,
+  fn,
+  geq,
+  gt,
+  iff,
+  leq,
+  lt,
+  mul,
+  neg,
+  neq,
+  not,
+  or,
+  sqrt,
+  sub,
+  xor,
+} from "./index.js";
 
 test("core IR type layouts", () => {
   // these don't matter too much, but it's good to notice if sizes increase
@@ -11,131 +34,158 @@ test("core IR type layouts", () => {
   });
 });
 
-test("test rose to rust formatting", () => {
-  const f = fn([Real, Real], Real, (x, y) => add(mul(x, 2), y));
-  const g = wasm.js2Rust(f.f.f);
-  // TODO: maybe make a more readable IR text format
-  expect(g).toBe(
-    `Function {
-    generics: [],
-    types: [
-        Bool,
-        F64,
-        Tuple {
-            members: [
-                Ty(
-                    1,
-                ),
-                Ty(
-                    1,
-                ),
-            ],
+describe("pprint", () => {
+  test("if", () => {
+    const f = fn([Real, Real], Real, (x, y) => {
+      const p = lt(x, y);
+      const z = cond(
+        p,
+        () => {
+          const a = mul(x, y);
+          return add(a, x);
         },
-    ],
-    funcs: [],
-    param: Ty(
-        2,
-    ),
-    ret: Ty(
-        1,
-    ),
-    vars: [
-        Ty(
-            2,
-        ),
-        Ty(
-            1,
-        ),
-        Ty(
-            1,
-        ),
-        Ty(
-            1,
-        ),
-        Ty(
-            1,
-        ),
-        Ty(
-            1,
-        ),
-    ],
-    blocks: [
-        Block {
-            arg: Var(
-                0,
-            ),
-            code: [
-                Instr {
-                    var: Var(
-                        1,
-                    ),
-                    expr: Member {
-                        tuple: Var(
-                            0,
-                        ),
-                        member: Member(
-                            0,
-                        ),
-                    },
-                },
-                Instr {
-                    var: Var(
-                        2,
-                    ),
-                    expr: Member {
-                        tuple: Var(
-                            0,
-                        ),
-                        member: Member(
-                            1,
-                        ),
-                    },
-                },
-                Instr {
-                    var: Var(
-                        3,
-                    ),
-                    expr: F64 {
-                        val: 2.0,
-                    },
-                },
-                Instr {
-                    var: Var(
-                        4,
-                    ),
-                    expr: Binary {
-                        op: Mul,
-                        left: Var(
-                            1,
-                        ),
-                        right: Var(
-                            3,
-                        ),
-                    },
-                },
-                Instr {
-                    var: Var(
-                        5,
-                    ),
-                    expr: Binary {
-                        op: Add,
-                        left: Var(
-                            4,
-                        ),
-                        right: Var(
-                            2,
-                        ),
-                    },
-                },
-            ],
-            ret: Var(
-                5,
-            ),
+        () => {
+          const b = sub(y, x);
+          return mul(b, y);
         },
-    ],
-    main: Block(
-        0,
-    ),
-}`,
-  );
+      );
+      const w = add(z, x);
+      return add(y, w);
+    });
+    const s = wasm.pprint(f.f.f);
+    expect(s).toBe(
+      `
+T0 = Bool
+T1 = F64
+T2 = (T1, T1)
+T3 = Unit
+x0: T2 -> T1 {
+  x1: T1 = x0.0
+  x2: T1 = x0.1
+  x3: T0 = x1 < x2
+  x10: T1 = if x3 {
+    x4: T3
+    x5: T1 = x1 * x2
+    x6: T1 = x5 + x1
+    x6
+  } else {
+    x7: T3
+    x8: T1 = x2 - x1
+    x9: T1 = x8 * x2
+    x9
+  }
+  x11: T1 = x10 + x1
+  x12: T1 = x2 + x11
+  x12
+}
+`.trimStart(),
+    );
+  });
+  test("call funcs", () => {
+    const g = fn([Real], Real, (y) => add(2, y));
+    const h = fn([Real], Real, (z) => mul(2, z));
+    const f = fn([Real], Real, (x) => {
+      const a = g(x);
+      const b = h(x);
+      return add(a, b);
+    });
+    const s = wasm.pprint(f.f.f);
+    expect(s).toBe(
+      `
+T0 = Bool
+T1 = F64
+T2 = (T1)
+f0 = F0<>
+f1 = F1<>
+x0: T2 -> T1 {
+  x1: T1 = x0.0
+  x2: T2 = (x1)
+  x3: T1 = f0(x2)
+  x4: T2 = (x1)
+  x5: T1 = f1(x4)
+  x6: T1 = x3 + x5
+  x6
+}
+`.trimStart(),
+    );
+  });
+  test("unary operations", () => {
+    const f = fn([Real], Real, (x) => {
+      const a = not(true);
+      const b = neg(x);
+      const c = abs(b);
+      const d = sqrt(x);
+      return d;
+    });
+    const s = wasm.pprint(f.f.f);
+    expect(s).toBe(
+      `
+T0 = Bool
+T1 = F64
+T2 = (T1)
+x0: T2 -> T1 {
+  x1: T1 = x0.0
+  x2: T0 = true
+  x3: T0 = not x2
+  x4: T1 = -x1
+  x5: T1 = |x4|
+  x6: T1 = sqrt(x1)
+  x6
+}
+`.trimStart(),
+    );
+  });
+  test("binary operations", () => {
+    const f = fn([Real, Real], Bool, (x, y) => {
+      const a = add(x, y);
+      const b = sub(x, y);
+      const c = mul(x, y);
+      const d = div(x, y);
+      const e = and(true, false);
+      const f = or(true, false);
+      const g = iff(true, false);
+      const h = xor(true, false);
+      const i = neq(x, y);
+      const j = lt(x, y);
+      const k = leq(x, y);
+      const l = eq(x, y);
+      const m = gt(x, y);
+      return geq(c, d);
+    });
+    const s = wasm.pprint(f.f.f);
+    expect(s).toBe(
+      `
+T0 = Bool
+T1 = F64
+T2 = (T1, T1)
+x0: T2 -> T0 {
+  x1: T1 = x0.0
+  x2: T1 = x0.1
+  x3: T1 = x1 + x2
+  x4: T1 = x1 - x2
+  x5: T1 = x1 * x2
+  x6: T1 = x1 / x2
+  x7: T0 = true
+  x8: T0 = false
+  x9: T0 = x7 and x8
+  x10: T0 = true
+  x11: T0 = false
+  x12: T0 = x10 or x11
+  x13: T0 = true
+  x14: T0 = false
+  x15: T0 = x13 iff x14
+  x16: T0 = true
+  x17: T0 = false
+  x18: T0 = x16 xor x17
+  x19: T0 = x1 != x2
+  x20: T0 = x1 < x2
+  x21: T0 = x1 <= x2
+  x22: T0 = x1 == x2
+  x23: T0 = x1 > x2
+  x24: T0 = x5 >= x6
+  x24
+}
+`.trimStart(),
+    );
+  });
 });
