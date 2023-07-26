@@ -188,10 +188,11 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
         Ok(())
     }
 
-    fn print_elems<I>(s: &mut String, prefix: char, items: I) -> std::fmt::Result
-    where
-        I: IntoIterator<Item = usize>,
-    {
+    fn print_elems(
+        s: &mut String,
+        prefix: char,
+        items: impl Iterator<Item = usize>,
+    ) -> std::fmt::Result {
         let mut first = true;
         for item in items {
             if first {
