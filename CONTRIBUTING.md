@@ -6,8 +6,8 @@ Make sure to have these tools installed:
 
 - [Git][]
 - [Make][]
+- [Node][]
 - [Rust][]
-- [Node.js][] v16-v18
 
 ## Setup
 
@@ -73,15 +73,11 @@ To develop the website locally:
 make site-deps && npm run --workspace=@rose-lang/site dev
 ```
 
-Then open http://localhost:5173/ in your browser.
-
 Or, if you want to host on your local network, e.g. to test on your phone:
 
 ```
 make site-deps && npm run --workspace=@rose-lang/site dev -- --host
 ```
-
-Then open http://192.168.0.12:5173/ on your phone.
 
 ## VS Code
 
@@ -97,5 +93,5 @@ Code by right-clicking it and clicking the **Install Extension VSIX** button.
 
 [git]: https://git-scm.com/downloads
 [make]: https://en.wikipedia.org/wiki/Make_(software)
-[node.js]: https://nodejs.org/en/download
+[node]: https://nodejs.org/en/download
 [rust]: https://www.rust-lang.org/tools/install
