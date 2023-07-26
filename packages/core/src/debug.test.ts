@@ -1,5 +1,5 @@
 import * as wasm from "@rose-lang/wasm";
-import { expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import {
   Bool,
   Real,
@@ -34,26 +34,27 @@ test("core IR type layouts", () => {
   });
 });
 
-test("pprint if", () => {
-  const f = fn([Real, Real], Real, (x, y) => {
-    const p = lt(x, y);
-    const z = cond(
-      p,
-      () => {
-        const a = mul(x, y);
-        return add(a, x);
-      },
-      () => {
-        const b = sub(y, x);
-        return mul(b, y);
-      },
-    );
-    const w = add(z, x);
-    return add(y, w);
-  });
-  const s = wasm.pprint(f.f.f);
-  expect(s).toBe(
-    `
+describe("pprint", () => {
+  test("if", () => {
+    const f = fn([Real, Real], Real, (x, y) => {
+      const p = lt(x, y);
+      const z = cond(
+        p,
+        () => {
+          const a = mul(x, y);
+          return add(a, x);
+        },
+        () => {
+          const b = sub(y, x);
+          return mul(b, y);
+        },
+      );
+      const w = add(z, x);
+      return add(y, w);
+    });
+    const s = wasm.pprint(f.f.f);
+    expect(s).toBe(
+      `
 T0 = Bool
 T1 = F64
 T2 = (T1, T1)
@@ -78,49 +79,47 @@ x0: T2 -> T1 {
   x12
 }
 `.trimStart(),
-  );
-});
-
-test("pprint call funcs", () => {
-  const g = fn([Real], Real, (y) => add(2, y));
-  const h = fn([Real], Real, (z) => mul(2, z));
-  const f = fn([Real], Real, (x) => {
-    const a = g(x);
-    const b = h(x);
-    return add(a, b);
+    );
   });
-  const s = wasm.pprint(f.f.f);
-  expect(s).toBe(
-    `
+  test("call funcs", () => {
+    const g = fn([Real], Real, (y) => add(2, y));
+    const h = fn([Real], Real, (z) => mul(2, z));
+    const f = fn([Real], Real, (x) => {
+      const a = g(x);
+      const b = h(x);
+      return add(a, b);
+    });
+    const s = wasm.pprint(f.f.f);
+    expect(s).toBe(
+      `
 T0 = Bool
 T1 = F64
 T2 = (T1)
-F0 = 0<>
-F1 = 1<>
+f0 = F0<>
+f1 = F1<>
 x0: T2 -> T1 {
   x1: T1 = x0.0
   x2: T2 = (x1)
-  x3: T1 = F0(x2)
+  x3: T1 = f0(x2)
   x4: T2 = (x1)
-  x5: T1 = F1(x4)
+  x5: T1 = f1(x4)
   x6: T1 = x3 + x5
   x6
 }
 `.trimStart(),
-  );
-});
-
-test("pprint unary operations", () => {
-  const f = fn([Real], Real, (x) => {
-    const a = not(true);
-    const b = neg(x);
-    const c = abs(b);
-    const d = sqrt(x);
-    return d;
+    );
   });
-  const s = wasm.pprint(f.f.f);
-  expect(s).toBe(
-    `
+  test("unary operations", () => {
+    const f = fn([Real], Real, (x) => {
+      const a = not(true);
+      const b = neg(x);
+      const c = abs(b);
+      const d = sqrt(x);
+      return d;
+    });
+    const s = wasm.pprint(f.f.f);
+    expect(s).toBe(
+      `
 T0 = Bool
 T1 = F64
 T2 = (T1)
@@ -134,29 +133,28 @@ x0: T2 -> T1 {
   x6
 }
 `.trimStart(),
-  );
-});
-
-test("pprint binary operations", () => {
-  const f = fn([Real, Real], Bool, (x, y) => {
-    const a = add(x, y);
-    const b = sub(x, y);
-    const c = mul(x, y);
-    const d = div(x, y);
-    const e = and(true, false);
-    const f = or(true, false);
-    const g = iff(true, false);
-    const h = xor(true, false);
-    const i = neq(x, y);
-    const j = lt(x, y);
-    const k = leq(x, y);
-    const l = eq(x, y);
-    const m = gt(x, y);
-    return geq(c, d);
+    );
   });
-  const s = wasm.pprint(f.f.f);
-  expect(s).toBe(
-    `
+  test("binary operations", () => {
+    const f = fn([Real, Real], Bool, (x, y) => {
+      const a = add(x, y);
+      const b = sub(x, y);
+      const c = mul(x, y);
+      const d = div(x, y);
+      const e = and(true, false);
+      const f = or(true, false);
+      const g = iff(true, false);
+      const h = xor(true, false);
+      const i = neq(x, y);
+      const j = lt(x, y);
+      const k = leq(x, y);
+      const l = eq(x, y);
+      const m = gt(x, y);
+      return geq(c, d);
+    });
+    const s = wasm.pprint(f.f.f);
+    expect(s).toBe(
+      `
 T0 = Bool
 T1 = F64
 T2 = (T1, T1)
@@ -188,5 +186,6 @@ x0: T2 -> T0 {
   x24
 }
 `.trimStart(),
-  );
+    );
+  });
 });

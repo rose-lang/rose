@@ -82,12 +82,12 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                 rose::Expr::Fin { val } => writeln!(&mut s, "{val}")?,
                 rose::Expr::Array { elems } => {
                     write!(&mut s, "[")?;
-                    print_elems(s, elems)?;
+                    print_elems(s, 'x', elems.iter().map(|elem| elem.var()))?;
                     writeln!(&mut s, "]")?;
                 }
                 rose::Expr::Tuple { members } => {
                     write!(&mut s, "(")?;
-                    print_elems(s, members)?;
+                    print_elems(s, 'x', members.iter().map(|member| member.var()))?;
                     writeln!(&mut s, ")")?;
                 }
                 rose::Expr::Index { array, index } => {
@@ -125,7 +125,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                     rose::Binop::Div => writeln!(&mut s, "x{} / x{}", left.var(), right.var())?,
                 },
                 rose::Expr::Call { func, arg } => {
-                    writeln!(&mut s, "F{}(x{})", func.func(), arg.var())?
+                    writeln!(&mut s, "f{}(x{})", func.func(), arg.var())?
                 }
                 rose::Expr::If { cond, then, els } => {
                     writeln!(&mut s, "if x{} {{", cond.var())?;
@@ -188,7 +188,10 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
         Ok(())
     }
 
-    fn print_elems(s: &mut String, items: &Vec<rose::id::Var>) -> std::fmt::Result {
+    fn print_elems<I>(s: &mut String, prefix: char, items: I) -> std::fmt::Result
+    where
+        I: IntoIterator<Item = usize>,
+    {
         let mut first = true;
         for item in items {
             if first {
@@ -196,7 +199,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
             } else {
                 write!(s, ", ")?;
             }
-            write!(s, "x{}", item.var())?;
+            write!(s, "{}{}", prefix, item)?;
         }
         Ok(())
     }
@@ -232,30 +235,18 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
             }
             rose::Ty::Tuple { members } => {
                 write!(&mut s, "(")?;
-                let mut first = true;
-                for member in members {
-                    if first {
-                        first = false;
-                    } else {
-                        write!(&mut s, ", ")?;
-                    }
-                    write!(&mut s, "T{}", member.ty())?;
-                }
-                writeln!(&mut s, ")")?
+                print_elems(&mut s, 'T', members.iter().map(|member| member.ty()))?;
+                writeln!(&mut s, ")")?;
             }
         }
     }
     for (i, func) in def.funcs.iter().enumerate() {
-        write!(&mut s, "F{i} = {}<", func.id.function())?;
-        let mut first = true;
-        for generic in func.generics.iter() {
-            if first {
-                first = false;
-            } else {
-                write!(&mut s, ", ")?;
-            }
-            write!(&mut s, "T{}", generic.ty())?;
-        }
+        write!(&mut s, "f{} = F{}<", i, func.id.function())?;
+        print_elems(
+            &mut s,
+            'T',
+            func.generics.iter().map(|generic| generic.ty()),
+        )?;
         writeln!(&mut s, ">")?;
     }
     writeln!(
