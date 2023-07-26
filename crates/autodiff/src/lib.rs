@@ -1,6 +1,7 @@
 use enumset::EnumSet;
 use indexmap::IndexSet;
 use rose::{id, Binop, Block, Constraint, Expr, FuncNode, Function, Instr, Ty, Unop};
+use std::collections::HashMap;
 
 pub struct Derivative {
     f: Function,
@@ -22,6 +23,7 @@ struct Forward<'a> {
     mapping: Vec<Option<(id::Var, id::Var)>>,
     old_blocks: &'a [Block],
     blocks: Vec<Block>,
+    block_mapping: HashMap<id::Block, id::Block>,
 }
 
 impl Forward<'_> {
@@ -418,6 +420,12 @@ impl Forward<'_> {
     }
 
     fn block(&mut self, old_id: id::Block, arg: id::Var, mut code: Vec<Instr>) -> id::Block {
+        // check if this block has already been processed
+        if let Some(&new_id) = self.block_mapping.get(&old_id) {
+            return new_id;
+        }
+
+        // otherwise, process the block
         let old = &self.old_blocks[old_id.block()];
 
         for Instr { var, expr } in &old.code {
@@ -443,6 +451,7 @@ impl Forward<'_> {
 
         let id = id::block(self.blocks.len());
         self.blocks.push(Block { arg, code, ret });
+        self.block_mapping.insert(old_id, id);
         id
     }
 }
@@ -458,6 +467,7 @@ pub fn forward(f: Derivative) -> Function {
         mapping: vec![None; f.vars.len()],
         old_blocks: &f.blocks,
         blocks: vec![],
+        block_mapping: HashMap::new(),
     };
     for ty in &f.types {
         let primal = match ty {
@@ -466,7 +476,12 @@ pub fn forward(f: Derivative) -> Function {
             Ty::F64 => Ty::F64,
             &Ty::Fin { size } => Ty::Fin { size },
             &Ty::Generic { id } => Ty::Generic { id },
-            Ty::Scope { id: _ } => todo!(),
+            Ty::Scope { id } => {
+                let processed_block = g.block(*id, g.unitvar(), vec![]);
+                Ty::Scope {
+                    id: processed_block,
+                }
+            }
             &Ty::Ref { scope: _, inner: _ } => todo!(),
             &Ty::Array { index, elem } => Ty::Array {
                 index: g.primal(index),
