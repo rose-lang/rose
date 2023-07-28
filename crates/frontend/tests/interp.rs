@@ -30,3 +30,17 @@ fn test_sub() {
     .unwrap();
     assert_eq!(answer, Val::F64(0.));
 }
+
+#[test]
+fn test_mul() {
+    let src = include_str!("mul.rose");
+    let module = parse(src).unwrap();
+    let answer = interp(
+        module.get_func("mul").unwrap(),
+        IndexSet::new(),
+        &[],
+        Val::Tuple(Rc::new(vec![Val::F64(2.), Val::F64(2.)])),
+    )
+    .unwrap();
+    assert_eq!(answer, Val::F64(0.));
+}

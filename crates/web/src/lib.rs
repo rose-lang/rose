@@ -107,6 +107,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                     rose::Unop::Neg => writeln!(&mut s, "-x{}", arg.var())?,
                     rose::Unop::Abs => writeln!(&mut s, "|x{}|", arg.var())?,
                     rose::Unop::Sqrt => writeln!(&mut s, "sqrt(x{})", arg.var())?,
+                    rose::Unop::Sign => writeln!(&mut s, "sign(x{})", arg.var())?,
                 },
                 rose::Expr::Binary { op, left, right } => match op {
                     rose::Binop::And => writeln!(&mut s, "x{} and x{}", left.var(), right.var())?,

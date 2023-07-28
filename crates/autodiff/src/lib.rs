@@ -1,6 +1,6 @@
 use enumset::EnumSet;
 use indexmap::IndexSet;
-use rose::{id, Binop, Block, Constraint, Expr, FuncNode, Function, Instr, Ty, Unop};
+use rose::{id, Binop, Block, Constraint, Expr, Func, FuncNode, Function, Instr, Ty, Unop};
 use std::collections::HashMap;
 
 pub struct Derivative {
@@ -424,7 +424,6 @@ impl Forward<'_> {
         if let Some(&new_id) = self.block_mapping.get(&old_id) {
             return new_id;
         }
-
         // otherwise, process the block
         let old = &self.old_blocks[old_id.block()];
 
@@ -469,6 +468,7 @@ pub fn forward(f: Derivative) -> Function {
         blocks: vec![],
         block_mapping: HashMap::new(),
     };
+    let unitvar = g.unitvar();
     for ty in &f.types {
         let primal = match ty {
             Ty::Unit => Ty::Unit,
@@ -477,7 +477,7 @@ pub fn forward(f: Derivative) -> Function {
             &Ty::Fin { size } => Ty::Fin { size },
             &Ty::Generic { id } => Ty::Generic { id },
             Ty::Scope { id } => {
-                let processed_block = g.block(*id, g.unitvar(), vec![]);
+                let processed_block = g.block(*id, unitvar, vec![]);
                 Ty::Scope {
                     id: processed_block,
                 }
@@ -536,6 +536,7 @@ pub fn forward(f: Derivative) -> Function {
     let main = g.block(f.main, arg, code);
 
     let b = &g.blocks[main.block()];
+
     Function {
         generics: g.generics,
         types: g.types.into_iter().collect(),
@@ -554,4 +555,72 @@ pub fn unzip(f: Derivative) -> (Function, Linear) {
 
 pub fn transpose(f: Linear) -> Linear {
     f // TODO
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone, Debug)]
+    struct TestFuncNode {
+        f: Function,
+    }
+
+    impl rose::FuncNode for TestFuncNode {
+        fn def(&self) -> &rose::Function {
+            &self.f
+        }
+
+        fn get(&self, _id: id::Function) -> Option<Self> {
+            None
+        }
+    }
+
+    fn func1() -> Function {
+        Function {
+            generics: vec![],
+            types: vec![Ty::Unit, Ty::F64],
+            funcs: vec![],
+            param: id::ty(0),
+            ret: id::ty(1),
+            vars: vec![id::ty(0), id::ty(1)],
+            blocks: vec![Block {
+                arg: id::var(0),
+                code: vec![Instr {
+                    var: id::var(1),
+                    expr: Expr::F64 { val: 42. },
+                }],
+                ret: id::var(1),
+            }],
+            main: id::block(0),
+        }
+    }
+
+    #[test]
+    fn test_block_mapping() {
+        // get funcs
+        let og_func = TestFuncNode { f: func1() };
+        let cloned_func = og_func.f.clone();
+        let derivative = derivative(og_func);
+        let new_func = forward(derivative);
+
+        // extract blocks
+        let old_blocks = cloned_func.blocks;
+        let new_blocks = new_func.blocks;
+
+        // check block mapping for each block index
+        for i in 0..old_blocks.len() {
+            let old_block = &old_blocks[i];
+            let new_block = &new_blocks[i];
+            // check if the blocks have the same indices
+            assert_eq!(old_block.arg.var(), new_block.arg.var());
+            assert_eq!(old_block.ret.var(), new_block.ret.var());
+        }
+
+        // check if the new block index is strictly greater than the number of blocks in the original function
+        for new_block in new_blocks.iter().skip(old_blocks.len()) {
+            assert!(new_block.arg.var() > old_blocks.len());
+            assert!(new_block.ret.var() > old_blocks.len());
+        }
+    }
 }
