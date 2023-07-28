@@ -13,6 +13,8 @@ use ts_rs::TS;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, EnumSetType)]
 pub enum Constraint {
+    /// Not a `Ref`.
+    Value,
     /// Can be the `index` type of an `Array`.
     Index,
     /// Allows a `Ref` to be read when used as its `scope` type.
@@ -59,6 +61,7 @@ pub enum Ty {
 pub struct Func {
     pub id: id::Function,
     pub generics: Vec<id::Ty>,
+    pub args: Vec<id::Var>,
 }
 
 /// A function definition.
@@ -68,18 +71,18 @@ pub struct Function {
     pub generics: Vec<EnumSet<Constraint>>,
     /// Types used in this function definition.
     pub types: Vec<Ty>,
-    /// Instantiations referenced functions with generic type parameters.
-    pub funcs: Vec<Func>,
-    /// Parameter type.
-    pub param: id::Ty,
-    /// Return type.
-    pub ret: id::Ty,
     /// Local variable types.
     pub vars: Vec<id::Ty>,
+    /// Calls to referenced functions.
+    pub funcs: Vec<Func>,
+    /// Parameter variables.
+    pub params: Vec<id::Var>,
+    /// Return variable.
+    pub ret: id::Var,
     /// Blocks of code.
     pub blocks: Vec<Block>,
     /// Main block.
-    pub main: id::Block,
+    pub main: Vec<Instr>,
 }
 
 /// Wrapper for a `Function` that knows how to resolve its `id::Function`s.
@@ -171,7 +174,6 @@ pub enum Expr {
 
     Call {
         func: id::Func,
-        arg: id::Var,
     },
     For {
         /// Must satisfy `Constraint::Index`.
