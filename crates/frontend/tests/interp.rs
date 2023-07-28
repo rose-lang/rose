@@ -1,6 +1,6 @@
 use indexmap::IndexSet;
 use rose_frontend::parse;
-use rose_interp::{interp, val_f64, vals, Val};
+use rose_interp::{interp, val_f64};
 
 #[test]
 fn test_add() {
@@ -10,7 +10,7 @@ fn test_add() {
         module.get_func("add").unwrap(),
         IndexSet::new(),
         &[],
-        Val::Tuple(vals([val_f64(2.), val_f64(2.)])),
+        [val_f64(2.), val_f64(2.)].into_iter(),
     )
     .unwrap();
     assert_eq!(answer, val_f64(4.));
@@ -24,7 +24,7 @@ fn test_sub() {
         module.get_func("sub").unwrap(),
         IndexSet::new(),
         &[],
-        Val::Tuple(vals([val_f64(2.), val_f64(2.)])),
+        [val_f64(2.), val_f64(2.)].into_iter(),
     )
     .unwrap();
     assert_eq!(answer, val_f64(0.));

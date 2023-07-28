@@ -86,26 +86,6 @@ impl Ty {
     }
 }
 
-/// Index of an instantiated function reference in a definition context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename = "FuncId")
-)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Func(usize);
-
-pub fn func(id: usize) -> Func {
-    Func(id)
-}
-
-impl Func {
-    pub fn func(self) -> usize {
-        self.0
-    }
-}
-
 /// Index of a local variable in a function definition context.
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(

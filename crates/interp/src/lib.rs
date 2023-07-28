@@ -224,12 +224,10 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
                 }
             }
 
-            &Expr::Call { func } => {
-                let f = &self.f.def().funcs[func.func()];
-                let generics: Vec<id::Ty> =
-                    f.generics.iter().map(|id| self.types[id.ty()]).collect();
-                let args = f.args.iter().map(|id| self.vars[id.var()].clone().unwrap());
-                call(self.f.get(f.id).unwrap(), self.typemap, &generics, args)
+            Expr::Call { id, generics, args } => {
+                let resolved: Vec<id::Ty> = generics.iter().map(|id| self.types[id.ty()]).collect();
+                let vals = args.iter().map(|id| self.vars[id.var()].clone().unwrap());
+                call(self.f.get(*id).unwrap(), self.typemap, &resolved, vals)
             }
             &Expr::For { index, body } => {
                 let n = match self.typemap[self.types[index.ty()].ty()] {
@@ -304,7 +302,7 @@ pub fn interp(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rose::{Func, Function, Instr};
+    use rose::{Function, Instr};
 
     #[derive(Clone, Copy, Debug)]
     struct FuncInSlice<'a> {
@@ -331,7 +329,6 @@ mod tests {
             generics: vec![],
             types: vec![Ty::F64],
             vars: vec![id::ty(0), id::ty(0), id::ty(0)],
-            funcs: vec![],
             params: vec![id::var(0), id::var(1)],
             ret: id::var(2),
             blocks: vec![],
@@ -364,7 +361,6 @@ mod tests {
                 generics: vec![],
                 types: vec![Ty::F64],
                 vars: vec![id::ty(0)],
-                funcs: vec![],
                 params: vec![],
                 ret: id::var(0),
                 blocks: vec![],
@@ -377,18 +373,17 @@ mod tests {
                 generics: vec![],
                 types: vec![Ty::F64],
                 vars: vec![id::ty(0), id::ty(0)],
-                funcs: vec![Func {
-                    id: id::function(0),
-                    generics: vec![],
-                    args: vec![],
-                }],
                 params: vec![],
                 ret: id::var(1),
                 blocks: vec![],
                 main: vec![
                     Instr {
                         var: id::var(0),
-                        expr: Expr::Call { func: id::func(0) },
+                        expr: Expr::Call {
+                            id: id::function(0),
+                            generics: vec![],
+                            args: vec![],
+                        },
                     },
                     Instr {
                         var: id::var(1),

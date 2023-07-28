@@ -148,7 +148,6 @@ struct BlockCtx<'input, 'a> {
     g: HashMap<&'input str, id::Generic>,
     l: HashMap<&'input str, id::Var>,
     t: IndexSet<ir::Ty>,
-    f: Vec<ir::Func>,
     v: Vec<id::Ty>,
     b: Vec<ir::Block>,
     c: Vec<ir::Instr>,
@@ -163,12 +162,6 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
     fn newlocal(&mut self, t: id::Ty) -> id::Var {
         let id = id::var(self.v.len());
         self.v.push(t);
-        id
-    }
-
-    fn newfunc(&mut self, f: ir::Func) -> id::Func {
-        let id = id::func(self.f.len());
-        self.f.push(f);
         id
     }
 
@@ -283,13 +276,14 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                 let types: Vec<id::Ty> = vars.iter().map(|&v| self.getlocal(v)).collect();
                 if let Some((i, _, f)) = self.m.funcs.get_full(func.val) {
                     let (generics, ret) = self.unify(f, &types)?;
-                    let func = self.newfunc(ir::Func {
-                        id: id::function(i),
-                        generics,
-                    });
-                    let ty = self.newtype(ir::Ty::Tuple { members: types });
-                    let arg = self.instr(ty, ir::Expr::Tuple { members: vars });
-                    Ok(self.instr(ret, ir::Expr::Call { func, arg }))
+                    Ok(self.instr(
+                        ret,
+                        ir::Expr::Call {
+                            id: id::function(i),
+                            generics,
+                            args: vars,
+                        },
+                    ))
                 } else {
                     let real = self.newtype(ir::Ty::F64);
                     // TODO: validate argument types for builtin functions
@@ -423,46 +417,29 @@ impl<'input> Module<'input> {
                     params.iter().map(|&(_, t)| t).chain([typ]),
                 )?;
                 let generics = vec![EnumSet::only(ir::Constraint::Index); genericnames.len()];
-                let ret = paramtypes.pop().expect("`parse_types` should preserve len");
-                let (param_id, _) = typevars.insert_full(ir::Ty::Tuple {
-                    members: paramtypes.clone(), // should be a way to do this without `clone`...
-                });
-                let param = id::ty(param_id);
-                let arg = id::var(0);
+                paramtypes.pop().expect("`parse_types` should preserve len"); // pop off return type
+                let args = (0..params.len()).map(id::var).collect();
                 let mut ctx = BlockCtx {
                     m: self,
                     g: genericnames,
                     l: HashMap::new(),
                     t: typevars,
-                    f: vec![],
-                    v: vec![param],
+                    v: paramtypes,
                     b: vec![],
                     c: vec![],
                 };
-                for (i, ((bind, _), t)) in params.into_iter().zip(paramtypes).enumerate() {
-                    let expr = ir::Expr::Member {
-                        tuple: arg,
-                        member: id::member(i),
-                    };
-                    let var = ctx.instr(t, expr);
-                    ctx.bind(bind, var);
+                for (i, (bind, _)) in params.into_iter().enumerate() {
+                    ctx.bind(bind, id::var(i));
                 }
                 let retvar = ctx.typecheck(body)?; // TODO: ensure this matches `ret`
-                let main = id::block(ctx.b.len());
-                ctx.b.push(ir::Block {
-                    arg,
-                    code: ctx.c,
-                    ret: retvar,
-                });
                 let f = ir::Function {
                     generics,
                     types: ctx.t.into_iter().collect(),
-                    funcs: ctx.f,
-                    param,
-                    ret,
                     vars: ctx.v,
+                    params: args,
+                    ret: retvar,
                     blocks: ctx.b,
-                    main,
+                    main: ctx.c,
                 };
                 // TODO: check for duplicate function names
                 self.funcs.insert(name, f);

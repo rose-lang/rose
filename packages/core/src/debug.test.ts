@@ -28,8 +28,8 @@ import {
 test("core IR type layouts", () => {
   // these don't matter too much, but it's good to notice if sizes increase
   expect(Object.fromEntries(wasm.layouts())).toEqual({
-    Expr: { size: 16, align: 8 },
-    Instr: { size: 24, align: 8 },
+    Expr: { size: 32, align: 8 },
+    Instr: { size: 40, align: 8 },
     Ty: { size: 16, align: 4 },
   });
 });
@@ -49,19 +49,16 @@ describe("pprint", () => {
       `
 T0 = Bool
 T1 = F64
-T2 = (T1, T1)
-x0: T2 -> T1 {
-  x1: T1 = x0.0
-  x2: T1 = x0.1
-  x3: T0 = x1 < x2
-  x4: T1 = x1 * x2
-  x5: T1 = x2 - x1
-  x6: T1 = x4 + x1
-  x7: T1 = x5 * x2
-  x8: T1 = x3 ? x6 : x7
-  x9: T1 = x8 + x1
-  x10: T1 = x2 + x9
-  x10
+(x0: T1, x1: T1) -> T1 {
+  x2: T0 = x0 < x1
+  x3: T1 = x0 * x1
+  x4: T1 = x1 - x0
+  x5: T1 = x3 + x0
+  x6: T1 = x4 * x1
+  x7: T1 = x2 ? x5 : x6
+  x8: T1 = x7 + x0
+  x9: T1 = x1 + x8
+  x9
 }
 `.trimStart(),
     );
@@ -79,17 +76,11 @@ x0: T2 -> T1 {
       `
 T0 = Bool
 T1 = F64
-T2 = (T1)
-f0 = F0<>
-f1 = F1<>
-x0: T2 -> T1 {
-  x1: T1 = x0.0
-  x2: T2 = (x1)
-  x3: T1 = f0(x2)
-  x4: T2 = (x1)
-  x5: T1 = f1(x4)
-  x6: T1 = x3 + x5
-  x6
+(x0: T1) -> T1 {
+  x1: T1 = f0<>(x0)
+  x2: T1 = f1<>(x0)
+  x3: T1 = x1 + x2
+  x3
 }
 `.trimStart(),
     );
@@ -107,15 +98,13 @@ x0: T2 -> T1 {
       `
 T0 = Bool
 T1 = F64
-T2 = (T1)
-x0: T2 -> T1 {
-  x1: T1 = x0.0
-  x2: T0 = true
-  x3: T0 = not x2
-  x4: T1 = -x1
-  x5: T1 = |x4|
-  x6: T1 = sqrt(x1)
-  x6
+(x0: T1) -> T1 {
+  x1: T0 = true
+  x2: T0 = not x1
+  x3: T1 = -x0
+  x4: T1 = |x3|
+  x5: T1 = sqrt(x0)
+  x5
 }
 `.trimStart(),
     );
@@ -142,33 +131,30 @@ x0: T2 -> T1 {
       `
 T0 = Bool
 T1 = F64
-T2 = (T1, T1)
-x0: T2 -> T0 {
-  x1: T1 = x0.0
-  x2: T1 = x0.1
-  x3: T1 = x1 + x2
-  x4: T1 = x1 - x2
-  x5: T1 = x1 * x2
-  x6: T1 = x1 / x2
-  x7: T0 = true
-  x8: T0 = false
-  x9: T0 = x7 and x8
-  x10: T0 = true
-  x11: T0 = false
-  x12: T0 = x10 or x11
-  x13: T0 = true
-  x14: T0 = false
-  x15: T0 = x13 iff x14
-  x16: T0 = true
-  x17: T0 = false
-  x18: T0 = x16 xor x17
-  x19: T0 = x1 != x2
-  x20: T0 = x1 < x2
-  x21: T0 = x1 <= x2
-  x22: T0 = x1 == x2
-  x23: T0 = x1 > x2
-  x24: T0 = x5 >= x6
-  x24
+(x0: T1, x1: T1) -> T0 {
+  x2: T1 = x0 + x1
+  x3: T1 = x0 - x1
+  x4: T1 = x0 * x1
+  x5: T1 = x0 / x1
+  x6: T0 = true
+  x7: T0 = false
+  x8: T0 = x6 and x7
+  x9: T0 = true
+  x10: T0 = false
+  x11: T0 = x9 or x10
+  x12: T0 = true
+  x13: T0 = false
+  x14: T0 = x12 iff x13
+  x15: T0 = true
+  x16: T0 = false
+  x17: T0 = x15 xor x16
+  x18: T0 = x0 != x1
+  x19: T0 = x0 < x1
+  x20: T0 = x0 <= x1
+  x21: T0 = x0 == x1
+  x22: T0 = x0 > x1
+  x23: T0 = x4 >= x5
+  x23
 }
 `.trimStart(),
     );

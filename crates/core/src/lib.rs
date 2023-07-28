@@ -56,14 +56,6 @@ pub enum Ty {
     },
 }
 
-/// Reference to a function, with types supplied for its generic parameters.
-#[derive(Debug)]
-pub struct Func {
-    pub id: id::Function,
-    pub generics: Vec<id::Ty>,
-    pub args: Vec<id::Var>,
-}
-
 /// A function definition.
 #[derive(Debug)]
 pub struct Function {
@@ -73,8 +65,6 @@ pub struct Function {
     pub types: Vec<Ty>,
     /// Local variable types.
     pub vars: Vec<id::Ty>,
-    /// Calls to referenced functions.
-    pub funcs: Vec<Func>,
     /// Parameter variables.
     pub params: Vec<id::Var>,
     /// Return variable.
@@ -173,7 +163,9 @@ pub enum Expr {
     },
 
     Call {
-        func: id::Func,
+        id: id::Function,
+        generics: Vec<id::Ty>,
+        args: Vec<id::Var>,
     },
     For {
         /// Must satisfy `Constraint::Index`.
