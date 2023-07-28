@@ -6,7 +6,6 @@ import {
   abs,
   add,
   and,
-  cond,
   div,
   eq,
   fn,
@@ -20,6 +19,7 @@ import {
   neq,
   not,
   or,
+  select,
   sqrt,
   sub,
   xor,
@@ -38,17 +38,9 @@ describe("pprint", () => {
   test("if", () => {
     const f = fn([Real, Real], Real, (x, y) => {
       const p = lt(x, y);
-      const z = cond(
-        p,
-        () => {
-          const a = mul(x, y);
-          return add(a, x);
-        },
-        () => {
-          const b = sub(y, x);
-          return mul(b, y);
-        },
-      );
+      const a = mul(x, y);
+      const b = sub(y, x);
+      const z = select(p, add(a, x), mul(b, y));
       const w = add(z, x);
       return add(y, w);
     });
@@ -58,25 +50,18 @@ describe("pprint", () => {
 T0 = Bool
 T1 = F64
 T2 = (T1, T1)
-T3 = Unit
 x0: T2 -> T1 {
   x1: T1 = x0.0
   x2: T1 = x0.1
   x3: T0 = x1 < x2
-  x10: T1 = if x3 {
-    x4: T3
-    x5: T1 = x1 * x2
-    x6: T1 = x5 + x1
-    x6
-  } else {
-    x7: T3
-    x8: T1 = x2 - x1
-    x9: T1 = x8 * x2
-    x9
-  }
-  x11: T1 = x10 + x1
-  x12: T1 = x2 + x11
-  x12
+  x4: T1 = x1 * x2
+  x5: T1 = x2 - x1
+  x6: T1 = x4 + x1
+  x7: T1 = x5 * x2
+  x8: T1 = x3 ? x6 : x7
+  x9: T1 = x8 + x1
+  x10: T1 = x2 + x9
+  x10
 }
 `.trimStart(),
     );

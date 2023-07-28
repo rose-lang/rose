@@ -124,31 +124,11 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                     rose::Binop::Mul => writeln!(&mut s, "x{} * x{}", left.var(), right.var())?,
                     rose::Binop::Div => writeln!(&mut s, "x{} / x{}", left.var(), right.var())?,
                 },
+                rose::Expr::Select { cond, then, els } => {
+                    writeln!(&mut s, "x{} ? x{} : x{}", cond.var(), then.var(), els.var())?
+                }
                 rose::Expr::Call { func, arg } => {
                     writeln!(&mut s, "f{}(x{})", func.func(), arg.var())?
-                }
-                rose::Expr::If { cond, then, els } => {
-                    writeln!(&mut s, "if x{} {{", cond.var())?;
-                    for _ in 0..spaces {
-                        write!(&mut s, " ")?;
-                    }
-                    let x = def.blocks[then.block()].arg.var();
-                    writeln!(&mut s, "  x{x}: T{}", def.vars[x].ty())?;
-                    print_block(s, def, spaces + 2, *then)?;
-                    for _ in 0..spaces {
-                        write!(&mut s, " ")?;
-                    }
-                    writeln!(&mut s, "}} else {{")?;
-                    for _ in 0..spaces {
-                        write!(&mut s, " ")?;
-                    }
-                    let y = def.blocks[els.block()].arg.var();
-                    writeln!(&mut s, "  x{y}: T{}", def.vars[y].ty())?;
-                    print_block(s, def, spaces + 2, *els)?;
-                    for _ in 0..spaces {
-                        write!(&mut s, " ")?;
-                    }
-                    writeln!(&mut s, "}}")?
                 }
                 rose::Expr::For { index, body } => {
                     writeln!(
@@ -163,8 +143,8 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                     }
                     writeln!(&mut s, "}}")?
                 }
-                rose::Expr::Accum { var, vector, body } => {
-                    writeln!(&mut s, "accum x{}: T{} {{", var.var(), vector.ty())?;
+                rose::Expr::Read { var, body } => {
+                    writeln!(&mut s, "read x{} {{", var.var())?;
                     for _ in 0..spaces {
                         write!(&mut s, " ")?;
                     }
@@ -176,6 +156,20 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                     }
                     writeln!(&mut s, "}}")?
                 }
+                rose::Expr::Accum { var, shape, body } => {
+                    writeln!(&mut s, "accum x{} from x{} {{", var.var(), shape.var())?;
+                    for _ in 0..spaces {
+                        write!(&mut s, " ")?;
+                    }
+                    let x = def.blocks[body.block()].arg.var();
+                    writeln!(&mut s, "  x{x}: T{}", def.vars[x].ty())?;
+                    print_block(s, def, spaces + 2, *body)?;
+                    for _ in 0..spaces {
+                        write!(&mut s, " ")?;
+                    }
+                    writeln!(&mut s, "}}")?
+                }
+                rose::Expr::Ask { var } => writeln!(&mut s, "ask x{}", var.var())?,
                 rose::Expr::Add { accum, addend } => {
                     writeln!(&mut s, "x{} += x{}", accum.var(), addend.var())?
                 }
