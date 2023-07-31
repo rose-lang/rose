@@ -294,13 +294,13 @@ pub fn bake(ctx: Context, out: usize, main: Block) -> Func {
         rc: Rc::new((
             functions,
             rose::Function {
-                generics,
+                generics: generics.into(),
                 types: types.into_iter().collect(),
-                params,
+                params: params.into(),
                 ret: id::var(out),
-                vars,
-                blocks,
-                main: main.code,
+                vars: vars.into(),
+                blocks: blocks.into(),
+                main: main.code.into(),
             },
         )),
     }
@@ -423,7 +423,7 @@ impl Context {
         let id = self.blocks.len();
         self.blocks.push(rose::Block {
             arg: id::var(arg_id),
-            code,
+            code: code.into(),
             ret: id::var(ret_id),
         });
         id
@@ -490,7 +490,7 @@ impl Context {
             index,
             elem: self.get(x),
         });
-        let expr = rose::Expr::Array { elems: xs };
+        let expr = rose::Expr::Array { elems: xs.into() };
         Ok(self.instr(b, ty, expr))
     }
 
@@ -499,7 +499,7 @@ impl Context {
         let xs: Vec<id::Var> = members.iter().map(|&x| id::var(x)).collect();
         let types = xs.iter().map(|&x| self.get(x)).collect();
         let ty = self.ty(rose::Ty::Tuple { members: types });
-        let expr = rose::Expr::Tuple { members: xs };
+        let expr = rose::Expr::Tuple { members: xs.into() };
         self.instr(b, ty, expr)
     }
 
@@ -740,7 +740,7 @@ impl Context {
         let mut types = vec![];
         let (_, def) = f.rc.as_ref();
         // push a corresponding type onto our own `types` for each type in the callee
-        for callee_type in &def.types {
+        for callee_type in def.types.iter() {
             types.push(resolve(&mut self.types, generics, &types, callee_type));
         }
 

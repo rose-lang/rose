@@ -137,7 +137,7 @@ struct Interpreter<'a, F: FuncNode> {
 impl<'a, F: FuncNode> Interpreter<'a, F> {
     fn new(typemap: &'a mut IndexSet<Ty>, f: &'a F, generics: &'a [id::Ty]) -> Self {
         let mut types = vec![];
-        for ty in &f.def().types {
+        for ty in f.def().types.iter() {
             types.push(resolve(typemap, generics, &types, ty));
         }
         Self {
@@ -261,7 +261,7 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
     fn block(&mut self, b: id::Block, arg: Val) -> &Val {
         let block = &self.f.def().blocks[b.block()];
         self.vars[block.arg.var()] = Some(arg);
-        for instr in &block.code {
+        for instr in block.code.iter() {
             self.vars[instr.var.var()] = Some(self.expr(&instr.expr));
         }
         self.vars[block.ret.var()].as_ref().unwrap()
@@ -279,7 +279,7 @@ fn call(
     for (var, arg) in f.def().params.iter().zip(args) {
         interp.vars[var.var()] = Some(arg.clone());
     }
-    for instr in &f.def().main {
+    for instr in f.def().main.iter() {
         interp.vars[instr.var.var()] = Some(interp.expr(&instr.expr));
     }
     interp.vars[f.def().ret.var()].as_ref().unwrap().clone()
@@ -326,12 +326,12 @@ mod tests {
     #[test]
     fn test_two_plus_two() {
         let funcs = vec![Function {
-            generics: vec![],
-            types: vec![Ty::F64],
-            vars: vec![id::ty(0), id::ty(0), id::ty(0)],
-            params: vec![id::var(0), id::var(1)],
+            generics: vec![].into(),
+            types: vec![Ty::F64].into(),
+            vars: vec![id::ty(0), id::ty(0), id::ty(0)].into(),
+            params: vec![id::var(0), id::var(1)].into(),
             ret: id::var(2),
-            blocks: vec![],
+            blocks: vec![].into(),
             main: vec![Instr {
                 var: id::var(2),
                 expr: Expr::Binary {
@@ -339,7 +339,8 @@ mod tests {
                     left: id::var(0),
                     right: id::var(1),
                 },
-            }],
+            }]
+            .into(),
         }];
         let answer = interp(
             FuncInSlice {
@@ -358,31 +359,32 @@ mod tests {
     fn test_nested_call() {
         let funcs = vec![
             Function {
-                generics: vec![],
-                types: vec![Ty::F64],
-                vars: vec![id::ty(0)],
-                params: vec![],
+                generics: vec![].into(),
+                types: vec![Ty::F64].into(),
+                vars: vec![id::ty(0)].into(),
+                params: vec![].into(),
                 ret: id::var(0),
-                blocks: vec![],
+                blocks: vec![].into(),
                 main: vec![Instr {
                     var: id::var(0),
                     expr: Expr::F64 { val: 42. },
-                }],
+                }]
+                .into(),
             },
             Function {
-                generics: vec![],
-                types: vec![Ty::F64],
-                vars: vec![id::ty(0), id::ty(0)],
-                params: vec![],
+                generics: vec![].into(),
+                types: vec![Ty::F64].into(),
+                vars: vec![id::ty(0), id::ty(0)].into(),
+                params: vec![].into(),
                 ret: id::var(1),
-                blocks: vec![],
+                blocks: vec![].into(),
                 main: vec![
                     Instr {
                         var: id::var(0),
                         expr: Expr::Call {
                             id: id::function(0),
-                            generics: vec![],
-                            args: vec![],
+                            generics: vec![].into(),
+                            args: vec![].into(),
                         },
                     },
                     Instr {
@@ -393,7 +395,8 @@ mod tests {
                             right: id::var(0),
                         },
                     },
-                ],
+                ]
+                .into(),
             },
         ];
         let answer = interp(

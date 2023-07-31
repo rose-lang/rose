@@ -218,7 +218,7 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                             index,
                             elem: self.getlocal(x),
                         });
-                        Ok(self.instr(ty, ir::Expr::Array { elems: vars }))
+                        Ok(self.instr(ty, ir::Expr::Array { elems: vars.into() }))
                     }
                     None => Err(TypeError::EmptyVec),
                 }
@@ -272,7 +272,7 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                 let vars = args
                     .into_iter()
                     .map(|elem| self.typecheck(elem))
-                    .collect::<Result<Vec<id::Var>, TypeError>>()?;
+                    .collect::<Result<Box<[id::Var]>, TypeError>>()?;
                 let types: Vec<id::Ty> = vars.iter().map(|&v| self.getlocal(v)).collect();
                 if let Some((i, _, f)) = self.m.funcs.get_full(func.val) {
                     let (generics, ret) = self.unify(f, &types)?;
@@ -280,7 +280,7 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                         ret,
                         ir::Expr::Call {
                             id: id::function(i),
-                            generics,
+                            generics: generics.into(),
                             args: vars,
                         },
                     ))
@@ -337,7 +337,7 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                 let code_for = std::mem::replace(&mut self.c, code);
                 self.b.push(ir::Block {
                     arg,
-                    code: code_for,
+                    code: code_for.into(),
                     ret: elem,
                 });
 
@@ -416,7 +416,8 @@ impl<'input> Module<'input> {
                     // TODO: handle return type separately from params w.r.t. generics
                     params.iter().map(|&(_, t)| t).chain([typ]),
                 )?;
-                let generics = vec![EnumSet::only(ir::Constraint::Index); genericnames.len()];
+                let generics =
+                    vec![EnumSet::only(ir::Constraint::Index); genericnames.len()].into();
                 paramtypes.pop().expect("`parse_types` should preserve len"); // pop off return type
                 let args = (0..params.len()).map(id::var).collect();
                 let mut ctx = BlockCtx {
@@ -435,11 +436,11 @@ impl<'input> Module<'input> {
                 let f = ir::Function {
                     generics,
                     types: ctx.t.into_iter().collect(),
-                    vars: ctx.v,
+                    vars: ctx.v.into(),
                     params: args,
                     ret: retvar,
-                    blocks: ctx.b,
-                    main: ctx.c,
+                    blocks: ctx.b.into(),
+                    main: ctx.c.into(),
                 };
                 // TODO: check for duplicate function names
                 self.funcs.insert(name, f);

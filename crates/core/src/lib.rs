@@ -52,7 +52,7 @@ pub enum Ty {
         elem: id::Ty,
     },
     Tuple {
-        members: Vec<id::Ty>,
+        members: Vec<id::Ty>, // TODO: change to `Box<[id::Ty]`
     },
 }
 
@@ -60,19 +60,19 @@ pub enum Ty {
 #[derive(Debug)]
 pub struct Function {
     /// Generic type parameters.
-    pub generics: Vec<EnumSet<Constraint>>,
+    pub generics: Box<[EnumSet<Constraint>]>,
     /// Types used in this function definition.
-    pub types: Vec<Ty>,
+    pub types: Box<[Ty]>,
     /// Local variable types.
-    pub vars: Vec<id::Ty>,
+    pub vars: Box<[id::Ty]>,
     /// Parameter variables.
-    pub params: Vec<id::Var>,
+    pub params: Box<[id::Var]>,
     /// Return variable.
     pub ret: id::Var,
     /// Blocks of code.
-    pub blocks: Vec<Block>,
+    pub blocks: Box<[Block]>,
     /// Main block.
-    pub main: Vec<Instr>,
+    pub main: Box<[Instr]>,
 }
 
 /// Wrapper for a `Function` that knows how to resolve its `id::Function`s.
@@ -85,18 +85,18 @@ pub trait FuncNode {
         Self: Sized;
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
+// #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub struct Block {
     /// Input variable to this block.
     pub arg: id::Var,
-    pub code: Vec<Instr>,
+    pub code: Box<[Instr]>,
     /// Output variable from this block.
     pub ret: id::Var,
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
+// #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub struct Instr {
@@ -104,7 +104,7 @@ pub struct Instr {
     pub expr: Expr,
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
+// #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub enum Expr {
@@ -120,10 +120,10 @@ pub enum Expr {
     },
 
     Array {
-        elems: Vec<id::Var>,
+        elems: Box<[id::Var]>,
     },
     Tuple {
-        members: Vec<id::Var>,
+        members: Box<[id::Var]>,
     },
 
     Index {
@@ -164,8 +164,8 @@ pub enum Expr {
 
     Call {
         id: id::Function,
-        generics: Vec<id::Ty>,
-        args: Vec<id::Var>,
+        generics: Box<[id::Ty]>,
+        args: Box<[id::Var]>,
     },
     For {
         /// Must satisfy `Constraint::Index`.

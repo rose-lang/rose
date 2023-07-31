@@ -28,8 +28,8 @@ import {
 test("core IR type layouts", () => {
   // these don't matter too much, but it's good to notice if sizes increase
   expect(Object.fromEntries(wasm.layouts())).toEqual({
-    Expr: { size: 32, align: 8 },
-    Instr: { size: 40, align: 8 },
+    Expr: { size: 24, align: 8 },
+    Instr: { size: 32, align: 8 },
     Ty: { size: 16, align: 4 },
   });
 });
