@@ -64,7 +64,7 @@ impl Val {
             &Self::Bool(x) => Self::Bool(x),
             Self::F64(_) => Self::F64(Cell::new(0.)),
             &Self::Fin(x) => Self::Fin(x),
-            Self::Ref(x) => Self::Ref(Rc::clone(x)),
+            Self::Ref(_) => unreachable!(),
             Self::Array(x) => Self::Array(collect_vals(x.iter().map(|x| x.zero()))),
             Self::Tuple(x) => Self::Tuple(collect_vals(x.iter().map(|x| x.zero()))),
         }
@@ -75,8 +75,7 @@ impl Val {
         match (self, x) {
             (Self::Unit, Self::Unit)
             | (Self::Bool(_), Self::Bool(_))
-            | (Self::Fin(_), Self::Fin(_))
-            | (Self::Ref(_), Self::Ref(_)) => {}
+            | (Self::Fin(_), Self::Fin(_)) => {}
             (Self::F64(a), Self::F64(b)) => a.set(a.get() + b.get()),
             (Self::Array(a), Self::Array(b)) => {
                 for (a, b) in a.iter().zip(b.iter()) {
