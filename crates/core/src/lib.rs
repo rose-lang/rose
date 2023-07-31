@@ -86,7 +86,6 @@ pub trait FuncNode {
         Self: Sized;
 }
 
-// #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub struct Instr {
@@ -94,7 +93,6 @@ pub struct Instr {
     pub expr: Expr,
 }
 
-// #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub enum Expr {
