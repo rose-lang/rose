@@ -34,6 +34,7 @@ pub fn layouts() -> Result<JsValue, serde_wasm_bindgen::Error> {
 
     to_js_value(&[
         ("Expr", layout::<rose::Expr>()),
+        ("Function", layout::<rose::Function>()),
         ("Instr", layout::<rose::Instr>()),
         ("Ty", layout::<rose::Ty>()),
     ])
