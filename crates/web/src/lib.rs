@@ -99,8 +99,8 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
             rose::Expr::Slice { array, index } => {
                 writeln!(&mut s, "x{}![x{}]", array.var(), index.var())?
             }
-            rose::Expr::Field { tuple, field } => {
-                writeln!(&mut s, "x{}!.{}", tuple.var(), field.member())?
+            rose::Expr::Field { tuple, member } => {
+                writeln!(&mut s, "x{}!.{}", tuple.var(), member.member())?
             }
             rose::Expr::Unary { op, arg } => match op {
                 rose::Unop::Not => writeln!(&mut s, "not x{}", arg.var())?,
