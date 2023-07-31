@@ -80,7 +80,6 @@ pub struct Function {
 pub trait FuncNode {
     fn def(&self) -> &Function;
 
-    /// Only valid with `id::Function`s from `self.def().funcs`.
     fn get(&self, id: id::Function) -> Option<Self>
     where
         Self: Sized;
