@@ -149,7 +149,6 @@ struct BlockCtx<'input, 'a> {
     l: HashMap<&'input str, id::Var>,
     t: IndexSet<ir::Ty>,
     v: Vec<id::Ty>,
-    b: Vec<ir::Block>,
     c: Vec<ir::Instr>,
 }
 
@@ -333,19 +332,21 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                 let arg = self.newlocal(i);
                 self.l.insert(index, arg);
                 let elem = self.typecheck(*body)?;
-                let body = id::block(self.b.len());
-                let code_for = std::mem::replace(&mut self.c, code);
-                self.b.push(ir::Block {
-                    arg,
-                    code: code_for.into(),
-                    ret: elem,
-                });
+                let body = std::mem::replace(&mut self.c, code).into_boxed_slice();
 
                 let v = self.newtype(ir::Ty::Array {
                     index: i,
                     elem: self.getlocal(elem),
                 });
-                Ok(self.instr(v, ir::Expr::For { index: i, body }))
+                Ok(self.instr(
+                    v,
+                    ir::Expr::For {
+                        index: i,
+                        arg,
+                        body,
+                        ret: elem,
+                    },
+                ))
             }
             ast::Expr::Unary { op: _, arg: _ } => todo!(),
             ast::Expr::Binary { op, left, right } => {
@@ -426,7 +427,6 @@ impl<'input> Module<'input> {
                     l: HashMap::new(),
                     t: typevars,
                     v: paramtypes,
-                    b: vec![],
                     c: vec![],
                 };
                 for (i, (bind, _)) in params.into_iter().enumerate() {
@@ -439,8 +439,7 @@ impl<'input> Module<'input> {
                     vars: ctx.v.into(),
                     params: args,
                     ret: retvar,
-                    blocks: ctx.b.into(),
-                    main: ctx.c.into(),
+                    body: ctx.c.into(),
                 };
                 // TODO: check for duplicate function names
                 self.funcs.insert(name, f);

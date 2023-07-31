@@ -110,7 +110,10 @@ fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty
         Ty::F64 => Ty::F64,
         &Ty::Fin { size } => Ty::Fin { size },
 
-        Ty::Scope { id: _ } => Ty::Scope { id: id::block(0) }, // we erase scope info
+        &Ty::Scope { kind, id: _ } => Ty::Scope {
+            kind,
+            id: id::var(usize::MAX), // we erase scope info
+        },
         Ty::Ref { scope, inner } => Ty::Ref {
             scope: types[scope.ty()],
             inner: types[inner.ty()],
@@ -229,25 +232,39 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
                 let vals = args.iter().map(|id| self.vars[id.var()].clone().unwrap());
                 call(self.f.get(*id).unwrap(), self.typemap, &resolved, vals)
             }
-            &Expr::For { index, body } => {
+            Expr::For {
+                index,
+                arg,
+                body,
+                ret,
+            } => {
                 let n = match self.typemap[self.types[index.ty()].ty()] {
                     Ty::Fin { size } => size,
                     _ => unreachable!(),
                 };
                 Val::Array(collect_vals(
-                    (0..n).map(|i| self.block(body, Val::Fin(i)).clone()),
+                    (0..n).map(|i| self.block(*arg, body, *ret, Val::Fin(i)).clone()),
                 ))
             }
-            &Expr::Read { var, body } => {
-                let r = Val::Ref(Rc::new(self.get(var).clone()));
-                let x = self.block(body, r).clone();
-                x
+            Expr::Read {
+                var,
+                arg,
+                body,
+                ret,
+            } => {
+                let r = Val::Ref(Rc::new(self.get(*var).clone()));
+                self.block(*arg, body, *ret, r);
+                Val::Unit
             }
-            &Expr::Accum { var, shape, body } => {
-                let x = Val::Ref(Rc::new(self.get(shape).zero()));
-                let y = self.block(body, x.clone()).clone();
-                self.vars[var.var()] = Some(x.inner().clone());
-                y
+            Expr::Accum {
+                shape,
+                arg,
+                body,
+                ret,
+            } => {
+                let x = Val::Ref(Rc::new(self.get(*shape).zero()));
+                self.block(*arg, body, *ret, x.clone());
+                x.inner().clone()
             }
 
             &Expr::Ask { var } => self.get(var).inner().clone(),
@@ -258,13 +275,12 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
         }
     }
 
-    fn block(&mut self, b: id::Block, arg: Val) -> &Val {
-        let block = &self.f.def().blocks[b.block()];
-        self.vars[block.arg.var()] = Some(arg);
-        for instr in block.code.iter() {
+    fn block(&mut self, param: id::Var, body: &[rose::Instr], ret: id::Var, arg: Val) -> &Val {
+        self.vars[param.var()] = Some(arg);
+        for instr in body.iter() {
             self.vars[instr.var.var()] = Some(self.expr(&instr.expr));
         }
-        self.vars[block.ret.var()].as_ref().unwrap()
+        self.vars[ret.var()].as_ref().unwrap()
     }
 }
 
@@ -279,7 +295,7 @@ fn call(
     for (var, arg) in f.def().params.iter().zip(args) {
         interp.vars[var.var()] = Some(arg.clone());
     }
-    for instr in f.def().main.iter() {
+    for instr in f.def().body.iter() {
         interp.vars[instr.var.var()] = Some(interp.expr(&instr.expr));
     }
     interp.vars[f.def().ret.var()].as_ref().unwrap().clone()
@@ -331,8 +347,7 @@ mod tests {
             vars: vec![id::ty(0), id::ty(0), id::ty(0)].into(),
             params: vec![id::var(0), id::var(1)].into(),
             ret: id::var(2),
-            blocks: vec![].into(),
-            main: vec![Instr {
+            body: vec![Instr {
                 var: id::var(2),
                 expr: Expr::Binary {
                     op: Binop::Add,
@@ -364,8 +379,7 @@ mod tests {
                 vars: vec![id::ty(0)].into(),
                 params: vec![].into(),
                 ret: id::var(0),
-                blocks: vec![].into(),
-                main: vec![Instr {
+                body: vec![Instr {
                     var: id::var(0),
                     expr: Expr::F64 { val: 42. },
                 }]
@@ -377,8 +391,7 @@ mod tests {
                 vars: vec![id::ty(0), id::ty(0)].into(),
                 params: vec![].into(),
                 ret: id::var(1),
-                blocks: vec![].into(),
-                main: vec![
+                body: vec![
                     Instr {
                         var: id::var(0),
                         expr: Expr::Call {

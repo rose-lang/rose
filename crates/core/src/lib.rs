@@ -11,7 +11,8 @@ use ts_rs::TS;
 /// A type constraint.
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, EnumSetType)]
+#[allow(clippy::derived_hash_with_manual_eq)] // `PartialEq` impl comes from enumset; should be fine
+#[derive(Debug, EnumSetType, Hash)]
 pub enum Constraint {
     /// Not a `Ref`.
     Value,
@@ -38,9 +39,11 @@ pub enum Ty {
     Generic {
         id: id::Generic,
     },
-    /// May satisfy `Constraint::Read` or `Constraint::Accum` depending on the block.
     Scope {
-        id: id::Block,
+        /// Must be either `Read` or `Accum`.
+        kind: Constraint,
+        /// The `arg` variable of the `Expr` introducing this scope.
+        id: id::Var,
     },
     Ref {
         scope: id::Ty,
@@ -69,10 +72,8 @@ pub struct Function {
     pub params: Box<[id::Var]>,
     /// Return variable.
     pub ret: id::Var,
-    /// Blocks of code.
-    pub blocks: Box<[Block]>,
-    /// Main block.
-    pub main: Box<[Instr]>,
+    /// Function body.
+    pub body: Box<[Instr]>,
 }
 
 /// Wrapper for a `Function` that knows how to resolve its `id::Function`s.
@@ -83,17 +84,6 @@ pub trait FuncNode {
     fn get(&self, id: id::Function) -> Option<Self>
     where
         Self: Sized;
-}
-
-// #[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug)]
-pub struct Block {
-    /// Input variable to this block.
-    pub arg: id::Var,
-    pub code: Box<[Instr]>,
-    /// Output variable from this block.
-    pub ret: id::Var,
 }
 
 // #[cfg_attr(test, derive(TS), ts(export))]
@@ -170,24 +160,31 @@ pub enum Expr {
     For {
         /// Must satisfy `Constraint::Index`.
         index: id::Ty,
-        /// `arg` has type `index`.
-        body: id::Block,
+        /// has type `index`.
+        arg: id::Var,
+        body: Box<[Instr]>,
+        /// Variable from `body` holding an array element.
+        ret: id::Var,
     },
-    /// Scope for a `Ref` with `Constraint::Read`.
+    /// Scope for a `Ref` with `Constraint::Read`. Returns `Unit`.
     Read {
         /// Contents of the `Ref`.
         var: id::Var,
-        /// `arg` has type `Ref` with scope `body` and inner type same as `var`.
-        body: id::Block,
+        /// Has type `Ref` with scope `arg` and inner type same as `var`.
+        arg: id::Var,
+        body: Box<[Instr]>,
+        /// Variable from `body` holding the result of this block; escapes into outer scope.
+        ret: id::Var,
     },
-    /// Scope for a `Ref` with `Constraint::Accum`.
+    /// Scope for a `Ref` with `Constraint::Accum`. Returns the final contents of the `Ref`.
     Accum {
-        /// Final contents of the `Ref`.
-        var: id::Var,
         /// Topology of the `Ref`.
         shape: id::Var,
-        /// `arg` has type `Ref` with scope `body` and inner type same as `shape`.
-        body: id::Block,
+        /// Has type `Ref` with scope `arg` and inner type same as `shape`.
+        arg: id::Var,
+        body: Box<[Instr]>,
+        /// Variable from `body` holding the result of this block; escapes into outer scope.
+        ret: id::Var,
     },
 
     /// Read from a `Ref` whose `scope` satisfies `Constraint::Read`.
