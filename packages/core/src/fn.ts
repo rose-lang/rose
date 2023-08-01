@@ -25,12 +25,9 @@ export interface Fn {
 const call = (f: Fn, args: Val[]): Val => {
   const ctx = getCtx();
   const b = getBlock();
-  const x = ctx.tuple(
-    b,
-    new Uint32Array(args.map((arg) => getVar(ctx, b, arg))),
-  );
-  const i = ctx.func(f.f.f, new Uint32Array());
-  const y: Var = { ctx, id: ctx.call(b, i, x) };
+  const vars = new Uint32Array(args.map((arg) => getVar(ctx, b, arg)));
+  const generics = new Uint32Array(); // TODO
+  const y: Var = { ctx, id: ctx.call(b, f.f.f, generics, vars) };
   return y;
 };
 
@@ -81,19 +78,13 @@ export const fn = <const A extends readonly Type[], R extends Type>(
     throw Error("can't define a function while defining another function");
   const sig = makeSig(params, ret);
   let func: ffi.Fn;
-  const {
-    ctx,
-    main,
-    arg,
-    args: ids,
-  } = ffi.make(0, sig.types, sig.params, sig.ret);
+  const { ctx, main } = ffi.make(0, sig.types, sig.params);
   try {
     setCtx(ctx);
     setBlock(main);
-    const x = f(...(ids.map((id): Var => ({ ctx, id })) as Args<A>));
+    const x = f(...(params.map((_, id): Var => ({ ctx, id })) as Args<A>));
     const y = getVar(ctx, main, x);
-    const b = ctx.block(main, arg, y);
-    func = ffi.bake(ctx, b);
+    func = ffi.bake(ctx, y, main);
   } catch (e) {
     // `ctx` and `main` point into Wasm memory, so if we didn't finish the
     // `ffi.bake` call above then we need to be sure to `free` them

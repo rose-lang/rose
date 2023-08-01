@@ -11,14 +11,17 @@ use ts_rs::TS;
 /// A type constraint.
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, EnumSetType)]
+#[allow(clippy::derived_hash_with_manual_eq)] // `PartialEq` impl comes from enumset; should be fine
+#[derive(Debug, EnumSetType, Hash)]
 pub enum Constraint {
+    /// Not a `Ref`.
+    Value,
     /// Can be the `index` type of an `Array`.
     Index,
-    /// Has a zero value and an addition operation.
-    Vector,
-    /// Can be the `scope` type of a `Ref`.
-    Scope,
+    /// Allows a `Ref` to be read when used as its `scope` type.
+    Read,
+    /// Allows a `Ref` to be accumulated into when used as its `scope` type.
+    Accum,
 }
 
 /// A type.
@@ -28,7 +31,6 @@ pub enum Constraint {
 pub enum Ty {
     Unit,
     Bool,
-    /// Satisfies `Constraint::Vector`.
     F64,
     /// A nonnegative integer less than `size`. Satisfies `Constraint::Index`.
     Fin {
@@ -37,77 +39,52 @@ pub enum Ty {
     Generic {
         id: id::Generic,
     },
-    /// Satisfies `Constraint::Scope`.
     Scope {
-        id: id::Block,
+        /// Must be either `Read` or `Accum`.
+        kind: Constraint,
+        /// The `arg` variable of the `Expr` introducing this scope.
+        id: id::Var,
     },
     Ref {
-        /// Must satisfy `Constraint::Scope`.
         scope: id::Ty,
         inner: id::Ty,
     },
-    /// Satisfies `Constraint::Vector` if `elem` does.
     Array {
         /// Must satisfy `Constraint::Index`.
         index: id::Ty,
         elem: id::Ty,
     },
-    /// Satisfies `Constraint::Vector` if all `members` do.
     Tuple {
-        members: Vec<id::Ty>,
+        members: Vec<id::Ty>, // TODO: change to `Box<[id::Ty]`
     },
-}
-
-/// Reference to a function, with types supplied for its generic parameters.
-#[derive(Debug)]
-pub struct Func {
-    pub id: id::Function,
-    pub generics: Vec<id::Ty>,
 }
 
 /// A function definition.
 #[derive(Debug)]
 pub struct Function {
     /// Generic type parameters.
-    pub generics: Vec<EnumSet<Constraint>>,
+    pub generics: Box<[EnumSet<Constraint>]>,
     /// Types used in this function definition.
-    pub types: Vec<Ty>,
-    /// Instantiations referenced functions with generic type parameters.
-    pub funcs: Vec<Func>,
-    /// Parameter type.
-    pub param: id::Ty,
-    /// Return type.
-    pub ret: id::Ty,
+    pub types: Box<[Ty]>,
     /// Local variable types.
-    pub vars: Vec<id::Ty>,
-    /// Blocks of code.
-    pub blocks: Vec<Block>,
-    /// Main block.
-    pub main: id::Block,
+    pub vars: Box<[id::Ty]>,
+    /// Parameter variables.
+    pub params: Box<[id::Var]>,
+    /// Return variable.
+    pub ret: id::Var,
+    /// Function body.
+    pub body: Box<[Instr]>,
 }
 
 /// Wrapper for a `Function` that knows how to resolve its `id::Function`s.
 pub trait FuncNode {
     fn def(&self) -> &Function;
 
-    /// Only valid with `id::Function`s from `self.def().funcs`.
     fn get(&self, id: id::Function) -> Option<Self>
     where
         Self: Sized;
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug)]
-pub struct Block {
-    /// Input variable to this block.
-    pub arg: id::Var,
-    pub code: Vec<Instr>,
-    /// Output variable from this block.
-    pub ret: id::Var,
-}
-
-#[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub struct Instr {
@@ -115,7 +92,6 @@ pub struct Instr {
     pub expr: Expr,
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub enum Expr {
@@ -131,10 +107,10 @@ pub enum Expr {
     },
 
     Array {
-        elems: Vec<id::Var>,
+        elems: Box<[id::Var]>,
     },
     Tuple {
-        members: Vec<id::Var>,
+        members: Box<[id::Var]>,
     },
 
     Index {
@@ -154,7 +130,7 @@ pub enum Expr {
     Field {
         /// Must actually be a `Ref` of a tuple, not just a tuple.
         tuple: id::Var,
-        field: id::Member,
+        member: id::Member,
     },
 
     Unary {
@@ -166,38 +142,58 @@ pub enum Expr {
         left: id::Var,
         right: id::Var,
     },
+    Select {
+        /// Must be of type `Bool`.
+        cond: id::Var,
+        then: id::Var,
+        els: id::Var,
+    },
 
     Call {
-        func: id::Func,
-        arg: id::Var,
-    },
-    If {
-        cond: id::Var,
-        /// `arg` has type `Unit`.
-        then: id::Block,
-        /// `arg` has type `Unit`.
-        els: id::Block,
+        id: id::Function,
+        generics: Box<[id::Ty]>,
+        args: Box<[id::Var]>,
     },
     For {
         /// Must satisfy `Constraint::Index`.
         index: id::Ty,
-        /// `arg` has type `index`.
-        body: id::Block,
+        /// has type `index`.
+        arg: id::Var,
+        body: Box<[Instr]>,
+        /// Variable from `body` holding an array element.
+        ret: id::Var,
     },
-    Accum {
-        /// Final contents of the `Ref`.
+    /// Scope for a `Ref` with `Constraint::Read`. Returns `Unit`.
+    Read {
+        /// Contents of the `Ref`.
         var: id::Var,
-        /// Must satisfy `Constraint::Vector`.
-        vector: id::Ty,
-        /// `arg` has type `Ref` with scope `body` and inner type `vector`.
-        body: id::Block,
+        /// Has type `Ref` with scope `arg` and inner type same as `var`.
+        arg: id::Var,
+        body: Box<[Instr]>,
+        /// Variable from `body` holding the result of this block; escapes into outer scope.
+        ret: id::Var,
+    },
+    /// Scope for a `Ref` with `Constraint::Accum`. Returns the final contents of the `Ref`.
+    Accum {
+        /// Topology of the `Ref`.
+        shape: id::Var,
+        /// Has type `Ref` with scope `arg` and inner type same as `shape`.
+        arg: id::Var,
+        body: Box<[Instr]>,
+        /// Variable from `body` holding the result of this block; escapes into outer scope.
+        ret: id::Var,
     },
 
-    /// Accumulate into a `Ref`. Returned type is `Unit`.
+    /// Read from a `Ref` whose `scope` satisfies `Constraint::Read`.
+    Ask {
+        /// The `Ref`, which must be in scope.
+        var: id::Var,
+    },
+    /// Accumulate into a `Ref` whose `scope` satisfies `Constraint::Accum`. Returns `Unit`.
     Add {
         /// The `Ref`, which must be in scope.
         accum: id::Var,
-        /// Must be of the `Ref`'s inner type, which must satisfy `Constraint::Vector`.
+        /// Must be of the `Ref`'s inner type.
         addend: id::Var,
     },
 }
