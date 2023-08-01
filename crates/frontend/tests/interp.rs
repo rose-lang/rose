@@ -38,8 +38,8 @@ fn test_mul() {
         module.get_func("mul").unwrap(),
         IndexSet::new(),
         &[],
-        Val::Tuple(Rc::new(vec![Val::F64(2.), Val::F64(2.)])),
+        [val_f64(2.), val_f64(2.)].into_iter(),
     )
     .unwrap();
-    assert_eq!(answer, Val::F64(0.));
+    assert_eq!(answer, val_f64(4.));
 }

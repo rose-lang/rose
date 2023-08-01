@@ -1,7 +1,6 @@
 use enumset::EnumSet;
 use indexmap::IndexSet;
-use rose::{id, Binop, Block, Constraint, Expr, FuncNode, Function, Instr, Ty, Unop};
-use std::collections::HashMap;
+use rose::{id, Binop, Constraint, Expr, FuncNode, Function, Instr, Ty, Unop};
 
 pub struct Derivative {
     f: Function,
@@ -16,14 +15,13 @@ pub fn derivative(f: impl FuncNode) -> Derivative {
 
 struct Forward<'a> {
     generics: Vec<EnumSet<Constraint>>,
-    types: IndexSet<(Ty, Ty)>,
+    types: IndexSet<Ty>,
     old_types: Vec<(id::Ty, id::Ty)>,
     old_vars: &'a [id::Ty],
     vars: Vec<id::Ty>,
     mapping: Vec<Option<(id::Var, id::Var)>>,
-    old_blocks: &'a [Block],
-    blocks: Vec<Block>,
-    block_mapping: HashMap<id::Block, id::Block>,
+    params: Vec<id::Var>,
+    ret: id::Var,
 }
 
 impl Forward<'_> {
@@ -133,7 +131,10 @@ impl Forward<'_> {
             }
 
             Expr::Slice { array: _, index: _ } => todo!(),
-            Expr::Field { tuple: _, field: _ } => todo!(),
+            Expr::Field {
+                tuple: _,
+                member: _,
+            } => todo!(),
 
             &Expr::Unary { op, arg } => {
                 let (y, dy) = self.map(arg);
@@ -360,8 +361,12 @@ impl Forward<'_> {
                 }
             }
 
-            Expr::Call { func: _, arg: _ } => todo!(),
-            &Expr::If { cond, then, els } => {
+            Expr::Call {
+                id: _,
+                generics: _,
+                args: _,
+            } => todo!(),
+            &Expr::Select { cond, then, els } => {
                 let (p, _) = self.map(cond);
 
                 let then_block = &self.old_blocks[then.block()];
@@ -379,7 +384,7 @@ impl Forward<'_> {
                 let tup = self.set(
                     code,
                     tup_ret,
-                    Expr::If {
+                    Expr::Select {
                         cond: p,
                         then: then_id,
                         els: els_id,
@@ -405,11 +410,17 @@ impl Forward<'_> {
                 );
                 (x, dx)
             }
-            &Expr::For { index: _, body: _ } => todo!(),
-            Expr::Accum {
-                var: _,
-                vector: _,
+            &Expr::For {
+                index: _,
+                arg: _,
                 body: _,
+                ret: _,
+            } => todo!(),
+            Expr::Accum {
+                shape: _,
+                arg: _,
+                body: _,
+                ret: _,
             } => todo!(),
 
             Expr::Add {
@@ -419,18 +430,13 @@ impl Forward<'_> {
         }
     }
 
-    fn block(&mut self, old_id: id::Block, arg: id::Var, mut code: Vec<Instr>) -> id::Block {
-        // check if this block has already been processed
-        if let Some(&new_id) = self.block_mapping.get(&old_id) {
-            return new_id;
-        }
-        // otherwise, process the block
+    fn block(&mut self, old_id: id::Var, arg: id::Var, mut code: Vec<Instr>) -> id::Var {
         let old = &self.old_blocks[old_id.block()];
 
         for Instr { var, expr } in &old.code {
             let i = var.var();
             let (ty, tan) = self.old_types[self.old_vars[i].ty()];
-            let (x, dx) = self.expr(&mut code, ty, tan, expr);
+            let (x, dx) = self.expr(&mut code, ty, tan, &expr);
             self.mapping[i] = Some((x, dx));
         }
 
@@ -444,13 +450,12 @@ impl Forward<'_> {
             &mut code,
             tup_ret,
             Expr::Tuple {
-                members: vec![x_ret, dx_ret],
+                members: vec![x_ret, dx_ret].into(),
             },
         );
 
         let id = id::block(self.blocks.len());
         self.blocks.push(Block { arg, code, ret });
-        self.block_mapping.insert(old_id, id);
         id
     }
 }
@@ -458,25 +463,24 @@ impl Forward<'_> {
 pub fn forward(f: Derivative) -> Function {
     let Derivative { f } = f;
     let mut g = Forward {
-        generics: f.generics,
+        generics: f.generics.to_vec(),
         types: IndexSet::new(),
         old_types: vec![],
         old_vars: &f.vars,
         vars: vec![],
         mapping: vec![None; f.vars.len()],
-        old_blocks: &f.blocks,
-        blocks: vec![],
-        block_mapping: HashMap::new(),
+        params: f.params.to_vec(),
+        ret: f.ret,
     };
     let unitvar = g.unitvar();
-    for ty in &f.types {
+    for ty in &f.types.to_vec() {
         let primal = match ty {
             Ty::Unit => Ty::Unit,
             Ty::Bool => Ty::Bool,
             Ty::F64 => Ty::F64,
             &Ty::Fin { size } => Ty::Fin { size },
             &Ty::Generic { id } => Ty::Generic { id },
-            Ty::Scope { id } => Ty::Scope { id },
+            &Ty::Scope { kind, id } => Ty::Scope { kind, id },
             &Ty::Ref { scope: _, inner: _ } => todo!(),
             &Ty::Array { index, elem } => Ty::Array {
                 index: g.primal(index),
@@ -503,7 +507,7 @@ pub fn forward(f: Derivative) -> Function {
         g.old_types.push(id::ty(p));
     }
 
-    let old = &f.blocks[f.main.block()];
+    let old = &f.vars[f.body];
     let mut code = vec![];
     let (t_arg, tan_arg) = g.old_types[g.old_vars[old.arg.var()].ty()];
     let tup_arg = g.newtype(Ty::Tuple {
@@ -532,14 +536,12 @@ pub fn forward(f: Derivative) -> Function {
     let b = &g.blocks[main.block()];
 
     Function {
-        generics: g.generics,
+        generics: g.generics.into(),
         types: g.types.into_iter().collect(),
-        funcs: f.funcs,
-        param: g.vars[b.arg.var()],
-        ret: g.vars[b.ret.var()],
-        vars: g.vars,
-        blocks: g.blocks,
-        main,
+        vars: g.vars.into(),
+        params: g.params.into(),
+        ret: g.ret,
+        body: b.code.into(),
     }
 }
 
@@ -572,21 +574,16 @@ mod tests {
 
     fn func1() -> Function {
         Function {
-            generics: vec![],
-            types: vec![Ty::Unit, Ty::F64],
-            funcs: vec![],
-            param: id::ty(0),
-            ret: id::ty(1),
-            vars: vec![id::ty(0), id::ty(1)],
-            blocks: vec![Block {
-                arg: id::var(0),
-                code: vec![Instr {
-                    var: id::var(1),
-                    expr: Expr::F64 { val: 42. },
-                }],
-                ret: id::var(1),
-            }],
-            main: id::block(0),
+            generics: vec![].into(),
+            types: vec![Ty::F64].into(),
+            vars: vec![id::ty(0)].into(),
+            params: vec![].into(),
+            ret: id::var(0),
+            body: vec![Instr {
+                var: id::var(0),
+                expr: Expr::F64 { val: 42. },
+            }]
+            .into(),
         }
     }
 
