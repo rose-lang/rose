@@ -1,6 +1,6 @@
 use enumset::EnumSet;
 use indexmap::IndexSet;
-use rose::{id, Binop, Block, Constraint, Expr, Func, FuncNode, Function, Instr, Ty, Unop};
+use rose::{id, Binop, Block, Constraint, DualExpr, Expr, FuncNode, Function, Instr, Ty, Unop};
 use std::collections::HashMap;
 
 pub struct Derivative {
@@ -16,7 +16,7 @@ pub fn derivative(f: impl FuncNode) -> Derivative {
 
 struct Forward<'a> {
     generics: Vec<EnumSet<Constraint>>,
-    types: IndexSet<Ty>,
+    types: IndexSet<(Ty, Ty)>,
     old_types: Vec<(id::Ty, id::Ty)>,
     old_vars: &'a [id::Ty],
     vars: Vec<id::Ty>,
@@ -82,7 +82,7 @@ impl Forward<'_> {
             }
             &Expr::F64 { val } => {
                 let x = self.set(code, ty, Expr::F64 { val });
-                let dx = self.set(code, ty, Expr::F64 { val: 0. });
+                let dx = self.set(code, tan, Expr::F64 { val: 0. });
                 (x, dx)
             }
             &Expr::Fin { val } => {
@@ -476,12 +476,7 @@ pub fn forward(f: Derivative) -> Function {
             Ty::F64 => Ty::F64,
             &Ty::Fin { size } => Ty::Fin { size },
             &Ty::Generic { id } => Ty::Generic { id },
-            Ty::Scope { id } => {
-                let processed_block = g.block(*id, unitvar, vec![]);
-                Ty::Scope {
-                    id: processed_block,
-                }
-            }
+            Ty::Scope { id } => Ty::Scope { id },
             &Ty::Ref { scope: _, inner: _ } => todo!(),
             &Ty::Array { index, elem } => Ty::Array {
                 index: g.primal(index),
@@ -504,9 +499,8 @@ pub fn forward(f: Derivative) -> Function {
                 members: members.iter().map(|&member| g.tangent(member)).collect(),
             },
         };
-        let (p, _) = g.types.insert_full(primal);
-        let (t, _) = g.types.insert_full(tangent);
-        g.old_types.push((id::ty(p), id::ty(t)));
+        let (p, _) = g.types.insert_full((primal, tangent));
+        g.old_types.push(id::ty(p));
     }
 
     let old = &f.blocks[f.main.block()];
@@ -605,22 +599,20 @@ mod tests {
         let new_func = forward(derivative);
 
         // extract blocks
-        let old_blocks = cloned_func.blocks;
-        let new_blocks = new_func.blocks;
+        let old_blocks = &cloned_func.blocks;
+        let new_blocks = &new_func.blocks;
 
         // check block mapping for each block index
         for i in 0..old_blocks.len() {
             let old_block = &old_blocks[i];
             let new_block = &new_blocks[i];
             // check if the blocks have the same indices
-            assert_eq!(old_block.arg.var(), new_block.arg.var());
-            assert_eq!(old_block.ret.var(), new_block.ret.var());
+            assert_eq!(old_block.block(), new_block.block());
         }
 
         // check if the new block index is strictly greater than the number of blocks in the original function
         for new_block in new_blocks.iter().skip(old_blocks.len()) {
-            assert!(new_block.arg.var() > old_blocks.len());
-            assert!(new_block.ret.var() > old_blocks.len());
+            assert!(new_block.block() > old_blocks.len());
         }
     }
 }
