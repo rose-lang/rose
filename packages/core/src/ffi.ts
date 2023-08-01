@@ -24,8 +24,8 @@ export interface Fn {
   f: wasm.Func;
 }
 
-export const bake = (ctx: wasm.Context, main: number): Fn => {
-  const f = wasm.bake(ctx, main);
+export const bake = (ctx: wasm.Context, ret: number, main: wasm.Block): Fn => {
+  const f = wasm.bake(ctx, ret, main);
   const fn: Fn = { f };
   registry.register(fn, () => f.free());
   return fn;
@@ -39,24 +39,16 @@ export interface Body {
    */
   ctx: wasm.Context;
   main: wasm.Block;
-  arg: number;
-  args: number[];
 }
 
 export const make = (
   generics: number,
   types: Ty[],
   params: Uint32Array,
-  ret: number,
 ): Body => {
-  const x = wasm.make(generics, types, params, ret);
+  const x = wasm.make(generics, types, params);
   try {
-    return {
-      ctx: x.ctx(),
-      main: x.main(),
-      arg: x.arg,
-      args: Array.from(x.args()),
-    };
+    return { ctx: x.ctx(), main: x.main() };
   } finally {
     x.free();
   }
@@ -66,8 +58,8 @@ export const interp = (
   f: Fn,
   types: Ty[],
   generics: Uint32Array,
-  arg: Val,
-): Val => wasm.interp(f.f, types, generics, arg);
+  args: Val[],
+): Val => wasm.interp(f.f, types, generics, args);
 
 export { Block, Context } from "@rose-lang/wasm";
 export type { Ty, Val };

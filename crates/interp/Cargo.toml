@@ -5,6 +5,7 @@ publish = false
 edition = "2021"
 
 [dependencies]
+enumset = "1"
 indexmap = "2"
 rose = { path = "../core" }
 serde = { version = "1", features = ["derive", "rc"], optional = true }

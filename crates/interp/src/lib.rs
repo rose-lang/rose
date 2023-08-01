@@ -14,11 +14,25 @@ use ts_rs::TS;
 pub enum Val {
     Unit,
     Bool(bool),
-    F64(f64),
+    F64(Cell<f64>),
     Fin(usize),
-    Ref(Rc<Cell<f64>>),
-    Array(Rc<Vec<Val>>), // assume all indices are `Fin`
-    Tuple(Rc<Vec<Val>>),
+    Ref(Rc<Val>),
+    Array(Vals), // assume all indices are `Fin`
+    Tuple(Vals),
+}
+
+pub type Vals = Rc<Vec<Val>>; // TODO: change to `Rc<[Val]>` https://github.com/rose-lang/rose/issues/63
+
+pub fn vals<const N: usize>(v: [Val; N]) -> Vals {
+    Rc::new(v.to_vec())
+}
+
+pub fn collect_vals(it: impl Iterator<Item = Val>) -> Vals {
+    Rc::new(it.collect())
+}
+
+pub fn val_f64(x: f64) -> Val {
+    Val::F64(Cell::new(x))
 }
 
 impl Val {
@@ -31,29 +45,38 @@ impl Val {
 
     fn f64(&self) -> f64 {
         match self {
-            &Val::F64(x) => x,
+            Val::F64(x) => x.get(),
             _ => unreachable!(),
         }
     }
-}
 
-impl Val {
-    /// Pull out the immutable inner value represented by this mutable `Ref` type.
-    fn immut(&self) -> Self {
+    fn inner(&self) -> &Self {
         match self {
-            Self::Ref(x) => Self::F64(x.get()),
-            Self::Array(x) => Self::Array(Rc::new(x.iter().map(|x| x.immut()).collect())),
-            Self::Tuple(x) => Self::Tuple(Rc::new(x.iter().map(|x| x.immut()).collect())),
-            Self::Unit | Self::Bool(..) | Self::F64(..) | Self::Fin { .. } => {
-                unreachable!()
-            }
+            Val::Ref(x) => x.as_ref(),
+            _ => unreachable!(),
+        }
+    }
+
+    /// Return a zero value with this value's topology.
+    fn zero(&self) -> Self {
+        match self {
+            Self::Unit => Self::Unit,
+            &Self::Bool(x) => Self::Bool(x),
+            Self::F64(_) => Self::F64(Cell::new(0.)),
+            &Self::Fin(x) => Self::Fin(x),
+            Self::Ref(_) => unreachable!(),
+            Self::Array(x) => Self::Array(collect_vals(x.iter().map(|x| x.zero()))),
+            Self::Tuple(x) => Self::Tuple(collect_vals(x.iter().map(|x| x.zero()))),
         }
     }
 
     /// Add `x` to this value, which must represent a mutable `Ref` type.
     fn add(&self, x: &Self) {
         match (self, x) {
-            (Self::Ref(a), Self::F64(b)) => a.set(a.get() + b),
+            (Self::Unit, Self::Unit)
+            | (Self::Bool(_), Self::Bool(_))
+            | (Self::Fin(_), Self::Fin(_)) => {}
+            (Self::F64(a), Self::F64(b)) => a.set(a.get() + b.get()),
             (Self::Array(a), Self::Array(b)) => {
                 for (a, b) in a.iter().zip(b.iter()) {
                     a.add(b);
@@ -66,26 +89,6 @@ impl Val {
             }
             _ => unreachable!(),
         }
-    }
-}
-
-/// Return zero a value of `Ref` type for this type, which must satisfy `Constraint::Vector`.
-fn zero(types: &IndexSet<Ty>, ty: id::Ty) -> Val {
-    match &types[ty.ty()] {
-        Ty::F64 => Val::Ref(Rc::new(Cell::new(0.))),
-        &Ty::Array { index, elem } => match types[index.ty()] {
-            Ty::Fin { size } => Val::Array(Rc::new((0..size).map(|_| zero(types, elem)).collect())),
-            _ => unreachable!(),
-        },
-        Ty::Tuple { members } => {
-            Val::Tuple(Rc::new(members.iter().map(|&x| zero(types, x)).collect()))
-        }
-        Ty::Unit
-        | Ty::Bool
-        | Ty::Fin { .. }
-        | Ty::Generic { .. }
-        | Ty::Scope { .. }
-        | Ty::Ref { .. } => unreachable!(),
     }
 }
 
@@ -106,7 +109,10 @@ fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty
         Ty::F64 => Ty::F64,
         &Ty::Fin { size } => Ty::Fin { size },
 
-        Ty::Scope { id: _ } => Ty::Scope { id: id::block(0) }, // we erase scope info
+        &Ty::Scope { kind, id: _ } => Ty::Scope {
+            kind,
+            id: id::var(usize::MAX), // we erase scope info
+        },
         Ty::Ref { scope, inner } => Ty::Ref {
             scope: types[scope.ty()],
             inner: types[inner.ty()],
@@ -133,7 +139,7 @@ struct Interpreter<'a, F: FuncNode> {
 impl<'a, F: FuncNode> Interpreter<'a, F> {
     fn new(typemap: &'a mut IndexSet<Ty>, f: &'a F, generics: &'a [id::Ty]) -> Self {
         let mut types = vec![];
-        for ty in &f.def().types {
+        for ty in f.def().types.iter() {
             types.push(resolve(typemap, generics, &types, ty));
         }
         Self {
@@ -152,15 +158,15 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
         match expr {
             Expr::Unit => Val::Unit,
             &Expr::Bool { val } => Val::Bool(val),
-            &Expr::F64 { val } => Val::F64(val),
+            &Expr::F64 { val } => val_f64(val),
             &Expr::Fin { val } => Val::Fin(val),
 
-            Expr::Array { elems } => Val::Array(Rc::new(
-                elems.iter().map(|&x| self.get(x).clone()).collect(),
-            )),
-            Expr::Tuple { members } => Val::Tuple(Rc::new(
-                members.iter().map(|&x| self.get(x).clone()).collect(),
-            )),
+            Expr::Array { elems } => {
+                Val::Array(collect_vals(elems.iter().map(|&x| self.get(x).clone())))
+            }
+            Expr::Tuple { members } => {
+                Val::Tuple(collect_vals(members.iter().map(|&x| self.get(x).clone())))
+            }
 
             &Expr::Index { array, index } => match (self.get(array), self.get(index)) {
                 (Val::Array(v), &Val::Fin(i)) => v[i].clone(),
@@ -171,12 +177,11 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
                 _ => unreachable!(),
             },
 
-            // a `Ref` of `F64` becomes `Ref`, while composites just wrap those individual refs
-            &Expr::Slice { array, index } => match (self.get(array), self.get(index)) {
+            &Expr::Slice { array, index } => match (self.get(array).inner(), self.get(index)) {
                 (Val::Array(v), &Val::Fin(i)) => v[i].clone(),
                 _ => unreachable!(),
             },
-            &Expr::Field { tuple, member } => match self.get(tuple) {
+            &Expr::Field { tuple, member } => match self.get(tuple).inner() {
                 Val::Tuple(x) => x[member.member()].clone(),
                 _ => unreachable!(),
             },
@@ -186,9 +191,9 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
                 match op {
                     Unop::Not => Val::Bool(!x.bool()),
 
-                    Unop::Neg => Val::F64(-x.f64()),
-                    Unop::Abs => Val::F64(x.f64().abs()),
-                    Unop::Sqrt => Val::F64(x.f64().sqrt()),
+                    Unop::Neg => val_f64(-x.f64()),
+                    Unop::Abs => val_f64(x.f64().abs()),
+                    Unop::Sqrt => val_f64(x.f64().sqrt()),
                 }
             }
             &Expr::Binary { op, left, right } => {
@@ -207,70 +212,92 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
                     Binop::Gt => Val::Bool(x.f64() > y.f64()),
                     Binop::Geq => Val::Bool(x.f64() >= y.f64()),
 
-                    Binop::Add => Val::F64(x.f64() + y.f64()),
-                    Binop::Sub => Val::F64(x.f64() - y.f64()),
-                    Binop::Mul => Val::F64(x.f64() * y.f64()),
-                    Binop::Div => Val::F64(x.f64() / y.f64()),
+                    Binop::Add => val_f64(x.f64() + y.f64()),
+                    Binop::Sub => val_f64(x.f64() - y.f64()),
+                    Binop::Mul => val_f64(x.f64() * y.f64()),
+                    Binop::Div => val_f64(x.f64() / y.f64()),
+                }
+            }
+            &Expr::Select { cond, then, els } => {
+                if self.get(cond).bool() {
+                    self.get(then).clone()
+                } else {
+                    self.get(els).clone()
                 }
             }
 
-            &Expr::Call { func, arg } => {
-                let f = &self.f.def().funcs[func.func()];
-                let generics: Vec<id::Ty> =
-                    f.generics.iter().map(|id| self.types[id.ty()]).collect();
-                call(
-                    self.f.get(f.id).unwrap(),
-                    self.typemap,
-                    &generics,
-                    self.get(arg).clone(),
-                )
+            Expr::Call { id, generics, args } => {
+                let resolved: Vec<id::Ty> = generics.iter().map(|id| self.types[id.ty()]).collect();
+                let vals = args.iter().map(|id| self.vars[id.var()].clone().unwrap());
+                call(self.f.get(*id).unwrap(), self.typemap, &resolved, vals)
             }
-            &Expr::If { cond, then, els } => {
-                if self.get(cond).bool() {
-                    self.block(then, Val::Unit).clone()
-                } else {
-                    self.block(els, Val::Unit).clone()
-                }
-            }
-            &Expr::For { index, body } => {
+            Expr::For {
+                index,
+                arg,
+                body,
+                ret,
+            } => {
                 let n = match self.typemap[self.types[index.ty()].ty()] {
                     Ty::Fin { size } => size,
                     _ => unreachable!(),
                 };
-                let v: Vec<Val> = (0..n)
-                    .map(|i| self.block(body, Val::Fin(i)).clone())
-                    .collect();
-                Val::Array(Rc::new(v))
+                Val::Array(collect_vals(
+                    (0..n).map(|i| self.block(*arg, body, *ret, Val::Fin(i)).clone()),
+                ))
             }
-            &Expr::Accum { var, vector, body } => {
-                let x = zero(self.typemap, self.types[vector.ty()]);
-                let y = self.block(body, x.clone()).clone();
-                self.vars[var.var()] = Some(x.immut());
-                y
+            Expr::Read {
+                var,
+                arg,
+                body,
+                ret,
+            } => {
+                let r = Val::Ref(Rc::new(self.get(*var).clone()));
+                self.block(*arg, body, *ret, r);
+                Val::Unit
+            }
+            Expr::Accum {
+                shape,
+                arg,
+                body,
+                ret,
+            } => {
+                let x = Val::Ref(Rc::new(self.get(*shape).zero()));
+                self.block(*arg, body, *ret, x.clone());
+                x.inner().clone()
             }
 
+            &Expr::Ask { var } => self.get(var).inner().clone(),
             &Expr::Add { accum, addend } => {
-                self.get(accum).add(self.get(addend));
+                self.get(accum).inner().add(self.get(addend));
                 Val::Unit
             }
         }
     }
 
-    fn block(&mut self, b: id::Block, arg: Val) -> &Val {
-        let block = &self.f.def().blocks[b.block()];
-        self.vars[block.arg.var()] = Some(arg);
-        for instr in &block.code {
+    fn block(&mut self, param: id::Var, body: &[rose::Instr], ret: id::Var, arg: Val) -> &Val {
+        self.vars[param.var()] = Some(arg);
+        for instr in body.iter() {
             self.vars[instr.var.var()] = Some(self.expr(&instr.expr));
         }
-        self.vars[block.ret.var()].as_ref().unwrap()
+        self.vars[ret.var()].as_ref().unwrap()
     }
 }
 
 /// Assumes `generics` and `arg` are valid.
-fn call(f: impl FuncNode, types: &mut IndexSet<Ty>, generics: &[id::Ty], arg: Val) -> Val {
-    Interpreter::new(types, &f, generics)
-        .block(f.def().main, arg)
-        .clone()
+fn call(
+    f: impl FuncNode,
+    types: &mut IndexSet<Ty>,
+    generics: &[id::Ty],
+    args: impl Iterator<Item = Val>,
+) -> Val {
+    let mut interp = Interpreter::new(types, &f, generics);
+    for (var, arg) in f.def().params.iter().zip(args) {
+        interp.vars[var.var()] = Some(arg.clone());
+    }
+    for instr in f.def().body.iter() {
+        interp.vars[instr.var.var()] = Some(interp.expr(&instr.expr));
+    }
+    interp.vars[f.def().ret.var()].as_ref().unwrap().clone()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -281,16 +308,16 @@ pub fn interp(
     f: impl FuncNode,
     mut types: IndexSet<Ty>,
     generics: &[id::Ty],
-    arg: Val,
+    args: impl Iterator<Item = Val>,
 ) -> Result<Val, Error> {
     // TODO: check that `generics` and `arg` are valid
-    Ok(call(f, &mut types, generics, arg))
+    Ok(call(f, &mut types, generics, args))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rose::{Block, Func, Function, Instr};
+    use rose::{Function, Instr};
 
     #[derive(Clone, Copy, Debug)]
     struct FuncInSlice<'a> {
@@ -314,46 +341,20 @@ mod tests {
     #[test]
     fn test_two_plus_two() {
         let funcs = vec![Function {
-            generics: vec![],
-            types: vec![
-                Ty::F64,
-                Ty::Tuple {
-                    members: vec![id::ty(0), id::ty(0)],
+            generics: vec![].into(),
+            types: vec![Ty::F64].into(),
+            vars: vec![id::ty(0), id::ty(0), id::ty(0)].into(),
+            params: vec![id::var(0), id::var(1)].into(),
+            ret: id::var(2),
+            body: vec![Instr {
+                var: id::var(2),
+                expr: Expr::Binary {
+                    op: Binop::Add,
+                    left: id::var(0),
+                    right: id::var(1),
                 },
-            ],
-            funcs: vec![],
-            param: id::ty(1),
-            ret: id::ty(0),
-            vars: vec![id::ty(1), id::ty(0), id::ty(0), id::ty(0)],
-            blocks: vec![Block {
-                arg: id::var(0),
-                code: vec![
-                    Instr {
-                        var: id::var(1),
-                        expr: Expr::Member {
-                            tuple: id::var(0),
-                            member: id::member(0),
-                        },
-                    },
-                    Instr {
-                        var: id::var(2),
-                        expr: Expr::Member {
-                            tuple: id::var(0),
-                            member: id::member(1),
-                        },
-                    },
-                    Instr {
-                        var: id::var(3),
-                        expr: Expr::Binary {
-                            op: Binop::Add,
-                            left: id::var(1),
-                            right: id::var(2),
-                        },
-                    },
-                ],
-                ret: id::var(3),
-            }],
-            main: id::block(0),
+            }]
+            .into(),
         }];
         let answer = interp(
             FuncInSlice {
@@ -362,64 +363,52 @@ mod tests {
             },
             IndexSet::new(),
             &[],
-            Val::Tuple(Rc::new(vec![Val::F64(2.), Val::F64(2.)])),
+            [val_f64(2.), val_f64(2.)].into_iter(),
         )
         .unwrap();
-        assert_eq!(answer, Val::F64(4.));
+        assert_eq!(answer, val_f64(4.));
     }
 
     #[test]
     fn test_nested_call() {
         let funcs = vec![
             Function {
-                generics: vec![],
-                types: vec![Ty::Unit, Ty::F64],
-                funcs: vec![],
-                param: id::ty(0),
-                ret: id::ty(1),
-                vars: vec![id::ty(0), id::ty(1)],
-                blocks: vec![Block {
-                    arg: id::var(0),
-                    code: vec![Instr {
-                        var: id::var(1),
-                        expr: Expr::F64 { val: 42. },
-                    }],
-                    ret: id::var(1),
-                }],
-                main: id::block(0),
+                generics: vec![].into(),
+                types: vec![Ty::F64].into(),
+                vars: vec![id::ty(0)].into(),
+                params: vec![].into(),
+                ret: id::var(0),
+                body: vec![Instr {
+                    var: id::var(0),
+                    expr: Expr::F64 { val: 42. },
+                }]
+                .into(),
             },
             Function {
-                generics: vec![],
-                types: vec![Ty::Unit, Ty::F64],
-                funcs: vec![Func {
-                    id: id::function(0),
-                    generics: vec![],
-                }],
-                param: id::ty(0),
-                ret: id::ty(1),
-                vars: vec![id::ty(0), id::ty(1), id::ty(1)],
-                blocks: vec![Block {
-                    arg: id::var(0),
-                    code: vec![
-                        Instr {
-                            var: id::var(1),
-                            expr: Expr::Call {
-                                func: id::func(0),
-                                arg: id::var(0),
-                            },
+                generics: vec![].into(),
+                types: vec![Ty::F64].into(),
+                vars: vec![id::ty(0), id::ty(0)].into(),
+                params: vec![].into(),
+                ret: id::var(1),
+                body: vec![
+                    Instr {
+                        var: id::var(0),
+                        expr: Expr::Call {
+                            id: id::function(0),
+                            generics: vec![].into(),
+                            args: vec![].into(),
                         },
-                        Instr {
-                            var: id::var(2),
-                            expr: Expr::Binary {
-                                op: Binop::Mul,
-                                left: id::var(1),
-                                right: id::var(1),
-                            },
+                    },
+                    Instr {
+                        var: id::var(1),
+                        expr: Expr::Binary {
+                            op: Binop::Mul,
+                            left: id::var(0),
+                            right: id::var(0),
                         },
-                    ],
-                    ret: id::var(2),
-                }],
-                main: id::block(0),
+                    },
+                ]
+                .into(),
             },
         ];
         let answer = interp(
@@ -429,9 +418,9 @@ mod tests {
             },
             IndexSet::new(),
             &[],
-            Val::Unit,
+            [].into_iter(),
         )
         .unwrap();
-        assert_eq!(answer, Val::F64(1764.));
+        assert_eq!(answer, val_f64(1764.));
     }
 }

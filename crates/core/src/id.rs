@@ -86,26 +86,6 @@ impl Ty {
     }
 }
 
-/// Index of an instantiated function reference in a definition context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename = "FuncId")
-)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Func(usize);
-
-pub fn func(id: usize) -> Func {
-    Func(id)
-}
-
-impl Func {
-    pub fn func(self) -> usize {
-        self.0
-    }
-}
-
 /// Index of a local variable in a function definition context.
 #[cfg_attr(test, derive(TS), ts(export))]
 #[cfg_attr(
@@ -122,26 +102,6 @@ pub fn var(id: usize) -> Var {
 
 impl Var {
     pub fn var(self) -> usize {
-        self.0
-    }
-}
-
-/// Index of a block in a function definition context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename = "BlockId")
-)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Block(usize);
-
-pub fn block(id: usize) -> Block {
-    Block(id)
-}
-
-impl Block {
-    pub fn block(self) -> usize {
         self.0
     }
 }

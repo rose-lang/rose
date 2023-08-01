@@ -34,6 +34,6 @@ export const interp =
   // just return a closure that calls the interpreter
   (...args: Args<A>) => {
     // TODO: support generics
-    const x = ffi.interp(f.f, [], new Uint32Array(), { Tuple: args.map(pack) });
+    const x = ffi.interp(f.f, [], new Uint32Array(), args.map(pack));
     return unpack(x) as Resolve<R>;
   };

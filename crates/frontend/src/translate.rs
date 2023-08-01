@@ -148,9 +148,7 @@ struct BlockCtx<'input, 'a> {
     g: HashMap<&'input str, id::Generic>,
     l: HashMap<&'input str, id::Var>,
     t: IndexSet<ir::Ty>,
-    f: Vec<ir::Func>,
     v: Vec<id::Ty>,
-    b: Vec<ir::Block>,
     c: Vec<ir::Instr>,
 }
 
@@ -163,12 +161,6 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
     fn newlocal(&mut self, t: id::Ty) -> id::Var {
         let id = id::var(self.v.len());
         self.v.push(t);
-        id
-    }
-
-    fn newfunc(&mut self, f: ir::Func) -> id::Func {
-        let id = id::func(self.f.len());
-        self.f.push(f);
         id
     }
 
@@ -225,7 +217,7 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                             index,
                             elem: self.getlocal(x),
                         });
-                        Ok(self.instr(ty, ir::Expr::Array { elems: vars }))
+                        Ok(self.instr(ty, ir::Expr::Array { elems: vars.into() }))
                     }
                     None => Err(TypeError::EmptyVec),
                 }
@@ -279,17 +271,18 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                 let vars = args
                     .into_iter()
                     .map(|elem| self.typecheck(elem))
-                    .collect::<Result<Vec<id::Var>, TypeError>>()?;
+                    .collect::<Result<Box<[id::Var]>, TypeError>>()?;
                 let types: Vec<id::Ty> = vars.iter().map(|&v| self.getlocal(v)).collect();
                 if let Some((i, _, f)) = self.m.funcs.get_full(func.val) {
                     let (generics, ret) = self.unify(f, &types)?;
-                    let func = self.newfunc(ir::Func {
-                        id: id::function(i),
-                        generics,
-                    });
-                    let ty = self.newtype(ir::Ty::Tuple { members: types });
-                    let arg = self.instr(ty, ir::Expr::Tuple { members: vars });
-                    Ok(self.instr(ret, ir::Expr::Call { func, arg }))
+                    Ok(self.instr(
+                        ret,
+                        ir::Expr::Call {
+                            id: id::function(i),
+                            generics: generics.into(),
+                            args: vars,
+                        },
+                    ))
                 } else {
                     let real = self.newtype(ir::Ty::F64);
                     // TODO: validate argument types for builtin functions
@@ -314,38 +307,17 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
             }
             ast::Expr::If { cond, then, els } => {
                 let c = self.typecheck(*cond)?; // TODO: ensure this is `Bool`
-                let code = std::mem::take(&mut self.c);
-                // the `BlockCtx` type can only think about one under-construction block at a time,
-                // so when constructing an `If`, we keep swapping them out until we're done
 
-                let unit = self.newtype(ir::Ty::Unit);
-
-                let arg_then = self.newlocal(unit);
-                let ret_then = self.typecheck(*then)?;
-                let block_then = id::block(self.b.len());
-                let code_then = std::mem::take(&mut self.c);
-                self.b.push(ir::Block {
-                    arg: arg_then,
-                    code: code_then,
-                    ret: ret_then,
-                });
-
-                let arg_els = self.newlocal(unit);
-                let ret_els = self.typecheck(*els)?;
-                let block_els = id::block(self.b.len());
-                let code_els = std::mem::replace(&mut self.c, code);
-                self.b.push(ir::Block {
-                    arg: arg_els,
-                    code: code_els,
-                    ret: ret_els,
-                });
+                // IR doesn't currently support branching, so just evaluate both branches
+                let t = self.typecheck(*then)?;
+                let e = self.typecheck(*els)?;
 
                 Ok(self.instr(
-                    self.getlocal(ret_then), // TODO: ensure this matches the type of `ret_els`
-                    ir::Expr::If {
+                    self.getlocal(t), // TODO: ensure this matches the type of `e`
+                    ir::Expr::Select {
                         cond: c,
-                        then: block_then,
-                        els: block_els,
+                        then: t,
+                        els: e,
                     },
                 ))
             }
@@ -360,19 +332,21 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                 let arg = self.newlocal(i);
                 self.l.insert(index, arg);
                 let elem = self.typecheck(*body)?;
-                let body = id::block(self.b.len());
-                let code_for = std::mem::replace(&mut self.c, code);
-                self.b.push(ir::Block {
-                    arg,
-                    code: code_for,
-                    ret: elem,
-                });
+                let body = std::mem::replace(&mut self.c, code).into_boxed_slice();
 
                 let v = self.newtype(ir::Ty::Array {
                     index: i,
                     elem: self.getlocal(elem),
                 });
-                Ok(self.instr(v, ir::Expr::For { index: i, body }))
+                Ok(self.instr(
+                    v,
+                    ir::Expr::For {
+                        index: i,
+                        arg,
+                        body,
+                        ret: elem,
+                    },
+                ))
             }
             ast::Expr::Unary { op: _, arg: _ } => todo!(),
             ast::Expr::Binary { op, left, right } => {
@@ -443,47 +417,29 @@ impl<'input> Module<'input> {
                     // TODO: handle return type separately from params w.r.t. generics
                     params.iter().map(|&(_, t)| t).chain([typ]),
                 )?;
-                let generics = vec![EnumSet::only(ir::Constraint::Index); genericnames.len()];
-                let ret = paramtypes.pop().expect("`parse_types` should preserve len");
-                let (param_id, _) = typevars.insert_full(ir::Ty::Tuple {
-                    members: paramtypes.clone(), // should be a way to do this without `clone`...
-                });
-                let param = id::ty(param_id);
-                let arg = id::var(0);
+                let generics =
+                    vec![EnumSet::only(ir::Constraint::Index); genericnames.len()].into();
+                paramtypes.pop().expect("`parse_types` should preserve len"); // pop off return type
+                let args = (0..params.len()).map(id::var).collect();
                 let mut ctx = BlockCtx {
                     m: self,
                     g: genericnames,
                     l: HashMap::new(),
                     t: typevars,
-                    f: vec![],
-                    v: vec![param],
-                    b: vec![],
+                    v: paramtypes,
                     c: vec![],
                 };
-                for (i, ((bind, _), t)) in params.into_iter().zip(paramtypes).enumerate() {
-                    let expr = ir::Expr::Member {
-                        tuple: arg,
-                        member: id::member(i),
-                    };
-                    let var = ctx.instr(t, expr);
-                    ctx.bind(bind, var);
+                for (i, (bind, _)) in params.into_iter().enumerate() {
+                    ctx.bind(bind, id::var(i));
                 }
                 let retvar = ctx.typecheck(body)?; // TODO: ensure this matches `ret`
-                let main = id::block(ctx.b.len());
-                ctx.b.push(ir::Block {
-                    arg,
-                    code: ctx.c,
-                    ret: retvar,
-                });
                 let f = ir::Function {
                     generics,
                     types: ctx.t.into_iter().collect(),
-                    funcs: ctx.f,
-                    param,
-                    ret,
-                    vars: ctx.v,
-                    blocks: ctx.b,
-                    main,
+                    vars: ctx.v.into(),
+                    params: args,
+                    ret: retvar,
+                    body: ctx.c.into(),
                 };
                 // TODO: check for duplicate function names
                 self.funcs.insert(name, f);
