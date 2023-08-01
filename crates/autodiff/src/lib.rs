@@ -1,6 +1,6 @@
 use enumset::EnumSet;
 use indexmap::IndexSet;
-use rose::{id, Binop, Block, Constraint, DualExpr, Expr, FuncNode, Function, Instr, Ty, Unop};
+use rose::{id, Binop, Block, Constraint, Expr, FuncNode, Function, Instr, Ty, Unop};
 use std::collections::HashMap;
 
 pub struct Derivative {
