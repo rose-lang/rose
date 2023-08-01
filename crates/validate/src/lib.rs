@@ -34,11 +34,18 @@ pub enum InstrError {
     #[error("array type does not match index and element types")]
     InvalidIndex,
 
+    #[error("wrong number of generics")]
+    GenericsCount,
+
+    #[error("wrong number of arguments")]
+    ArgsCount,
+
     #[error("type error")]
     TypeError, // TODO
 }
 
-struct Validator<'a> {
+struct Validator<'a, F: FuncNode> {
+    node: &'a F,
     f: &'a Function,
     constraints: IndexMap<Ty, EnumSet<Constraint>>,
     /// indices from `self.f.types` into `self.constraints`
@@ -47,7 +54,7 @@ struct Validator<'a> {
     declared: Vec<bool>,
 }
 
-impl Validator<'_> {
+impl<F: FuncNode> Validator<'_, F> {
     fn ty(&self, t: id::Ty) -> &Ty {
         let (ty, _) = self.constraints.get_index(t.ty()).unwrap();
         ty
@@ -64,6 +71,53 @@ impl Validator<'_> {
 
     fn var_ty(&self, x: id::Var) -> &Ty {
         self.ty(self.var_ty_id(x))
+    }
+
+    fn resolve(
+        &mut self,
+        generics: &[id::Ty],
+        types: &[Option<id::Ty>],
+        ty: &rose::Ty,
+    ) -> Option<id::Ty> {
+        let (deduped, constrs) = match ty {
+            // inner scopes can't be in the param or return types, which are all we care about here
+            rose::Ty::Scope { kind: _, id: _ } => return None,
+            rose::Ty::Generic { id } => return Some(self.types[generics[id.generic()].ty()]),
+
+            rose::Ty::Unit => (rose::Ty::Unit, EnumSet::only(Constraint::Value)),
+            rose::Ty::Bool => (rose::Ty::Bool, EnumSet::only(Constraint::Value)),
+            rose::Ty::F64 => (rose::Ty::F64, EnumSet::only(Constraint::Value)),
+            &rose::Ty::Fin { size } => (
+                rose::Ty::Fin { size },
+                Constraint::Value | Constraint::Index,
+            ),
+
+            rose::Ty::Ref { scope, inner } => (
+                rose::Ty::Ref {
+                    scope: types[scope.ty()]?,
+                    inner: types[inner.ty()]?,
+                },
+                EnumSet::empty(),
+            ),
+            rose::Ty::Array { index, elem } => (
+                rose::Ty::Array {
+                    index: types[index.ty()]?,
+                    elem: types[elem.ty()]?,
+                },
+                EnumSet::only(Constraint::Value),
+            ),
+            rose::Ty::Tuple { members } => (
+                rose::Ty::Tuple {
+                    members: members
+                        .iter()
+                        .map(|&x| types[x.ty()])
+                        .collect::<Option<_>>()?,
+                },
+                EnumSet::only(Constraint::Value),
+            ),
+        };
+        let (i, _) = self.constraints.insert_full(deduped, constrs);
+        Some(id::ty(i))
     }
 
     fn instr(&mut self, instr: &Instr) -> Result<(), InstrError> {
@@ -193,7 +247,40 @@ impl Validator<'_> {
                 check(*self.var_ty(cond) == Ty::Bool && a == b && t == a)?
             }
 
-            Expr::Call { id, generics, args } => todo!(),
+            Expr::Call { id, generics, args } => match self.node.get(*id) {
+                Some(node) => {
+                    let g = node.def();
+                    if generics.len() != g.generics.len() {
+                        return Err(InstrError::GenericsCount);
+                    } else if args.len() != g.params.len() {
+                        return Err(InstrError::ArgsCount);
+                    }
+                    for (i, (expected, actual)) in
+                        g.generics.iter().zip(generics.iter()).enumerate()
+                    {
+                        match self.types.get(actual.ty()) {
+                            Some(generic) => check(self.constr(*generic).is_superset(*expected))?,
+                            None => return Err(InstrError::TypeError),
+                        }
+                    }
+                    let mut types = vec![];
+                    for typ in g.types.iter() {
+                        let i = self.resolve(generics, &types, typ);
+                        types.push(i);
+                    }
+                    for (i, (expected, actual)) in g.params.iter().zip(args.iter()).enumerate() {
+                        check(
+                            self.types[self.f.vars[actual.var()].ty()]
+                                == types[g.vars[expected.var()].ty()].unwrap(),
+                        )?;
+                    }
+                    check(
+                        self.types[self.f.vars[self.f.ret.var()].ty()]
+                            == types[g.vars[g.ret.var()].ty()].unwrap(),
+                    )?;
+                }
+                None => return Err(InstrError::TypeError),
+            },
             Expr::For {
                 index,
                 arg,
@@ -391,6 +478,7 @@ pub fn validate_func(f: impl FuncNode) -> Result<(), Error> {
     }
 
     let mut validator = Validator {
+        node: &f,
         f: def,
         constraints,
         types,
