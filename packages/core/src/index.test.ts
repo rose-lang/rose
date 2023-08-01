@@ -3,12 +3,12 @@ import {
   Bool,
   Real,
   add,
-  cond,
   div,
   fn,
   interp,
   lt,
   mul,
+  select,
   sub,
 } from "./index.js";
 
@@ -25,26 +25,14 @@ test("basic arithmetic", () => {
 });
 
 test("branch", () => {
-  const f = fn([Bool], Real, (x) =>
-    cond(
-      x,
-      () => 1,
-      () => 2,
-    ),
-  );
+  const f = fn([Bool], Real, (x) => select(x, 1, 2));
   const g = interp(f);
   expect(g(false)).toBe(2);
   expect(g(true)).toBe(1);
 });
 
 test("call", () => {
-  const ifCond = fn([Bool, Real, Real], Real, (p, x, y) =>
-    cond(
-      p,
-      () => x,
-      () => y,
-    ),
-  );
+  const ifCond = fn([Bool, Real, Real], Real, (p, x, y) => select(p, x, y));
   const f = fn([Real], Real, (x) => ifCond(lt(x, 0), 0, x));
   const relu = interp(f);
   expect(relu(-1)).toBe(0);

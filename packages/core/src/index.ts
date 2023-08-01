@@ -8,8 +8,7 @@ export const Bool: Bools = { tag: "Bool" };
 export type Real = real.Real;
 export const Real: Reals = { tag: "Real" };
 
-export { derivative } from "./autodiff.js";
-export { and, cond, iff, not, or, xor } from "./bool.js";
+export { and, iff, not, or, select, xor } from "./bool.js";
 export { fn } from "./fn.js";
 export { interp } from "./interp.js";
 export {
