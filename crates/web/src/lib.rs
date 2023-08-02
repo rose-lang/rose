@@ -845,11 +845,7 @@ pub fn derivative(f: &Func) -> Func {
     let wrapper = rose::Function {
         generics: inner.generics.clone(),
         types,
-        funcs: vec![rose::Func {
-            id: id::function(0),
-            generics,
-        }],
-        param,
+        params,
         ret,
         vars: vec![
             param,
@@ -861,59 +857,12 @@ pub fn derivative(f: &Func) -> Func {
             inner.ret,
             ret,
         ],
-        blocks: vec![rose::Block {
-            arg: id::var(0),
-            code: vec![
-                rose::Instr {
-                    var: id::var(1),
-                    expr: rose::Expr::Member {
-                        tuple: id::var(0),
-                        member: id::member(0),
-                    },
-                },
-                rose::Instr {
-                    var: id::var(2),
-                    expr: rose::Expr::Member {
-                        tuple: id::var(0),
-                        member: id::member(1),
-                    },
-                },
-                rose::Instr {
-                    var: id::var(3),
-                    expr: rose::Expr::Tuple {
-                        members: vec![id::var(1)],
-                    },
-                },
-                rose::Instr {
-                    var: id::var(4),
-                    expr: rose::Expr::Tuple {
-                        members: vec![id::var(2)],
-                    },
-                },
-                rose::Instr {
-                    var: id::var(5),
-                    expr: rose::Expr::Tuple {
-                        members: vec![id::var(3), id::var(4)],
-                    },
-                },
-                rose::Instr {
-                    var: id::var(6),
-                    expr: rose::Expr::Call {
-                        func: id::func(0),
-                        arg: id::var(5),
-                    },
-                },
-                rose::Instr {
-                    var: id::var(7),
-                    expr: rose::Expr::Member {
-                        tuple: id::var(6),
-                        member: id::member(1),
-                    },
-                },
-            ],
-            ret: id::var(7),
+        body: vec![rose::Instr {
+            var: id::var(0),
+            expr: rose::Expr::Tuple {
+                members: vec![id::var(1), id::var(2)].into(),
+            },
         }],
-        main: id::block(0),
     };
     Func {
         rc: Rc::new((vec![g], wrapper)),

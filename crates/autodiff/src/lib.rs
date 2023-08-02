@@ -410,6 +410,7 @@ impl Forward<'_> {
                 );
                 (x, dx)
             }
+            // recursively call expr on the blocks in the for loop
             &Expr::For {
                 index: _,
                 arg: _,
@@ -428,35 +429,6 @@ impl Forward<'_> {
                 addend: _,
             } => todo!(),
         }
-    }
-
-    fn block(&mut self, old_id: id::Var, arg: id::Var, mut code: Vec<Instr>) -> id::Var {
-        let old = &self.old_blocks[old_id.block()];
-
-        for Instr { var, expr } in &old.code {
-            let i = var.var();
-            let (ty, tan) = self.old_types[self.old_vars[i].ty()];
-            let (x, dx) = self.expr(&mut code, ty, tan, &expr);
-            self.mapping[i] = Some((x, dx));
-        }
-
-        let (x_ret, dx_ret) = self.map(old.ret);
-        let t_ret = self.vars[x_ret.var()];
-        let tan_ret = self.vars[dx_ret.var()];
-        let tup_ret = self.newtype(Ty::Tuple {
-            members: vec![t_ret, tan_ret],
-        });
-        let ret = self.set(
-            &mut code,
-            tup_ret,
-            Expr::Tuple {
-                members: vec![x_ret, dx_ret].into(),
-            },
-        );
-
-        let id = id::block(self.blocks.len());
-        self.blocks.push(Block { arg, code, ret });
-        id
     }
 }
 
@@ -503,37 +475,40 @@ pub fn forward(f: Derivative) -> Function {
                 members: members.iter().map(|&member| g.tangent(member)).collect(),
             },
         };
-        let (p, _) = g.types.insert_full((primal, tangent));
-        g.old_types.push(id::ty(p));
+        let (p, _) = g.types.insert_full(primal);
+        let (t, _) = g.types.insert_full(tangent);
+        g.old_types.push((id::ty(p), id::ty(t)));
     }
 
-    let old = &f.vars[f.body];
     let mut code = vec![];
-    let (t_arg, tan_arg) = g.old_types[g.old_vars[old.arg.var()].ty()];
-    let tup_arg = g.newtype(Ty::Tuple {
-        members: vec![t_arg, tan_arg],
-    });
-    let arg = g.newvar(tup_arg);
-    let x_arg = g.set(
-        &mut code,
-        t_arg,
-        Expr::Member {
-            tuple: arg,
-            member: id::member(0),
-        },
-    );
-    let dx_arg = g.set(
-        &mut code,
-        tan_arg,
-        Expr::Member {
-            tuple: arg,
-            member: id::member(1),
-        },
-    );
-    g.mapping[old.arg.var()] = Some((x_arg, dx_arg));
-    let main = g.block(f.main, arg, code);
 
-    let b = &g.blocks[main.block()];
+    // loop over each parameter in the function and handle them
+    for param in &f.params.to_vec() {
+        let var_idx = param.var();
+        let t_arg = g.old_types[g.old_vars[var_idx].ty()].0;
+        let tan_arg = g.old_types[g.old_vars[var_idx].ty()].1;
+        let tup_arg = g.newtype(Ty::Tuple {
+            members: vec![t_arg, tan_arg],
+        });
+        let arg = g.newvar(tup_arg);
+        let x_arg = g.set(
+            &mut code,
+            t_arg,
+            Expr::Member {
+                tuple: arg,
+                member: id::member(0),
+            },
+        );
+        let dx_arg = g.set(
+            &mut code,
+            tan_arg,
+            Expr::Member {
+                tuple: arg,
+                member: id::member(1),
+            },
+        );
+        g.mapping[var_idx] = Some((x_arg, dx_arg));
+    }
 
     Function {
         generics: g.generics.into(),
@@ -541,7 +516,7 @@ pub fn forward(f: Derivative) -> Function {
         vars: g.vars.into(),
         params: g.params.into(),
         ret: g.ret,
-        body: b.code.into(),
+        body: code.into(),
     }
 }
 
@@ -576,40 +551,53 @@ mod tests {
         Function {
             generics: vec![].into(),
             types: vec![Ty::F64].into(),
-            vars: vec![id::ty(0)].into(),
+            vars: vec![id::ty(0), id::ty(2)].into(),
             params: vec![].into(),
             ret: id::var(0),
-            body: vec![Instr {
-                var: id::var(0),
-                expr: Expr::F64 { val: 42. },
-            }]
+            body: vec![
+                Instr {
+                    var: id::var(0),
+                    expr: Expr::F64 { val: 42. },
+                },
+                Instr {
+                    var: id::var(2),
+                    expr: Expr::Accum {
+                        shape: id::var(0),
+                        arg: id::var(1),
+                        body: Box::new([]),
+                        ret: id::var(2),
+                    },
+                },
+            ]
             .into(),
         }
     }
 
     #[test]
-    fn test_block_mapping() {
+    fn test_scope_mapping() {
         // get funcs
         let og_func = TestFuncNode { f: func1() };
         let cloned_func = og_func.f.clone();
         let derivative = derivative(og_func);
         let new_func = forward(derivative);
 
-        // extract blocks
-        let old_blocks = &cloned_func.blocks;
-        let new_blocks = &new_func.blocks;
+        // extract types and vars
+        let old_types = &cloned_func.types;
+        let new_types = &new_func.types;
+        let old_vars = &cloned_func.vars;
+        let new_vars = &new_func.vars;
 
-        // check block mapping for each block index
-        for i in 0..old_blocks.len() {
-            let old_block = &old_blocks[i];
-            let new_block = &new_blocks[i];
-            // check if the blocks have the same indices
-            assert_eq!(old_block.block(), new_block.block());
+        // check if the variable indices of Scope types match up
+        for (i, var) in old_vars.iter().enumerate() {
+            if let Ty::Scope { id, .. } = old_types[i] {
+                let old_id = id.var();
+                if let Some(&new_id) = scope_mapping.get(&old_id) {
+                    // check if the new var ID matches the new scope ID
+                    assert_eq!(new_id.var(), var.ty());
+                }
+            }
         }
 
         // check if the new block index is strictly greater than the number of blocks in the original function
-        for new_block in new_blocks.iter().skip(old_blocks.len()) {
-            assert!(new_block.block() > old_blocks.len());
-        }
     }
 }
