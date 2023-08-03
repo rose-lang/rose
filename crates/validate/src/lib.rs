@@ -34,7 +34,7 @@ pub enum InstrError {
     #[error("array has the wrong number of elements")]
     ArraySize,
 
-    #[error("variable ID for array element {0} is out of range")]
+    #[error("variable ID for array element {0} is not in scope")]
     ArrayInvalidElem(usize),
 
     #[error("array element {0} does not match its type")]
@@ -46,37 +46,37 @@ pub enum InstrError {
     #[error("tuple has the wrong number of members")]
     TupleSize,
 
-    #[error("variable ID for tuple member {} is out of range", .0.member())]
+    #[error("variable ID for tuple member {} is not in scope", .0.member())]
     TupleInvalidMember(id::Member),
 
     #[error("tuple member {} does not match its type", .0.member())]
     TupleMemberType(id::Member),
 
-    #[error("index variable ID for index instruction is out of range")]
+    #[error("index variable ID for index instruction is not in scope")]
     IndexInvalidArray,
 
-    #[error("array variable ID for index instruction is out of range")]
+    #[error("array variable ID for index instruction is not in scope")]
     IndexInvalidIndex,
 
     #[error("index array type does not match index and element types")]
     IndexType,
 
-    #[error("tuple variable ID for member instruction is out of range")]
+    #[error("tuple variable ID for member instruction is not in scope")]
     MemberInvalidTuple,
 
     #[error("tuple variable for member instruction is not a tuple")]
     MemberNotTuple,
 
-    #[error("member ID for member instruction is out of range")]
+    #[error("member ID for member instruction is not in scope")]
     MemberInvalidMember,
 
     #[error("member does not match its type")]
     MemberType,
 
-    #[error("index variable ID for slice instruction is out of range")]
+    #[error("index variable ID for slice instruction is not in scope")]
     SliceInvalidArray,
 
-    #[error("array variable ID for slice instruction is out of range")]
+    #[error("array variable ID for slice instruction is not in scope")]
     SliceInvalidIndex,
 
     #[error("array variable for slice instruction is not a reference")]
@@ -91,7 +91,7 @@ pub enum InstrError {
     #[error("slice array type does not match index and return types")]
     SliceType,
 
-    #[error("tuple variable ID for field instruction is out of range")]
+    #[error("tuple variable ID for field instruction is not in scope")]
     FieldInvalidTuple,
 
     #[error("tuple variable for field instruction is not a reference")]
@@ -106,34 +106,34 @@ pub enum InstrError {
     #[error("referenced tuple for field instruction is not a tuple")]
     FieldNotTuple,
 
-    #[error("member ID for field instruction is out of range")]
+    #[error("member ID for field instruction is not in scope")]
     FieldInvalidMember,
 
     #[error("field tuple type does not match member and return types")]
     FieldType,
 
-    #[error("argument variable ID is out of range")]
+    #[error("argument variable ID is not in scope")]
     UnaryInvalidArg,
 
     #[error("unary type error")]
     UnaryType,
 
-    #[error("left variable ID is out of range")]
+    #[error("left variable ID is not in scope")]
     BinaryInvalidLeft,
 
-    #[error("right variable ID is out of range")]
+    #[error("right variable ID is not in scope")]
     BinaryInvalidRight,
 
     #[error("binary type error")]
     BinaryType,
 
-    #[error("condition variable ID is out of range")]
+    #[error("condition variable ID is not in scope")]
     SelectInvalidCond,
 
-    #[error("true case variable ID is out of range")]
+    #[error("true case variable ID is not in scope")]
     SelectInvalidThen,
 
-    #[error("false case variable ID is out of range")]
+    #[error("false case variable ID is not in scope")]
     SelectInvalidEls,
 
     #[error("select type error")]
@@ -145,7 +145,7 @@ pub enum InstrError {
     #[error("wrong number of generics")]
     CallGenericsCount,
 
-    #[error("type ID for generic {0} is out of range")]
+    #[error("type ID for generic {0} is not in scope")]
     CallInvalidGeneric(usize),
 
     #[error("generic {0} does not satisfy its constraints")]
@@ -154,7 +154,7 @@ pub enum InstrError {
     #[error("wrong number of arguments")]
     CallArgsCount,
 
-    #[error("variable ID for argument {0} is out of range")]
+    #[error("variable ID for argument {0} is not in scope")]
     CallInvalidArg(usize),
 
     #[error("type for argument {0} does not match")]
@@ -163,7 +163,7 @@ pub enum InstrError {
     #[error("return type does not match")]
     CallRet,
 
-    #[error("variable ID is out of range")]
+    #[error("variable ID is not in scope")]
     AskInvalidVar,
 
     #[error("variable is not a reference")]
@@ -175,10 +175,10 @@ pub enum InstrError {
     #[error("type mismatch")]
     AskType,
 
-    #[error("accumulator variable ID is out of range")]
+    #[error("accumulator variable ID is not in scope")]
     AddInvalidAccum,
 
-    #[error("addend variable ID is out of range")]
+    #[error("addend variable ID is not in scope")]
     AddInvalidAddend,
 
     #[error("accumulator is not a reference")]
@@ -228,7 +228,10 @@ impl<F: FuncNode> Validator<'_, F> {
     }
 
     fn var_ty_id(&self, x: id::Var) -> Option<id::Ty> {
-        Some(self.types[self.f.vars.get(x.var())?.ty()])
+        match self.vars.get(x.var()) {
+            Some(Scope::Defined) => Some(self.types[self.f.vars[x.var()].ty()]),
+            _ => None,
+        }
     }
 
     fn var_ty(&self, x: id::Var) -> Option<&Ty> {
