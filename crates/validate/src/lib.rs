@@ -538,11 +538,11 @@ pub enum Error {
     #[error("variable ID for parameter {0} is out of range")]
     InvalidParam(usize),
 
-    #[error("return variable ID is out of range")]
-    InvalidRet,
-
     #[error("instruction {0} is invalid")]
     InvalidBody(usize, #[source] InstrError),
+
+    #[error("return variable ID is not in scope")]
+    InvalidRet,
 }
 
 /// Validate `f`, assuming that all of its referenced functions are valid.
@@ -638,19 +638,14 @@ pub fn validate(f: impl FuncNode) -> Result<(), Error> {
         }
     }
 
-    for (i, param) in def.params.iter().enumerate() {
-        if param.var() >= def.vars.len() {
-            return Err(Error::InvalidParam(i));
-        }
-    }
-
-    if def.ret.var() >= def.vars.len() {
-        return Err(Error::InvalidRet);
-    }
-
     let mut vars = vec![Scope::Undefined; def.vars.len()];
-    for param in def.params.iter() {
-        vars[param.var()] = Scope::Defined;
+    for (i, param) in def.params.iter().enumerate() {
+        match vars.get_mut(param.var()) {
+            None => return Err(Error::InvalidParam(i)),
+            Some(scope) => {
+                *scope = Scope::Defined;
+            }
+        }
     }
 
     let mut validator = Validator {
@@ -666,5 +661,8 @@ pub fn validate(f: impl FuncNode) -> Result<(), Error> {
             .map_err(|e| Error::InvalidBody(i, e))?;
     }
 
-    Ok(())
+    match validator.vars.get(def.ret.var()) {
+        Some(Scope::Defined) => Ok(()),
+        _ => Err(Error::InvalidRet),
+    }
 }
