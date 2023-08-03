@@ -10,38 +10,200 @@ pub enum InstrError {
     #[error("variable was already declared")]
     Redeclare,
 
-    #[error("primitive expression does not match its type")]
-    InvalidPrimitive,
+    #[error("type is not unit")]
+    UnitType,
+
+    #[error("type is not boolean")]
+    BoolType,
+
+    #[error("type is not 64-bit float")]
+    F64Type,
+
+    #[error("type is not a bounded integer")]
+    FinType,
+
+    #[error("out of range for bounded integer type")]
+    FinTooBig,
 
     #[error("type is not an array")]
-    NotArray,
+    ArrayType,
+
+    #[error("literal array index type is not a bounded integer")]
+    ArrayIndex,
 
     #[error("array has the wrong number of elements")]
-    InvalidArray,
+    ArraySize,
+
+    #[error("variable ID for array element {0} is out of range")]
+    ArrayInvalidElem(usize),
 
     #[error("array element {0} does not match its type")]
-    InvalidElem(usize),
+    ArrayElemType(usize),
 
     #[error("type is not a tuple")]
-    NotTuple,
+    TupleType,
 
     #[error("tuple has the wrong number of members")]
-    InvalidTuple,
+    TupleSize,
+
+    #[error("variable ID for tuple member {} is out of range", .0.member())]
+    TupleInvalidMember(id::Member),
 
     #[error("tuple member {} does not match its type", .0.member())]
-    InvalidMember(id::Member),
+    TupleMemberType(id::Member),
 
-    #[error("array type does not match index and element types")]
-    InvalidIndex,
+    #[error("index variable ID for index instruction is out of range")]
+    IndexInvalidArray,
+
+    #[error("array variable ID for index instruction is out of range")]
+    IndexInvalidIndex,
+
+    #[error("index array type does not match index and element types")]
+    IndexType,
+
+    #[error("tuple variable ID for member instruction is out of range")]
+    MemberInvalidTuple,
+
+    #[error("tuple variable for member instruction is not a tuple")]
+    MemberNotTuple,
+
+    #[error("member ID for member instruction is out of range")]
+    MemberInvalidMember,
+
+    #[error("member does not match its type")]
+    MemberType,
+
+    #[error("index variable ID for slice instruction is out of range")]
+    SliceInvalidArray,
+
+    #[error("array variable ID for slice instruction is out of range")]
+    SliceInvalidIndex,
+
+    #[error("array variable for slice instruction is not a reference")]
+    SliceArrayNotRef,
+
+    #[error("return variable for slice instruction is not a reference")]
+    SliceNotRef,
+
+    #[error("slice scope mismatch")]
+    SliceScope,
+
+    #[error("slice array type does not match index and return types")]
+    SliceType,
+
+    #[error("tuple variable ID for field instruction is out of range")]
+    FieldInvalidTuple,
+
+    #[error("tuple variable for field instruction is not a reference")]
+    FieldTupleNotRef,
+
+    #[error("return variable for field instruction is not a reference")]
+    FieldNotRef,
+
+    #[error("field scope mismatch")]
+    FieldScope,
+
+    #[error("referenced tuple for field instruction is not a tuple")]
+    FieldNotTuple,
+
+    #[error("member ID for field instruction is out of range")]
+    FieldInvalidMember,
+
+    #[error("field tuple type does not match member and return types")]
+    FieldType,
+
+    #[error("argument variable ID is out of range")]
+    UnaryInvalidArg,
+
+    #[error("unary type error")]
+    UnaryType,
+
+    #[error("left variable ID is out of range")]
+    BinaryInvalidLeft,
+
+    #[error("right variable ID is out of range")]
+    BinaryInvalidRight,
+
+    #[error("binary type error")]
+    BinaryType,
+
+    #[error("condition variable ID is out of range")]
+    SelectInvalidCond,
+
+    #[error("true case variable ID is out of range")]
+    SelectInvalidThen,
+
+    #[error("false case variable ID is out of range")]
+    SelectInvalidEls,
+
+    #[error("select type error")]
+    SelectType,
+
+    #[error("missing function")]
+    CallFunction,
 
     #[error("wrong number of generics")]
-    GenericsCount,
+    CallGenericsCount,
+
+    #[error("type ID for generic {0} is out of range")]
+    CallInvalidGeneric(usize),
+
+    #[error("generic {0} does not satisfy its constraints")]
+    CallGeneric(usize),
 
     #[error("wrong number of arguments")]
-    ArgsCount,
+    CallArgsCount,
 
-    #[error("type error")]
-    TypeError, // TODO
+    #[error("variable ID for argument {0} is out of range")]
+    CallInvalidArg(usize),
+
+    #[error("type for argument {0} does not match")]
+    CallArg(usize),
+
+    #[error("return type does not match")]
+    CallRet,
+
+    #[error("variable ID is out of range")]
+    AskInvalidVar,
+
+    #[error("variable is not a reference")]
+    AskNotRef,
+
+    #[error("scope does not allow reading")]
+    AskRead,
+
+    #[error("type mismatch")]
+    AskType,
+
+    #[error("accumulator variable ID is out of range")]
+    AddInvalidAccum,
+
+    #[error("addend variable ID is out of range")]
+    AddInvalidAddend,
+
+    #[error("accumulator is not a reference")]
+    AddNotRef,
+
+    #[error("scope does not allow accumulation")]
+    AddAccum,
+
+    #[error("type mismatch")]
+    AddType,
+}
+
+fn check(p: bool, e: InstrError) -> Result<(), InstrError> {
+    if p {
+        Ok(())
+    } else {
+        Err(e)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Scope {
+    Undefined,
+    Defined,
+    Expired,
 }
 
 struct Validator<'a, F: FuncNode> {
@@ -51,7 +213,7 @@ struct Validator<'a, F: FuncNode> {
     /// indices from `self.f.types` into `self.constraints`
     types: Vec<id::Ty>,
     /// same length as `self.f.vars`
-    declared: Vec<bool>,
+    vars: Vec<Scope>,
 }
 
 impl<F: FuncNode> Validator<'_, F> {
@@ -65,12 +227,12 @@ impl<F: FuncNode> Validator<'_, F> {
         constrs
     }
 
-    fn var_ty_id(&self, x: id::Var) -> id::Ty {
-        self.types[self.f.vars[x.var()].ty()]
+    fn var_ty_id(&self, x: id::Var) -> Option<id::Ty> {
+        Some(self.types[self.f.vars.get(x.var())?.ty()])
     }
 
-    fn var_ty(&self, x: id::Var) -> &Ty {
-        self.ty(self.var_ty_id(x))
+    fn var_ty(&self, x: id::Var) -> Option<&Ty> {
+        Some(self.ty(self.var_ty_id(x)?))
     }
 
     fn resolve(
@@ -121,146 +283,153 @@ impl<F: FuncNode> Validator<'_, F> {
     }
 
     fn instr(&mut self, instr: &Instr) -> Result<(), InstrError> {
+        use InstrError::*;
+
         let Instr { var, expr } = instr;
-        if var.var() >= self.f.vars.len() {
-            return Err(InstrError::InvalidVar);
-        } else if self.declared[var.var()] {
-            return Err(InstrError::Redeclare);
+        match self.vars.get(var.var()) {
+            None => return Err(InvalidVar),
+            Some(Scope::Defined | Scope::Expired) => return Err(Redeclare),
+            Some(Scope::Undefined) => self.vars[var.var()] = Scope::Defined,
         }
-        self.declared[var.var()] = true;
-        let check = |p: bool| -> Result<(), InstrError> {
-            if p {
-                Ok(())
-            } else {
-                Err(InstrError::TypeError)
-            }
-        };
-        let t = self.var_ty_id(*var);
+        let t = self.var_ty_id(*var).unwrap();
         let ty = self.ty(t);
 
         match expr {
-            Expr::Unit => check(*ty == Ty::Unit)?,
-            Expr::Bool { .. } => check(*ty == Ty::Bool)?,
-            Expr::F64 { .. } => check(*ty == Ty::F64)?,
-            Expr::Fin { val } => check(matches!(ty, Ty::Fin { size } if val < size))?,
+            Expr::Unit => check(*ty == Ty::Unit, UnitType),
+            Expr::Bool { .. } => check(*ty == Ty::Bool, BoolType),
+            Expr::F64 { .. } => check(*ty == Ty::F64, F64Type),
+            &Expr::Fin { val } => match ty {
+                &Ty::Fin { size } => check(val < size, FinTooBig),
+                _ => Err(FinType),
+            },
 
             Expr::Array { elems } => match ty {
-                &Ty::Array { index, elem } => {
-                    match self.ty(index) {
-                        &Ty::Fin { size } => {
-                            if elems.len() != size {
-                                return Err(InstrError::InvalidArray);
-                            }
-                            for (i, &x) in elems.iter().enumerate() {
-                                if self.var_ty_id(x) != elem {
-                                    return Err(InstrError::InvalidElem(i));
-                                }
+                &Ty::Array { index, elem } => match self.ty(index) {
+                    &Ty::Fin { size } => {
+                        if elems.len() != size {
+                            return Err(ArraySize);
+                        }
+                        for (i, &x) in elems.iter().enumerate() {
+                            match self.var_ty_id(x) {
+                                Some(ti) => check(ti == elem, ArrayElemType(i))?,
+                                None => return Err(ArrayInvalidElem(i)),
                             }
                         }
-                        _ => unreachable!(), // `Fin` is currently the only `Index` type
+                        Ok(())
                     }
-                }
-                _ => return Err(InstrError::NotArray),
+                    _ => Err(ArrayIndex),
+                },
+                _ => Err(ArrayType),
             },
             Expr::Tuple { members } => match ty {
                 Ty::Tuple { members: types } => {
                     if members.len() != types.len() {
-                        return Err(InstrError::InvalidTuple);
+                        return Err(TupleSize);
                     }
                     for (i, (&x, &xt)) in members.iter().zip(types.iter()).enumerate() {
-                        if self.var_ty_id(x) != xt {
-                            return Err(InstrError::InvalidMember(id::member(i)));
+                        let id = id::member(i);
+                        match self.var_ty_id(x) {
+                            Some(tx) => check(tx == xt, TupleMemberType(id))?,
+                            None => return Err(TupleInvalidMember(id)),
                         }
                     }
+                    Ok(())
                 }
-                _ => return Err(InstrError::NotTuple),
+                _ => Err(TupleType),
             },
 
-            &Expr::Index { array, index } => check(
-                *self.var_ty(array)
-                    == (Ty::Array {
-                        index: self.var_ty_id(index),
-                        elem: t,
-                    }),
-            )?,
+            &Expr::Index { array, index } => {
+                let arr = self.var_ty(array).ok_or(IndexInvalidArray)?;
+                let index = self.var_ty_id(index).ok_or(IndexInvalidIndex)?;
+                check(*arr == Ty::Array { index, elem: t }, IndexType)
+            }
             &Expr::Member { tuple, member } => match self.var_ty(tuple) {
-                Ty::Tuple { members } if members.get(member.member()) == Some(&t) => {}
-                _ => return Err(InstrError::TypeError),
-            },
-
-            &Expr::Slice { array, index } => match (ty, self.var_ty(array)) {
-                (
-                    &Ty::Ref {
-                        scope: scope_elem,
-                        inner: elem,
-                    },
-                    &Ty::Ref {
-                        scope: scope_arr,
-                        inner: arr,
-                    },
-                ) if scope_elem == scope_arr
-                    && *self.ty(arr)
-                        == (Ty::Array {
-                            index: self.var_ty_id(index),
-                            elem,
-                        }) => {}
-                _ => return Err(InstrError::TypeError),
-            },
-            &Expr::Field { tuple, member } => match (ty, self.var_ty(tuple)) {
-                (
-                    &Ty::Ref {
-                        scope: scope_mem,
-                        inner: mem,
-                    },
-                    &Ty::Ref {
-                        scope: scope_tup,
-                        inner: tup,
-                    },
-                ) if scope_mem == scope_tup => match self.ty(tup) {
-                    Ty::Tuple { members } if members.get(member.member()) == Some(&mem) => {}
-                    _ => return Err(InstrError::TypeError),
+                Some(Ty::Tuple { members }) => match members.get(member.member()) {
+                    Some(&mem) => check(t == mem, MemberType),
+                    None => Err(MemberInvalidMember),
                 },
-                _ => return Err(InstrError::TypeError),
+                Some(_) => Err(MemberNotTuple),
+                None => Err(MemberInvalidTuple),
             },
 
-            &Expr::Unary { op, arg } => match op {
-                Unop::Not => check(*ty == Ty::Bool && self.var_ty_id(arg) == t)?,
-                Unop::Neg | Unop::Abs | Unop::Sqrt => {
-                    check(*ty == Ty::F64 && self.var_ty_id(arg) == t)?
+            &Expr::Slice { array, index } => {
+                let array = self.var_ty(array).ok_or(SliceInvalidArray)?;
+                let index = self.var_ty_id(index).ok_or(SliceInvalidIndex)?;
+                let (scope_arr, arr) = match array {
+                    &Ty::Ref { scope, inner } => (scope, inner),
+                    _ => return Err(SliceArrayNotRef),
+                };
+                let (scope_elem, elem) = match ty {
+                    &Ty::Ref { scope, inner } => (scope, inner),
+                    _ => return Err(SliceNotRef),
+                };
+                check(scope_elem == scope_arr, SliceScope)?;
+                check(*self.ty(arr) == Ty::Array { index, elem }, SliceType)
+            }
+            &Expr::Field { tuple, member } => {
+                let (scope_tup, tup) = match self.var_ty(tuple).ok_or(FieldInvalidTuple)? {
+                    &Ty::Ref { scope, inner } => (scope, inner),
+                    _ => return Err(FieldTupleNotRef),
+                };
+                let (scope_mem, mem) = match ty {
+                    &Ty::Ref { scope, inner } => (scope, inner),
+                    _ => return Err(FieldNotRef),
+                };
+                check(scope_mem == scope_tup, FieldScope)?;
+                match self.ty(tup) {
+                    Ty::Tuple { members } => match members.get(member.member()) {
+                        Some(&m) => check(mem == m, FieldType),
+                        None => Err(FieldInvalidMember),
+                    },
+                    _ => Err(FieldNotTuple),
                 }
-            },
-            &Expr::Binary { op, left, right } => match op {
-                Binop::And | Binop::Or | Binop::Iff | Binop::Xor => check(
-                    *ty == Ty::Bool && self.var_ty_id(left) == t && self.var_ty_id(right) == t,
-                )?,
-                Binop::Neq | Binop::Lt | Binop::Leq | Binop::Eq | Binop::Gt | Binop::Geq => {
-                    let l = self.var_ty_id(left);
-                    check(*ty == Ty::Bool && *self.ty(l) == Ty::F64 && self.var_ty_id(right) == l)?
-                }
-                Binop::Add | Binop::Sub | Binop::Mul | Binop::Div => check(
-                    *ty == Ty::F64 && self.var_ty_id(left) == t && self.var_ty_id(right) == t,
-                )?,
-            },
+            }
+
+            &Expr::Unary { op, arg } => {
+                let x = self.var_ty_id(arg).ok_or(UnaryInvalidArg)?;
+                let p = match op {
+                    Unop::Not => *ty == Ty::Bool && x == t,
+                    Unop::Neg | Unop::Abs | Unop::Sqrt => *ty == Ty::F64 && x == t,
+                };
+                check(p, UnaryType)
+            }
+            &Expr::Binary { op, left, right } => {
+                let l = self.var_ty_id(left).ok_or(BinaryInvalidLeft)?;
+                let r = self.var_ty_id(right).ok_or(BinaryInvalidRight)?;
+                let p = match op {
+                    Binop::And | Binop::Or | Binop::Iff | Binop::Xor => {
+                        *ty == Ty::Bool && l == t && r == t
+                    }
+                    Binop::Neq | Binop::Lt | Binop::Leq | Binop::Eq | Binop::Gt | Binop::Geq => {
+                        *ty == Ty::Bool && *self.ty(l) == Ty::F64 && r == l
+                    }
+                    Binop::Add | Binop::Sub | Binop::Mul | Binop::Div => {
+                        *ty == Ty::F64 && l == t && r == t
+                    }
+                };
+                check(p, BinaryType)
+            }
             &Expr::Select { cond, then, els } => {
-                let a = self.var_ty_id(then);
-                let b = self.var_ty_id(els);
-                check(*self.var_ty(cond) == Ty::Bool && a == b && t == a)?
+                let c = self.var_ty(cond).ok_or(SelectInvalidCond)?;
+                let a = self.var_ty_id(then).ok_or(SelectInvalidThen)?;
+                let b = self.var_ty_id(els).ok_or(SelectInvalidEls)?;
+                check(*c == Ty::Bool && a == b && t == a, SelectType)
             }
 
             Expr::Call { id, generics, args } => match self.node.get(*id) {
                 Some(node) => {
                     let g = node.def();
                     if generics.len() != g.generics.len() {
-                        return Err(InstrError::GenericsCount);
-                    } else if args.len() != g.params.len() {
-                        return Err(InstrError::ArgsCount);
+                        return Err(CallGenericsCount);
                     }
                     for (i, (expected, actual)) in
                         g.generics.iter().zip(generics.iter()).enumerate()
                     {
                         match self.types.get(actual.ty()) {
-                            Some(generic) => check(self.constr(*generic).is_superset(*expected))?,
-                            None => return Err(InstrError::TypeError),
+                            Some(generic) => {
+                                check(self.constr(*generic).is_superset(*expected), CallGeneric(i))?
+                            }
+                            None => return Err(CallInvalidGeneric(i)),
                         }
                     }
                     let mut types = vec![];
@@ -268,18 +437,21 @@ impl<F: FuncNode> Validator<'_, F> {
                         let i = self.resolve(generics, &types, typ);
                         types.push(i);
                     }
-                    for (i, (expected, actual)) in g.params.iter().zip(args.iter()).enumerate() {
-                        check(
-                            self.types[self.f.vars[actual.var()].ty()]
-                                == types[g.vars[expected.var()].ty()].unwrap(),
-                        )?;
+                    if args.len() != g.params.len() {
+                        return Err(CallArgsCount);
                     }
-                    check(
-                        self.types[self.f.vars[self.f.ret.var()].ty()]
-                            == types[g.vars[g.ret.var()].ty()].unwrap(),
-                    )?;
+                    for (i, (expected, &actual)) in g.params.iter().zip(args.iter()).enumerate() {
+                        match self.var_ty_id(actual) {
+                            Some(arg) => check(
+                                arg == types[g.vars[expected.var()].ty()].unwrap(),
+                                CallArg(i),
+                            )?,
+                            None => return Err(CallInvalidArg(i)),
+                        }
+                    }
+                    check(t == types[g.vars[g.ret.var()].ty()].unwrap(), CallRet)
                 }
-                None => return Err(InstrError::TypeError),
+                None => Err(CallFunction),
             },
             Expr::For {
                 index,
@@ -300,24 +472,25 @@ impl<F: FuncNode> Validator<'_, F> {
                 ret,
             } => todo!(),
 
-            &Expr::Ask { var } => match self.var_ty(var) {
+            &Expr::Ask { var } => match self.var_ty(var).ok_or(AskInvalidVar)? {
                 &Ty::Ref { scope, inner } => {
-                    let h = self.constr(scope);
-                    check(h.contains(Constraint::Read) && t == inner)?
+                    check(self.constr(scope).contains(Constraint::Read), AskRead)?;
+                    check(t == inner, AskType)
                 }
-                _ => return Err(InstrError::TypeError),
+                _ => Err(AskNotRef),
             },
-            &Expr::Add { accum, addend } => match self.var_ty(accum) {
-                &Ty::Ref { scope, inner } => {
-                    let h = self.constr(scope);
-                    let a = self.var_ty_id(addend);
-                    check(h.contains(Constraint::Accum) && a == inner && *ty == Ty::Unit)?
+            &Expr::Add { accum, addend } => {
+                let acc = self.var_ty(accum).ok_or(AddInvalidAccum)?;
+                let add = self.var_ty_id(addend).ok_or(AddInvalidAddend)?;
+                match acc {
+                    &Ty::Ref { scope, inner } => {
+                        check(self.constr(scope).contains(Constraint::Accum), AddAccum)?;
+                        check(add == inner && *ty == Ty::Unit, AddType)
+                    }
+                    _ => Err(AddNotRef),
                 }
-                _ => return Err(InstrError::TypeError),
-            },
+            }
         }
-
-        Ok(())
     }
 }
 
@@ -472,9 +645,9 @@ pub fn validate_func(f: impl FuncNode) -> Result<(), Error> {
         return Err(Error::InvalidRet);
     }
 
-    let mut declared = vec![false; def.vars.len()];
+    let mut vars = vec![Scope::Undefined; def.vars.len()];
     for param in def.params.iter() {
-        declared[param.var()] = true;
+        vars[param.var()] = Scope::Defined;
     }
 
     let mut validator = Validator {
@@ -482,7 +655,7 @@ pub fn validate_func(f: impl FuncNode) -> Result<(), Error> {
         f: def,
         constraints,
         types,
-        declared,
+        vars,
     };
     for (i, instr) in def.body.iter().enumerate() {
         validator
