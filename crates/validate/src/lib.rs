@@ -546,7 +546,7 @@ pub enum Error {
 }
 
 /// Validate `f`, assuming that all of its referenced functions are valid.
-pub fn validate_func(f: impl FuncNode) -> Result<(), Error> {
+pub fn validate(f: impl FuncNode) -> Result<(), Error> {
     let def = f.def();
 
     for (i, constrs) in def.generics.iter().enumerate() {

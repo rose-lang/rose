@@ -688,6 +688,7 @@ dependencies = [
  "indexmap 2.0.0",
  "rose",
  "rose-interp",
+ "rose-validate",
  "serde",
  "serde-wasm-bindgen",
  "ts-rs",

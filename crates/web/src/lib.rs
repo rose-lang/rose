@@ -292,7 +292,7 @@ pub struct Context {
 }
 
 #[wasm_bindgen]
-pub fn bake(ctx: Context, out: usize, main: Block) -> Func {
+pub fn bake(ctx: Context, out: usize, main: Block) -> Result<Func, JsError> {
     let Context {
         functions,
         generics,
@@ -300,7 +300,7 @@ pub fn bake(ctx: Context, out: usize, main: Block) -> Func {
         params,
         vars,
     } = ctx;
-    Func {
+    let f = Func {
         rc: Rc::new((
             functions,
             rose::Function {
@@ -312,7 +312,9 @@ pub fn bake(ctx: Context, out: usize, main: Block) -> Func {
                 body: main.code.into(),
             },
         )),
-    }
+    };
+    rose_validate::validate(&f)?;
+    Ok(f)
 }
 
 /// A block under construction. Implicitly refers to the current `Context`.
