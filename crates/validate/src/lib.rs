@@ -585,23 +585,29 @@ pub enum Error {
     #[error("scope type ID for type {} is not strictly less", .0.ty())]
     InvalidScope(id::Ty),
 
-    #[error("scope for type {} is not a scope", .0.ty())]
-    NotScope(id::Ty),
-
     #[error("inner type ID for type {} is not strictly less", .0.ty())]
     InvalidInner(id::Ty),
+
+    #[error("inner for type {} is not a value", .0.ty())]
+    InnerNotValue(id::Ty),
 
     #[error("index type ID for type {} is not strictly less", .0.ty())]
     InvalidIndex(id::Ty),
 
-    #[error("index for type {} is not an index", .0.ty())]
-    NotIndex(id::Ty),
-
     #[error("element type ID for type {} is not strictly less", .0.ty())]
     InvalidElem(id::Ty),
 
+    #[error("index for type {} is not an index", .0.ty())]
+    NotIndex(id::Ty),
+
+    #[error("element for type {} is not a value", .0.ty())]
+    ElemNotValue(id::Ty),
+
     #[error("member {} type ID for type {} is not strictly less", .1.member(), .0.ty())]
     InvalidMember(id::Ty, id::Member),
+
+    #[error("member {} for type {} is not a value", .1.member(), .0.ty())]
+    MemberNotValue(id::Ty, id::Member),
 
     #[error("type ID for variable {} is out of range", .0.var())]
     InvalidVar(id::Var),
@@ -630,7 +636,7 @@ pub fn validate(f: impl FuncNode) -> Result<(), Error> {
         }
     }
 
-    let mut constraints = IndexMap::new();
+    let mut constraints: IndexMap<Ty, EnumSet<Constraint>> = IndexMap::new();
 
     let mut types = vec![];
     for (i, ty) in def.types.iter().enumerate() {
@@ -645,9 +651,7 @@ pub fn validate(f: impl FuncNode) -> Result<(), Error> {
                 Some(&constrs) => (Ty::Generic { id }, constrs),
             },
             &Ty::Scope { kind, id } => {
-                if !(kind == EnumSet::only(Constraint::Read)
-                    || kind == EnumSet::only(Constraint::Accum))
-                {
+                if !(kind == Constraint::Read || kind == Constraint::Accum) {
                     return Err(Error::InvalidKind(t));
                 } else if id.var() >= def.vars.len() {
                     return Err(Error::InvalidRef(t));
@@ -660,8 +664,8 @@ pub fn validate(f: impl FuncNode) -> Result<(), Error> {
                     return Err(Error::InvalidScope(t));
                 } else if inner >= t {
                     return Err(Error::InvalidInner(t));
-                } else if !matches!(def.types[scope.ty()], Ty::Scope { .. }) {
-                    return Err(Error::NotScope(t));
+                } else if !constraints[inner.ty()].contains(Constraint::Value) {
+                    return Err(Error::InnerNotValue(t));
                 } else {
                     let scope = types[scope.ty()];
                     let inner = types[inner.ty()];
@@ -673,8 +677,10 @@ pub fn validate(f: impl FuncNode) -> Result<(), Error> {
                     return Err(Error::InvalidIndex(t));
                 } else if elem >= t {
                     return Err(Error::InvalidElem(t));
-                } else if !matches!(def.types[index.ty()], Ty::Fin { .. }) {
+                } else if !constraints[index.ty()].contains(Constraint::Index) {
                     return Err(Error::NotIndex(t));
+                } else if !constraints[elem.ty()].contains(Constraint::Value) {
+                    return Err(Error::ElemNotValue(t));
                 } else {
                     let index = types[index.ty()];
                     let elem = types[elem.ty()];
@@ -686,6 +692,8 @@ pub fn validate(f: impl FuncNode) -> Result<(), Error> {
                 for (i, &member) in members.iter().enumerate() {
                     if member >= t {
                         return Err(Error::InvalidMember(t, id::member(i)));
+                    } else if !constraints[member.ty()].contains(Constraint::Value) {
+                        return Err(Error::MemberNotValue(t, id::member(i)));
                     } else {
                         mems.push(types[member.ty()]);
                     }
