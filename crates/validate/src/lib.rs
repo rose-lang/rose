@@ -1123,4 +1123,243 @@ mod tests {
         });
         assert_eq!(res, Err(Error::InnerNotValue(id::ty(5))));
     }
+
+    #[test]
+    fn test_invalid_index() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [Constraint::Value | Constraint::Index].into(),
+                types: [
+                    Ty::F64,
+                    Ty::Array {
+                        index: id::ty(2),
+                        elem: id::ty(0),
+                    },
+                    Ty::Generic { id: id::generic(0) },
+                ]
+                .into(),
+                vars: [id::ty(1)].into(),
+                params: [id::var(0)].into(),
+                ret: id::var(0),
+                body: [].into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::InvalidIndex(id::ty(1))));
+    }
+
+    #[test]
+    fn test_invalid_elem() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [Constraint::Value | Constraint::Index].into(),
+                types: [
+                    Ty::Generic { id: id::generic(0) },
+                    Ty::Array {
+                        index: id::ty(0),
+                        elem: id::ty(2),
+                    },
+                    Ty::F64,
+                ]
+                .into(),
+                vars: [id::ty(1)].into(),
+                params: [id::var(0)].into(),
+                ret: id::var(0),
+                body: [].into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::InvalidElem(id::ty(1))));
+    }
+
+    #[test]
+    fn test_not_index() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [].into(),
+                types: [
+                    Ty::F64,
+                    Ty::Array {
+                        index: id::ty(0),
+                        elem: id::ty(0),
+                    },
+                ]
+                .into(),
+                vars: [id::ty(1)].into(),
+                params: [id::var(0)].into(),
+                ret: id::var(0),
+                body: [].into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::NotIndex(id::ty(1))));
+    }
+
+    #[test]
+    fn test_elem_not_value() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [EnumSet::empty()].into(),
+                types: [
+                    Ty::Fin { size: 1 },
+                    Ty::Generic { id: id::generic(0) },
+                    Ty::Array {
+                        index: id::ty(0),
+                        elem: id::ty(1),
+                    },
+                ]
+                .into(),
+                vars: [id::ty(2)].into(),
+                params: [id::var(0)].into(),
+                ret: id::var(0),
+                body: [].into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::ElemNotValue(id::ty(2))));
+    }
+
+    #[test]
+    fn test_invalid_member() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [].into(),
+                types: [
+                    Ty::Tuple {
+                        members: [id::ty(1)].into(),
+                    },
+                    Ty::F64,
+                ]
+                .into(),
+                vars: [id::ty(0)].into(),
+                params: [id::var(0)].into(),
+                ret: id::var(0),
+                body: [].into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::InvalidMember(id::ty(0), id::member(0))));
+    }
+
+    #[test]
+    fn test_member_not_value() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [EnumSet::empty()].into(),
+                types: [
+                    Ty::Generic { id: id::generic(0) },
+                    Ty::Tuple {
+                        members: [id::ty(0)].into(),
+                    },
+                ]
+                .into(),
+                vars: [id::ty(1)].into(),
+                params: [id::var(0)].into(),
+                ret: id::var(0),
+                body: [].into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::MemberNotValue(id::ty(1), id::member(0))));
+    }
+
+    #[test]
+    fn test_invalid_var() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [].into(),
+                types: [].into(),
+                vars: [id::ty(0)].into(),
+                params: [].into(),
+                ret: id::var(0),
+                body: [Instr {
+                    var: id::var(0),
+                    expr: Expr::Unit,
+                }]
+                .into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::InvalidVar(id::var(0))));
+    }
+
+    #[test]
+    fn test_invalid_param() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [].into(),
+                types: [Ty::Unit].into(),
+                vars: [id::ty(0)].into(),
+                params: [id::var(1)].into(),
+                ret: id::var(0),
+                body: [Instr {
+                    var: id::var(0),
+                    expr: Expr::Unit,
+                }]
+                .into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::InvalidParam(0)));
+    }
+
+    #[test]
+    fn test_invalid_ret() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [].into(),
+                types: [].into(),
+                vars: [].into(),
+                params: [].into(),
+                ret: id::var(0),
+                body: [].into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::InvalidRet));
+    }
+
+    mod body {
+        use super::*;
+
+        #[test]
+        fn test_invalid_var() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Unit].into(),
+                    vars: [id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Unit,
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, Err(Error::InvalidBody(0, InstrError::InvalidVar)));
+        }
+
+        #[test]
+        fn test_redeclare() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Unit].into(),
+                    vars: [id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Unit,
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, Err(Error::InvalidBody(0, InstrError::Redeclare)));
+        }
+    }
 }
