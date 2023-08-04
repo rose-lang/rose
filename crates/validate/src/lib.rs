@@ -1465,5 +1465,302 @@ mod tests {
             });
             assert_eq!(res, err(0, FinTooBig));
         }
+
+        #[test]
+        fn test_array_type() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Unit].into(),
+                    vars: [id::ty(0)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Array { elems: [].into() },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ArrayType));
+        }
+
+        #[test]
+        fn test_array_index() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(1),
+                            elem: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(2)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Array { elems: [].into() },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ArrayIndex));
+        }
+
+        #[test]
+        fn test_array_size() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Fin { size: 1 },
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(1)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Array { elems: [].into() },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ArraySize));
+        }
+
+        #[test]
+        fn test_array_invalid_elem() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Fin { size: 1 },
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(1)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Array {
+                            elems: [id::var(0)].into(),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ArrayInvalidElem(0)));
+        }
+
+        #[test]
+        fn test_array_elem_type() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Fin { size: 1 },
+                        Ty::Array {
+                            index: id::ty(1),
+                            elem: id::ty(1),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Array {
+                            elems: [id::var(0)].into(),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ArrayElemType(0)));
+        }
+
+        #[test]
+        fn test_tuple_type() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Unit].into(),
+                    vars: [id::ty(0)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Tuple { members: [].into() },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, TupleType));
+        }
+
+        #[test]
+        fn test_tuple_size() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Tuple {
+                            members: [id::ty(0)].into(),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(1)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Tuple { members: [].into() },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, TupleSize));
+        }
+
+        #[test]
+        fn test_tuple_invalid_member() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Tuple {
+                            members: [id::ty(0)].into(),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(1)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Tuple {
+                            members: [id::var(0)].into(),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, TupleInvalidMember(id::member(0))));
+        }
+
+        #[test]
+        fn test_tuple_member_type() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::F64,
+                        Ty::Tuple {
+                            members: [id::ty(1)].into(),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Tuple {
+                            members: [id::var(0)].into(),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, TupleMemberType(id::member(0))));
+        }
+
+        #[test]
+        fn test_index_invalid_array() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index].into(),
+                    types: [
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Index {
+                            array: id::var(2),
+                            index: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, IndexInvalidArray));
+        }
+
+        #[test]
+        fn test_index_invalid_index() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index].into(),
+                    types: [
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Index {
+                            array: id::var(0),
+                            index: id::var(2),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, IndexInvalidIndex));
+        }
     }
 }
