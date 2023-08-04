@@ -416,18 +416,17 @@ impl<F: FuncNode> Validator<'_, F> {
             Some(Scope::Undefined) => {} // will set to `Defined` after processing `expr`
         }
         let t = self.var_ty_id(*var);
-        let ty = self.ty(t);
 
         match expr {
-            Expr::Unit => check(*ty == Ty::Unit, UnitType),
-            Expr::Bool { .. } => check(*ty == Ty::Bool, BoolType),
-            Expr::F64 { .. } => check(*ty == Ty::F64, F64Type),
-            &Expr::Fin { val } => match ty {
+            Expr::Unit => check(*self.ty(t) == Ty::Unit, UnitType),
+            Expr::Bool { .. } => check(*self.ty(t) == Ty::Bool, BoolType),
+            Expr::F64 { .. } => check(*self.ty(t) == Ty::F64, F64Type),
+            &Expr::Fin { val } => match self.ty(t) {
                 &Ty::Fin { size } => check(val < size, FinTooBig),
                 _ => Err(FinType),
             },
 
-            Expr::Array { elems } => match ty {
+            Expr::Array { elems } => match self.ty(t) {
                 &Ty::Array { index, elem } => match self.ty(index) {
                     &Ty::Fin { size } => {
                         if elems.len() != size {
@@ -445,7 +444,7 @@ impl<F: FuncNode> Validator<'_, F> {
                 },
                 _ => Err(ArrayType),
             },
-            Expr::Tuple { members } => match ty {
+            Expr::Tuple { members } => match self.ty(t) {
                 Ty::Tuple { members: types } => {
                     if members.len() != types.len() {
                         return Err(TupleSize);
@@ -483,7 +482,7 @@ impl<F: FuncNode> Validator<'_, F> {
                     &Ty::Ref { scope, inner } => (scope, inner),
                     _ => return Err(SliceArrayNotRef),
                 };
-                let (scope_elem, elem) = match ty {
+                let (scope_elem, elem) = match self.ty(t) {
                     &Ty::Ref { scope, inner } => (scope, inner),
                     _ => return Err(SliceNotRef),
                 };
@@ -495,7 +494,7 @@ impl<F: FuncNode> Validator<'_, F> {
                     &Ty::Ref { scope, inner } => (scope, inner),
                     _ => return Err(FieldTupleNotRef),
                 };
-                let (scope_mem, mem) = match ty {
+                let (scope_mem, mem) = match self.ty(t) {
                     &Ty::Ref { scope, inner } => (scope, inner),
                     _ => return Err(FieldNotRef),
                 };
@@ -512,8 +511,8 @@ impl<F: FuncNode> Validator<'_, F> {
             &Expr::Unary { op, arg } => {
                 let x = self.get_ty_id(arg).ok_or(UnaryInvalidArg)?;
                 let p = match op {
-                    Unop::Not => *ty == Ty::Bool && x == t,
-                    Unop::Neg | Unop::Abs | Unop::Sqrt => *ty == Ty::F64 && x == t,
+                    Unop::Not => *self.ty(t) == Ty::Bool && x == t,
+                    Unop::Neg | Unop::Abs | Unop::Sqrt => *self.ty(t) == Ty::F64 && x == t,
                 };
                 check(p, UnaryType)
             }
@@ -522,13 +521,13 @@ impl<F: FuncNode> Validator<'_, F> {
                 let r = self.get_ty_id(right).ok_or(BinaryInvalidRight)?;
                 let p = match op {
                     Binop::And | Binop::Or | Binop::Iff | Binop::Xor => {
-                        *ty == Ty::Bool && l == t && r == t
+                        *self.ty(t) == Ty::Bool && l == t && r == t
                     }
                     Binop::Neq | Binop::Lt | Binop::Leq | Binop::Eq | Binop::Gt | Binop::Geq => {
-                        *ty == Ty::Bool && *self.ty(l) == Ty::F64 && r == l
+                        *self.ty(t) == Ty::Bool && *self.ty(l) == Ty::F64 && r == l
                     }
                     Binop::Add | Binop::Sub | Binop::Mul | Binop::Div => {
-                        *ty == Ty::F64 && l == t && r == t
+                        *self.ty(t) == Ty::F64 && l == t && r == t
                     }
                 };
                 check(p, BinaryType)
@@ -671,7 +670,7 @@ impl<F: FuncNode> Validator<'_, F> {
                 match acc {
                     &Ty::Ref { scope, inner } => {
                         check(self.constr(scope).contains(Constraint::Accum), AddAccum)?;
-                        check(add == inner && *ty == Ty::Unit, AddType)
+                        check(add == inner && *self.ty(t) == Ty::Unit, AddType)
                     }
                     _ => Err(AddNotRef),
                 }
