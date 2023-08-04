@@ -2,7 +2,7 @@ use enumset::EnumSet;
 use indexmap::IndexMap;
 use rose::{id, Binop, Constraint, Expr, FuncNode, Function, Instr, Ty, Unop};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Eq, thiserror::Error, PartialEq)]
 pub enum InstrError {
     #[error("variable ID is out of range")]
     InvalidVar,
@@ -682,7 +682,7 @@ impl<F: FuncNode> Validator<'_, F> {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Eq, thiserror::Error, PartialEq)]
 pub enum Error {
     #[error("constraints for generic {} are impossible", .0.generic())]
     ImpossibleConstraints(id::Generic),
@@ -857,5 +857,267 @@ pub fn validate(f: impl FuncNode) -> Result<(), Error> {
     match validator.vars.get(def.ret.var()) {
         Some(Scope::Defined) => Ok(()),
         _ => Err(Error::InvalidRet),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FuncInSlice<'a> {
+        funcs: &'a [Function],
+        id: id::Function,
+    }
+
+    impl FuncNode for FuncInSlice<'_> {
+        fn def(&self) -> &Function {
+            &self.funcs[self.id.function()]
+        }
+
+        fn get(&self, id: id::Function) -> Option<Self> {
+            if id.function() < self.id.function() {
+                Some(Self {
+                    funcs: self.funcs,
+                    id,
+                })
+            } else {
+                None
+            }
+        }
+    }
+
+    fn example_constraints(constraints: EnumSet<Constraint>) {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [constraints].into(),
+                types: [Ty::Unit].into(),
+                vars: [id::ty(0)].into(),
+                params: [].into(),
+                ret: id::var(0),
+                body: [Instr {
+                    var: id::var(0),
+                    expr: Expr::Unit,
+                }]
+                .into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::ImpossibleConstraints(id::generic(0))));
+    }
+
+    #[test]
+    fn test_index_without_value() {
+        example_constraints(EnumSet::only(Constraint::Index))
+    }
+
+    #[test]
+    fn test_read_with_other() {
+        example_constraints(Constraint::Read | Constraint::Value)
+    }
+
+    #[test]
+    fn test_accum_with_other() {
+        example_constraints(Constraint::Accum | Constraint::Value)
+    }
+
+    #[test]
+    fn test_read_and_accum() {
+        example_constraints(Constraint::Read | Constraint::Accum)
+    }
+
+    #[test]
+    fn test_invalid_generic() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [].into(),
+                types: [Ty::Generic { id: id::generic(0) }].into(),
+                vars: [id::ty(0)].into(),
+                params: [id::var(0)].into(),
+                ret: id::var(0),
+                body: [].into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::InvalidGeneric(id::ty(0))));
+    }
+
+    fn example_kind(kind: Constraint) {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [].into(),
+                types: [
+                    Ty::Unit,
+                    Ty::Scope {
+                        kind,
+                        id: id::var(0),
+                    },
+                ]
+                .into(),
+                vars: [id::ty(0)].into(),
+                params: [id::var(0)].into(),
+                ret: id::var(0),
+                body: [].into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::InvalidKind(id::ty(1))));
+    }
+
+    #[test]
+    fn test_scope_kind_value() {
+        example_kind(Constraint::Value)
+    }
+
+    #[test]
+    fn test_scope_kind_index() {
+        example_kind(Constraint::Index)
+    }
+
+    #[test]
+    fn test_scope_id() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [].into(),
+                types: [
+                    Ty::Unit,
+                    Ty::Scope {
+                        kind: Constraint::Read,
+                        id: id::var(1),
+                    },
+                ]
+                .into(),
+                vars: [id::ty(0)].into(),
+                params: [id::var(0)].into(),
+                ret: id::var(0),
+                body: [].into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::InvalidRef(id::ty(1))));
+    }
+
+    #[test]
+    fn test_ref_scope() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [].into(),
+                types: [
+                    Ty::F64,
+                    Ty::Ref {
+                        scope: id::ty(2),
+                        inner: id::ty(0),
+                    },
+                    Ty::Scope {
+                        kind: Constraint::Read,
+                        id: id::var(2),
+                    },
+                ]
+                .into(),
+                vars: [id::ty(0), id::ty(0), id::ty(1)].into(),
+                params: [id::var(0)].into(),
+                ret: id::var(1),
+                body: [Instr {
+                    var: id::var(1),
+                    expr: Expr::Read {
+                        var: id::var(0),
+                        arg: id::var(2),
+                        body: [].into(),
+                        ret: id::var(0),
+                    },
+                }]
+                .into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::InvalidScope(id::ty(1))));
+    }
+
+    #[test]
+    fn test_inner() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [].into(),
+                types: [
+                    Ty::Scope {
+                        kind: Constraint::Read,
+                        id: id::var(2),
+                    },
+                    Ty::Ref {
+                        scope: id::ty(0),
+                        inner: id::ty(2),
+                    },
+                    Ty::F64,
+                ]
+                .into(),
+                vars: [id::ty(2), id::ty(2), id::ty(1)].into(),
+                params: [id::var(0)].into(),
+                ret: id::var(1),
+                body: [Instr {
+                    var: id::var(1),
+                    expr: Expr::Read {
+                        var: id::var(0),
+                        arg: id::var(2),
+                        body: [].into(),
+                        ret: id::var(0),
+                    },
+                }]
+                .into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::InvalidInner(id::ty(1))));
+    }
+
+    #[test]
+    fn test_nested_ref() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [].into(),
+                types: [
+                    Ty::F64,
+                    Ty::Scope {
+                        kind: Constraint::Read,
+                        id: id::var(2),
+                    },
+                    Ty::Ref {
+                        scope: id::ty(1),
+                        inner: id::ty(0),
+                    },
+                    Ty::Scope {
+                        kind: Constraint::Read,
+                        id: id::var(3),
+                    },
+                    Ty::Ref {
+                        scope: id::ty(3),
+                        inner: id::ty(2),
+                    },
+                ]
+                .into(),
+                vars: [id::ty(0), id::ty(0), id::ty(2), id::ty(2), id::ty(4)].into(),
+                params: [id::var(0)].into(),
+                ret: id::var(1),
+                body: [Instr {
+                    var: id::var(1),
+                    expr: Expr::Read {
+                        var: id::var(0),
+                        arg: id::var(2),
+                        body: [Instr {
+                            var: id::var(3),
+                            expr: Expr::Read {
+                                var: id::var(2),
+                                arg: id::var(4),
+                                body: [].into(),
+                                ret: id::var(2),
+                            },
+                        }]
+                        .into(),
+                        ret: id::var(0),
+                    },
+                }]
+                .into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::InnerNotValue(id::ty(4))));
     }
 }
