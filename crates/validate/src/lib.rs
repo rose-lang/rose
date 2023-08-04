@@ -166,9 +166,6 @@ pub enum InstrError {
     #[error("index variable ID is not fresh")]
     ForInvalidArg,
 
-    #[error("index variable type is not an index")]
-    ForNotIndex,
-
     #[error("element variable ID is not in scope")]
     ForInvalidRet,
 
@@ -177,6 +174,72 @@ pub enum InstrError {
 
     #[error("for type error")]
     ForType,
+
+    #[error("source variable ID is not in scope")]
+    ReadInvalidVar,
+
+    #[error("reference variable ID is not fresh")]
+    ReadInvalidArg,
+
+    #[error("reference variable is not a reference")]
+    ReadNotRef,
+
+    #[error("scope is not local")]
+    ReadNotScope,
+
+    #[error("scope does not allow reading")]
+    ReadScopeKind,
+
+    #[error("scope ID does not match reference variable ID")]
+    ReadScopeId,
+
+    #[error("reference inner type does not match source")]
+    ReadInner,
+
+    #[error("instruction {0} is invalid")]
+    ReadBody(usize, #[source] Box<InstrError>),
+
+    #[error("return variable ID is not in scope")]
+    ReadInvalidRet,
+
+    #[error("reference escaped its scope")]
+    ReadEscape,
+
+    #[error("read type error")]
+    ReadType,
+
+    #[error("shape variable ID is not in scope")]
+    AccumInvalidShape,
+
+    #[error("reference variable ID is not fresh")]
+    AccumInvalidArg,
+
+    #[error("reference variable is not a reference")]
+    AccumNotRef,
+
+    #[error("scope is not local")]
+    AccumNotScope,
+
+    #[error("scope does not allow accumulation")]
+    AccumScopeKind,
+
+    #[error("scope ID does not match reference variable ID")]
+    AccumScopeId,
+
+    #[error("reference inner type does not match source")]
+    AccumInner,
+
+    #[error("instruction {0} is invalid")]
+    AccumBody(usize, #[source] Box<InstrError>),
+
+    #[error("return variable ID is not in scope")]
+    AccumInvalidRet,
+
+    #[error("reference escaped its scope")]
+    AccumEscape,
+
+    #[error("accumulate type error")]
+    AccumType,
 
     #[error("variable ID is not in scope")]
     AskInvalidVar,
@@ -521,7 +584,7 @@ impl<F: FuncNode> Validator<'_, F> {
                 ret,
             } => {
                 let index = self.bind(*arg).ok_or(ForInvalidArg)?;
-                check(self.constr(index).contains(Constraint::Index), ForNotIndex)?;
+                // no need to check `Index` constraint; existence of `Array` type below covers that
                 for (i, instr) in body.iter().enumerate() {
                     self.instr(instr).map_err(|e| ForBody(i, Box::new(e)))?;
                 }
@@ -535,13 +598,65 @@ impl<F: FuncNode> Validator<'_, F> {
                 arg,
                 body,
                 ret,
-            } => todo!(),
+            } => {
+                let src = self.get_ty_id(*var).ok_or(ReadInvalidVar)?;
+                let outer = self.bind(*arg).ok_or(ReadInvalidArg)?;
+                let h = match self.ty(outer) {
+                    &Ty::Ref { scope, inner } => match self.ty(scope) {
+                        &Ty::Scope { kind, id } => {
+                            check(kind == Constraint::Read, ReadScopeKind)?;
+                            check(id == *arg, ReadScopeId)?;
+                            check(inner == src, ReadInner)?;
+                            scope
+                        }
+                        _ => return Err(ReadNotScope),
+                    },
+                    _ => return Err(ReadNotRef),
+                };
+                for (i, instr) in body.iter().enumerate() {
+                    self.instr(instr).map_err(|e| ReadBody(i, Box::new(e)))?;
+                }
+                match self.get_ty(*ret).ok_or(ReadInvalidRet)? {
+                    &Ty::Ref { scope, inner: _ } if scope == h => return Err(ReadEscape),
+                    _ => {}
+                }
+                self.vars[arg.var()] = Scope::Expired;
+                self.expire(body);
+                self.vars[ret.var()] = Scope::Defined;
+                check(*self.ty(t) == Ty::Unit, ReadType)
+            }
             Expr::Accum {
                 shape,
                 arg,
                 body,
                 ret,
-            } => todo!(),
+            } => {
+                let src = self.get_ty_id(*shape).ok_or(AccumInvalidShape)?;
+                let outer = self.bind(*arg).ok_or(AccumInvalidArg)?;
+                let h = match self.ty(outer) {
+                    &Ty::Ref { scope, inner } => match self.ty(scope) {
+                        &Ty::Scope { kind, id } => {
+                            check(kind == Constraint::Accum, AccumScopeKind)?;
+                            check(id == *arg, AccumScopeId)?;
+                            check(inner == src, AccumInner)?;
+                            scope
+                        }
+                        _ => return Err(AccumNotScope),
+                    },
+                    _ => return Err(AccumNotRef),
+                };
+                for (i, instr) in body.iter().enumerate() {
+                    self.instr(instr).map_err(|e| AccumBody(i, Box::new(e)))?;
+                }
+                match self.get_ty(*ret).ok_or(AccumInvalidRet)? {
+                    &Ty::Ref { scope, inner: _ } if scope == h => return Err(AccumEscape),
+                    _ => {}
+                }
+                self.vars[arg.var()] = Scope::Expired;
+                self.expire(body);
+                self.vars[ret.var()] = Scope::Defined;
+                check(t == src, AccumType)
+            }
 
             &Expr::Ask { var } => match self.get_ty(var).ok_or(AskInvalidVar)? {
                 &Ty::Ref { scope, inner } => {
