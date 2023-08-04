@@ -1321,6 +1321,11 @@ mod tests {
 
     mod body {
         use super::*;
+        use InstrError::*;
+
+        fn err(i: usize, e: InstrError) -> Result<(), Error> {
+            Err(Error::InvalidBody(i, e))
+        }
 
         #[test]
         fn test_invalid_var() {
@@ -1339,7 +1344,7 @@ mod tests {
                 }],
                 id: id::function(0),
             });
-            assert_eq!(res, Err(Error::InvalidBody(0, InstrError::InvalidVar)));
+            assert_eq!(res, err(0, InvalidVar));
         }
 
         #[test]
@@ -1359,7 +1364,106 @@ mod tests {
                 }],
                 id: id::function(0),
             });
-            assert_eq!(res, Err(Error::InvalidBody(0, InstrError::Redeclare)));
+            assert_eq!(res, err(0, Redeclare));
+        }
+
+        #[test]
+        fn test_unit() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::F64].into(),
+                    vars: [id::ty(0)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Unit,
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, UnitType));
+        }
+
+        #[test]
+        fn test_bool() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Unit].into(),
+                    vars: [id::ty(0)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Bool { val: true },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, BoolType));
+        }
+        #[test]
+        fn test_f64() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Unit].into(),
+                    vars: [id::ty(0)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::F64 { val: 0. },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, F64Type));
+        }
+
+        #[test]
+        fn test_fin_type() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Unit].into(),
+                    vars: [id::ty(0)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Fin { val: 0 },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, FinType));
+        }
+
+        #[test]
+        fn test_fin_too_big() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Fin { size: 2 }].into(),
+                    vars: [id::ty(0)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Fin { val: 2 },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, FinTooBig));
         }
     }
 }
