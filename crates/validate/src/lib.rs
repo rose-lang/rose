@@ -1002,10 +1002,11 @@ mod tests {
             funcs: &[Function {
                 generics: [].into(),
                 types: [
+                    Ty::Unit,
                     Ty::F64,
                     Ty::Ref {
-                        scope: id::ty(2),
-                        inner: id::ty(0),
+                        scope: id::ty(3),
+                        inner: id::ty(1),
                     },
                     Ty::Scope {
                         kind: Constraint::Read,
@@ -1013,7 +1014,7 @@ mod tests {
                     },
                 ]
                 .into(),
-                vars: [id::ty(0), id::ty(0), id::ty(1)].into(),
+                vars: [id::ty(1), id::ty(0), id::ty(2)].into(),
                 params: [id::var(0)].into(),
                 ret: id::var(1),
                 body: [Instr {
@@ -1029,7 +1030,7 @@ mod tests {
             }],
             id: id::function(0),
         });
-        assert_eq!(res, Err(Error::InvalidScope(id::ty(1))));
+        assert_eq!(res, Err(Error::InvalidScope(id::ty(2))));
     }
 
     #[test]
@@ -1038,18 +1039,19 @@ mod tests {
             funcs: &[Function {
                 generics: [].into(),
                 types: [
+                    Ty::Unit,
                     Ty::Scope {
                         kind: Constraint::Read,
                         id: id::var(2),
                     },
                     Ty::Ref {
-                        scope: id::ty(0),
-                        inner: id::ty(2),
+                        scope: id::ty(1),
+                        inner: id::ty(3),
                     },
                     Ty::F64,
                 ]
                 .into(),
-                vars: [id::ty(2), id::ty(2), id::ty(1)].into(),
+                vars: [id::ty(3), id::ty(0), id::ty(2)].into(),
                 params: [id::var(0)].into(),
                 ret: id::var(1),
                 body: [Instr {
@@ -1065,7 +1067,7 @@ mod tests {
             }],
             id: id::function(0),
         });
-        assert_eq!(res, Err(Error::InvalidInner(id::ty(1))));
+        assert_eq!(res, Err(Error::InvalidInner(id::ty(2))));
     }
 
     #[test]
@@ -1074,28 +1076,29 @@ mod tests {
             funcs: &[Function {
                 generics: [].into(),
                 types: [
+                    Ty::Unit,
                     Ty::F64,
                     Ty::Scope {
                         kind: Constraint::Read,
                         id: id::var(2),
                     },
                     Ty::Ref {
-                        scope: id::ty(1),
-                        inner: id::ty(0),
+                        scope: id::ty(2),
+                        inner: id::ty(1),
                     },
                     Ty::Scope {
                         kind: Constraint::Read,
                         id: id::var(3),
                     },
                     Ty::Ref {
-                        scope: id::ty(3),
-                        inner: id::ty(2),
+                        scope: id::ty(4),
+                        inner: id::ty(3),
                     },
                 ]
                 .into(),
-                vars: [id::ty(0), id::ty(0), id::ty(2), id::ty(2), id::ty(4)].into(),
+                vars: [id::ty(1), id::ty(0), id::ty(3), id::ty(0), id::ty(5)].into(),
                 params: [id::var(0)].into(),
-                ret: id::var(1),
+                ret: id::var(3),
                 body: [Instr {
                     var: id::var(1),
                     expr: Expr::Read {
@@ -1111,13 +1114,13 @@ mod tests {
                             },
                         }]
                         .into(),
-                        ret: id::var(0),
+                        ret: id::var(3),
                     },
                 }]
                 .into(),
             }],
             id: id::function(0),
         });
-        assert_eq!(res, Err(Error::InnerNotValue(id::ty(4))));
+        assert_eq!(res, Err(Error::InnerNotValue(id::ty(5))));
     }
 }
