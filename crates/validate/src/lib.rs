@@ -163,6 +163,21 @@ pub enum InstrError {
     #[error("return type does not match")]
     CallRet,
 
+    #[error("index variable ID is not fresh")]
+    ForInvalidArg,
+
+    #[error("index variable type is not an index")]
+    ForNotIndex,
+
+    #[error("element variable ID is not in scope")]
+    ForInvalidRet,
+
+    #[error("instruction {0} is invalid")]
+    ForBody(usize, #[source] Box<InstrError>),
+
+    #[error("for type error")]
+    ForType,
+
     #[error("variable ID is not in scope")]
     AskInvalidVar,
 
@@ -227,15 +242,58 @@ impl<F: FuncNode> Validator<'_, F> {
         constrs
     }
 
-    fn var_ty_id(&self, x: id::Var) -> Option<id::Ty> {
+    fn var_ty_id(&self, x: id::Var) -> id::Ty {
+        self.types[self.f.vars[x.var()].ty()]
+    }
+
+    fn get_ty_id(&self, x: id::Var) -> Option<id::Ty> {
         match self.vars.get(x.var()) {
-            Some(Scope::Defined) => Some(self.types[self.f.vars[x.var()].ty()]),
+            Some(Scope::Defined) => Some(self.var_ty_id(x)),
             _ => None,
         }
     }
 
-    fn var_ty(&self, x: id::Var) -> Option<&Ty> {
-        Some(self.ty(self.var_ty_id(x)?))
+    fn get_ty(&self, x: id::Var) -> Option<&Ty> {
+        Some(self.ty(self.get_ty_id(x)?))
+    }
+
+    fn bind(&mut self, x: id::Var) -> Option<id::Ty> {
+        let scope = self.vars.get_mut(x.var())?;
+        match *scope {
+            Scope::Undefined => {
+                *scope = Scope::Defined;
+                Some(self.var_ty_id(x))
+            }
+            _ => None,
+        }
+    }
+
+    fn expire(&mut self, body: &[Instr]) {
+        for instr in body.iter() {
+            self.vars[instr.var.var()] = Scope::Expired;
+            match &instr.expr {
+                Expr::Read { ret, .. } | Expr::Accum { ret, .. } => {
+                    self.vars[ret.var()] = Scope::Expired;
+                }
+                Expr::Unit
+                | Expr::Bool { .. }
+                | Expr::F64 { .. }
+                | Expr::Fin { .. }
+                | Expr::Array { .. }
+                | Expr::Tuple { .. }
+                | Expr::Index { .. }
+                | Expr::Member { .. }
+                | Expr::Slice { .. }
+                | Expr::Field { .. }
+                | Expr::Unary { .. }
+                | Expr::Binary { .. }
+                | Expr::Select { .. }
+                | Expr::Call { .. }
+                | Expr::For { .. }
+                | Expr::Ask { .. }
+                | Expr::Add { .. } => {}
+            }
+        }
     }
 
     fn resolve(
@@ -292,9 +350,9 @@ impl<F: FuncNode> Validator<'_, F> {
         match self.vars.get(var.var()) {
             None => return Err(InvalidVar),
             Some(Scope::Defined | Scope::Expired) => return Err(Redeclare),
-            Some(Scope::Undefined) => self.vars[var.var()] = Scope::Defined,
+            Some(Scope::Undefined) => {} // will set to `Defined` after processing `expr`
         }
-        let t = self.var_ty_id(*var).unwrap();
+        let t = self.var_ty_id(*var);
         let ty = self.ty(t);
 
         match expr {
@@ -313,7 +371,7 @@ impl<F: FuncNode> Validator<'_, F> {
                             return Err(ArraySize);
                         }
                         for (i, &x) in elems.iter().enumerate() {
-                            match self.var_ty_id(x) {
+                            match self.get_ty_id(x) {
                                 Some(ti) => check(ti == elem, ArrayElemType(i))?,
                                 None => return Err(ArrayInvalidElem(i)),
                             }
@@ -331,7 +389,7 @@ impl<F: FuncNode> Validator<'_, F> {
                     }
                     for (i, (&x, &xt)) in members.iter().zip(types.iter()).enumerate() {
                         let id = id::member(i);
-                        match self.var_ty_id(x) {
+                        match self.get_ty_id(x) {
                             Some(tx) => check(tx == xt, TupleMemberType(id))?,
                             None => return Err(TupleInvalidMember(id)),
                         }
@@ -342,11 +400,11 @@ impl<F: FuncNode> Validator<'_, F> {
             },
 
             &Expr::Index { array, index } => {
-                let arr = self.var_ty(array).ok_or(IndexInvalidArray)?;
-                let index = self.var_ty_id(index).ok_or(IndexInvalidIndex)?;
+                let arr = self.get_ty(array).ok_or(IndexInvalidArray)?;
+                let index = self.get_ty_id(index).ok_or(IndexInvalidIndex)?;
                 check(*arr == Ty::Array { index, elem: t }, IndexType)
             }
-            &Expr::Member { tuple, member } => match self.var_ty(tuple) {
+            &Expr::Member { tuple, member } => match self.get_ty(tuple) {
                 Some(Ty::Tuple { members }) => match members.get(member.member()) {
                     Some(&mem) => check(t == mem, MemberType),
                     None => Err(MemberInvalidMember),
@@ -356,8 +414,8 @@ impl<F: FuncNode> Validator<'_, F> {
             },
 
             &Expr::Slice { array, index } => {
-                let array = self.var_ty(array).ok_or(SliceInvalidArray)?;
-                let index = self.var_ty_id(index).ok_or(SliceInvalidIndex)?;
+                let array = self.get_ty(array).ok_or(SliceInvalidArray)?;
+                let index = self.get_ty_id(index).ok_or(SliceInvalidIndex)?;
                 let (scope_arr, arr) = match array {
                     &Ty::Ref { scope, inner } => (scope, inner),
                     _ => return Err(SliceArrayNotRef),
@@ -370,7 +428,7 @@ impl<F: FuncNode> Validator<'_, F> {
                 check(*self.ty(arr) == Ty::Array { index, elem }, SliceType)
             }
             &Expr::Field { tuple, member } => {
-                let (scope_tup, tup) = match self.var_ty(tuple).ok_or(FieldInvalidTuple)? {
+                let (scope_tup, tup) = match self.get_ty(tuple).ok_or(FieldInvalidTuple)? {
                     &Ty::Ref { scope, inner } => (scope, inner),
                     _ => return Err(FieldTupleNotRef),
                 };
@@ -389,7 +447,7 @@ impl<F: FuncNode> Validator<'_, F> {
             }
 
             &Expr::Unary { op, arg } => {
-                let x = self.var_ty_id(arg).ok_or(UnaryInvalidArg)?;
+                let x = self.get_ty_id(arg).ok_or(UnaryInvalidArg)?;
                 let p = match op {
                     Unop::Not => *ty == Ty::Bool && x == t,
                     Unop::Neg | Unop::Abs | Unop::Sqrt => *ty == Ty::F64 && x == t,
@@ -397,8 +455,8 @@ impl<F: FuncNode> Validator<'_, F> {
                 check(p, UnaryType)
             }
             &Expr::Binary { op, left, right } => {
-                let l = self.var_ty_id(left).ok_or(BinaryInvalidLeft)?;
-                let r = self.var_ty_id(right).ok_or(BinaryInvalidRight)?;
+                let l = self.get_ty_id(left).ok_or(BinaryInvalidLeft)?;
+                let r = self.get_ty_id(right).ok_or(BinaryInvalidRight)?;
                 let p = match op {
                     Binop::And | Binop::Or | Binop::Iff | Binop::Xor => {
                         *ty == Ty::Bool && l == t && r == t
@@ -413,9 +471,9 @@ impl<F: FuncNode> Validator<'_, F> {
                 check(p, BinaryType)
             }
             &Expr::Select { cond, then, els } => {
-                let c = self.var_ty(cond).ok_or(SelectInvalidCond)?;
-                let a = self.var_ty_id(then).ok_or(SelectInvalidThen)?;
-                let b = self.var_ty_id(els).ok_or(SelectInvalidEls)?;
+                let c = self.get_ty(cond).ok_or(SelectInvalidCond)?;
+                let a = self.get_ty_id(then).ok_or(SelectInvalidThen)?;
+                let b = self.get_ty_id(els).ok_or(SelectInvalidEls)?;
                 check(*c == Ty::Bool && a == b && t == a, SelectType)
             }
 
@@ -444,7 +502,7 @@ impl<F: FuncNode> Validator<'_, F> {
                         return Err(CallArgsCount);
                     }
                     for (i, (expected, &actual)) in g.params.iter().zip(args.iter()).enumerate() {
-                        match self.var_ty_id(actual) {
+                        match self.get_ty_id(actual) {
                             Some(arg) => check(
                                 arg == types[g.vars[expected.var()].ty()].unwrap(),
                                 CallArg(i),
@@ -457,11 +515,21 @@ impl<F: FuncNode> Validator<'_, F> {
                 None => Err(CallFunction),
             },
             Expr::For {
-                index,
+                index: _, // soon to be removed
                 arg,
                 body,
                 ret,
-            } => todo!(),
+            } => {
+                let index = self.bind(*arg).ok_or(ForInvalidArg)?;
+                check(self.constr(index).contains(Constraint::Index), ForNotIndex)?;
+                for (i, instr) in body.iter().enumerate() {
+                    self.instr(instr).map_err(|e| ForBody(i, Box::new(e)))?;
+                }
+                let elem = self.get_ty_id(*ret).ok_or(ForInvalidRet)?;
+                self.vars[arg.var()] = Scope::Expired;
+                self.expire(body);
+                check(*self.ty(t) == Ty::Array { index, elem }, ForType)
+            }
             Expr::Read {
                 var,
                 arg,
@@ -475,7 +543,7 @@ impl<F: FuncNode> Validator<'_, F> {
                 ret,
             } => todo!(),
 
-            &Expr::Ask { var } => match self.var_ty(var).ok_or(AskInvalidVar)? {
+            &Expr::Ask { var } => match self.get_ty(var).ok_or(AskInvalidVar)? {
                 &Ty::Ref { scope, inner } => {
                     check(self.constr(scope).contains(Constraint::Read), AskRead)?;
                     check(t == inner, AskType)
@@ -483,8 +551,8 @@ impl<F: FuncNode> Validator<'_, F> {
                 _ => Err(AskNotRef),
             },
             &Expr::Add { accum, addend } => {
-                let acc = self.var_ty(accum).ok_or(AddInvalidAccum)?;
-                let add = self.var_ty_id(addend).ok_or(AddInvalidAddend)?;
+                let acc = self.get_ty(accum).ok_or(AddInvalidAccum)?;
+                let add = self.get_ty_id(addend).ok_or(AddInvalidAddend)?;
                 match acc {
                     &Ty::Ref { scope, inner } => {
                         check(self.constr(scope).contains(Constraint::Accum), AddAccum)?;
@@ -493,7 +561,10 @@ impl<F: FuncNode> Validator<'_, F> {
                     _ => Err(AddNotRef),
                 }
             }
-        }
+        }?;
+
+        self.vars[var.var()] = Scope::Defined;
+        Ok(())
     }
 }
 
