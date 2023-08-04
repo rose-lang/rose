@@ -341,7 +341,6 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                 Ok(self.instr(
                     v,
                     ir::Expr::For {
-                        index: i,
                         arg,
                         body,
                         ret: elem,
