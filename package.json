@@ -12,6 +12,7 @@
     "esbuild": "^0.18",
     "vite": "^4",
     "vite-plugin-top-level-await": "^1",
-    "vitest": "^0.33"
+    "vitest": "^0.33",
+    "wasm-opt": "^1"
   }
 }
