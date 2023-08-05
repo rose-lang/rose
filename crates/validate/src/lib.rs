@@ -729,6 +729,9 @@ pub enum Error {
     #[error("variable ID for parameter {0} is out of range")]
     InvalidParam(usize),
 
+    #[error("variable ID for parameter {0} was already used")]
+    DuplicateParam(usize),
+
     #[error("instruction {0} is invalid")]
     InvalidBody(usize, #[source] InstrError),
 
@@ -835,9 +838,13 @@ pub fn validate(f: impl FuncNode) -> Result<(), Error> {
     for (i, param) in def.params.iter().enumerate() {
         match vars.get_mut(param.var()) {
             None => return Err(Error::InvalidParam(i)),
-            Some(scope) => {
-                *scope = Scope::Defined;
-            }
+            Some(scope) => match *scope {
+                Scope::Undefined => {
+                    *scope = Scope::Defined;
+                }
+                Scope::Defined => return Err(Error::DuplicateParam(i)),
+                Scope::Expired => unreachable!(),
+            },
         }
     }
 
@@ -1304,6 +1311,26 @@ mod tests {
     }
 
     #[test]
+    fn test_duplicate_param() {
+        let res = validate(FuncInSlice {
+            funcs: &[Function {
+                generics: [].into(),
+                types: [Ty::Unit].into(),
+                vars: [id::ty(0), id::ty(0)].into(),
+                params: [id::var(0), id::var(0)].into(),
+                ret: id::var(1),
+                body: [Instr {
+                    var: id::var(1),
+                    expr: Expr::Unit,
+                }]
+                .into(),
+            }],
+            id: id::function(0),
+        });
+        assert_eq!(res, Err(Error::DuplicateParam(1)));
+    }
+
+    #[test]
     fn test_invalid_ret() {
         let res = validate(FuncInSlice {
             funcs: &[Function {
@@ -1761,6 +1788,643 @@ mod tests {
                 id: id::function(0),
             });
             assert_eq!(res, err(0, IndexInvalidIndex));
+        }
+
+        #[test]
+        fn test_index_type() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index].into(),
+                    types: [
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::F64,
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(1),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(2), id::ty(0), id::ty(0)].into(),
+                    params: [id::var(0), id::var(1)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Index {
+                            array: id::var(0),
+                            index: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, IndexType));
+        }
+
+        #[test]
+        fn test_member_invalid_tuple() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Tuple {
+                            members: [id::ty(0)].into(),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(1)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Member {
+                            tuple: id::var(0),
+                            member: id::member(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, MemberInvalidTuple));
+        }
+
+        #[test]
+        fn test_member_not_tuple() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Unit].into(),
+                    vars: [id::ty(0), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Member {
+                            tuple: id::var(0),
+                            member: id::member(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, MemberNotTuple));
+        }
+
+        #[test]
+        fn test_member_invalid_member() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Tuple { members: [].into() }].into(),
+                    vars: [id::ty(0), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Member {
+                            tuple: id::var(0),
+                            member: id::member(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, MemberInvalidMember));
+        }
+
+        #[test]
+        fn test_member_type() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::F64,
+                        Ty::Tuple {
+                            members: [id::ty(1)].into(),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Member {
+                            tuple: id::var(0),
+                            member: id::member(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, MemberType));
+        }
+
+        #[test]
+        fn test_slice_invalid_array() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index].into(),
+                    types: [
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(1)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Slice {
+                            array: id::var(2),
+                            index: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, SliceInvalidArray));
+        }
+
+        #[test]
+        fn test_slice_invalid_index() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index].into(),
+                    types: [
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(1)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Slice {
+                            array: id::var(0),
+                            index: id::var(2),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, SliceInvalidIndex));
+        }
+
+        #[test]
+        fn test_slice_array_not_ref() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index].into(),
+                    types: [
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(1), id::ty(0)].into(),
+                    params: [id::var(0), id::var(1)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Slice {
+                            array: id::var(0),
+                            index: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, SliceArrayNotRef));
+        }
+
+        #[test]
+        fn test_slice_not_ref() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index, EnumSet::empty()].into(),
+                    types: [
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(0),
+                        },
+                        Ty::Generic { id: id::generic(1) },
+                        Ty::Ref {
+                            scope: id::ty(2),
+                            inner: id::ty(1),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(3), id::ty(0), id::ty(0)].into(),
+                    params: [id::var(0), id::var(1)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Slice {
+                            array: id::var(0),
+                            index: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, SliceNotRef));
+        }
+
+        #[test]
+        fn test_slice_scope() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [
+                        Constraint::Value | Constraint::Index,
+                        EnumSet::empty(),
+                        EnumSet::empty(),
+                    ]
+                    .into(),
+                    types: [
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(0),
+                        },
+                        Ty::Generic { id: id::generic(1) },
+                        Ty::Generic { id: id::generic(2) },
+                        Ty::Ref {
+                            scope: id::ty(3),
+                            inner: id::ty(0),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(2),
+                            inner: id::ty(1),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(5), id::ty(0), id::ty(4)].into(),
+                    params: [id::var(0), id::var(1)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Slice {
+                            array: id::var(0),
+                            index: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, SliceScope));
+        }
+
+        #[test]
+        fn test_slice_type() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index, EnumSet::empty()].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(1),
+                            elem: id::ty(1),
+                        },
+                        Ty::Generic { id: id::generic(1) },
+                        Ty::Ref {
+                            scope: id::ty(3),
+                            inner: id::ty(0),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(3),
+                            inner: id::ty(2),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(5), id::ty(1), id::ty(4)].into(),
+                    params: [id::var(0), id::var(1)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Slice {
+                            array: id::var(0),
+                            index: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, SliceType));
+        }
+
+        #[test]
+        fn test_unary_invalid_arg() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Bool].into(),
+                    vars: [id::ty(0)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Unary {
+                            op: Unop::Not,
+                            arg: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, UnaryInvalidArg));
+        }
+
+        fn example_unary_type(types: Box<[Ty]>, op: Unop) {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types,
+                    vars: [id::ty(0), id::ty(1)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Unary {
+                            op,
+                            arg: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, UnaryType));
+        }
+
+        #[test]
+        fn test_unary_type_bool_arg() {
+            example_unary_type([Ty::Unit, Ty::Bool].into(), Unop::Not)
+        }
+
+        #[test]
+        fn test_unary_type_bool_ret() {
+            example_unary_type([Ty::Bool, Ty::Unit].into(), Unop::Not)
+        }
+
+        #[test]
+        fn test_unary_type_f64_arg() {
+            example_unary_type([Ty::Unit, Ty::F64].into(), Unop::Neg)
+        }
+
+        #[test]
+        fn test_unary_type_f64_ret() {
+            example_unary_type([Ty::F64, Ty::Unit].into(), Unop::Neg)
+        }
+
+        #[test]
+        fn test_binary_invalid_left() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Bool].into(),
+                    vars: [id::ty(0)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Binary {
+                            op: Binop::And,
+                            left: id::var(1),
+                            right: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, BinaryInvalidLeft));
+        }
+
+        #[test]
+        fn test_binary_invalid_right() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Bool].into(),
+                    vars: [id::ty(0), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Binary {
+                            op: Binop::And,
+                            left: id::var(0),
+                            right: id::var(2),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, BinaryInvalidRight));
+        }
+
+        fn example_binary_type(types: Box<[Ty]>, op: Binop) {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types,
+                    vars: [id::ty(0), id::ty(1), id::ty(2)].into(),
+                    params: [id::var(0), id::var(1)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Binary {
+                            op,
+                            left: id::var(0),
+                            right: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, BinaryType));
+        }
+
+        #[test]
+        fn test_binary_type_logic_left() {
+            example_binary_type([Ty::Unit, Ty::Bool, Ty::Bool].into(), Binop::And)
+        }
+
+        #[test]
+        fn test_binary_type_logic_right() {
+            example_binary_type([Ty::Bool, Ty::Unit, Ty::Bool].into(), Binop::Or)
+        }
+
+        #[test]
+        fn test_binary_type_logic_ret() {
+            example_binary_type([Ty::Bool, Ty::Bool, Ty::Unit].into(), Binop::Xor)
+        }
+
+        #[test]
+        fn test_binary_type_comp_left() {
+            example_binary_type([Ty::Unit, Ty::F64, Ty::Bool].into(), Binop::Lt)
+        }
+
+        #[test]
+        fn test_binary_type_comp_right() {
+            example_binary_type([Ty::F64, Ty::Unit, Ty::Bool].into(), Binop::Eq)
+        }
+
+        #[test]
+        fn test_binary_type_comp_ret() {
+            example_binary_type([Ty::F64, Ty::F64, Ty::Unit].into(), Binop::Gt)
+        }
+
+        #[test]
+        fn test_binary_type_arith_left() {
+            example_binary_type([Ty::Unit, Ty::F64, Ty::F64].into(), Binop::Add)
+        }
+
+        #[test]
+        fn test_binary_type_arith_right() {
+            example_binary_type([Ty::F64, Ty::Unit, Ty::F64].into(), Binop::Sub)
+        }
+
+        #[test]
+        fn test_binary_type_airth_ret() {
+            example_binary_type([Ty::F64, Ty::F64, Ty::Unit].into(), Binop::Mul)
+        }
+
+        fn example_select_invalid(cond: usize, then: usize, els: usize, e: InstrError) {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Bool].into(),
+                    vars: [id::ty(0), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Select {
+                            cond: id::var(cond),
+                            then: id::var(then),
+                            els: id::var(els),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, e));
+        }
+
+        #[test]
+        fn test_select_invalid_cond() {
+            example_select_invalid(1, 0, 0, SelectInvalidCond)
+        }
+
+        #[test]
+        fn test_select_invalid_then() {
+            example_select_invalid(0, 1, 0, SelectInvalidThen)
+        }
+
+        #[test]
+        fn test_select_invalid_els() {
+            example_select_invalid(0, 0, 1, SelectInvalidEls)
+        }
+
+        #[test]
+        fn test_select_type_cond() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Unit].into(),
+                    vars: [id::ty(0), id::ty(0), id::ty(0)].into(),
+                    params: [id::var(0), id::var(1)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Select {
+                            cond: id::var(0),
+                            then: id::var(1),
+                            els: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, SelectType));
+        }
+
+        #[test]
+        fn test_select_type_match() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Bool, Ty::Unit].into(),
+                    vars: [id::ty(0), id::ty(0), id::ty(1), id::ty(0)].into(),
+                    params: [id::var(0), id::var(1), id::var(2)].into(),
+                    ret: id::var(3),
+                    body: [Instr {
+                        var: id::var(3),
+                        expr: Expr::Select {
+                            cond: id::var(0),
+                            then: id::var(1),
+                            els: id::var(2),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, SelectType));
+        }
+
+        #[test]
+        fn test_select_type_ret() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Bool, Ty::Unit].into(),
+                    vars: [id::ty(0), id::ty(0), id::ty(0), id::ty(1)].into(),
+                    params: [id::var(0), id::var(1), id::var(2)].into(),
+                    ret: id::var(3),
+                    body: [Instr {
+                        var: id::var(3),
+                        expr: Expr::Select {
+                            cond: id::var(0),
+                            then: id::var(1),
+                            els: id::var(2),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, SelectType));
         }
     }
 }
