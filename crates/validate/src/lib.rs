@@ -145,11 +145,11 @@ pub enum InstrError {
     #[error("wrong number of generics")]
     CallGenericsCount,
 
-    #[error("type ID for generic {0} is not in scope")]
-    CallInvalidGeneric(usize),
+    #[error("type ID for generic {} is out of range", .0.generic())]
+    CallInvalidGeneric(id::Generic),
 
-    #[error("generic {0} does not satisfy its constraints")]
-    CallGeneric(usize),
+    #[error("generic {} does not satisfy its constraints", .0.generic())]
+    CallGeneric(id::Generic),
 
     #[error("wrong number of arguments")]
     CallArgsCount,
@@ -548,11 +548,13 @@ impl<F: FuncNode> Validator<'_, F> {
                     for (i, (expected, actual)) in
                         g.generics.iter().zip(generics.iter()).enumerate()
                     {
+                        let id = id::generic(i);
                         match self.types.get(actual.ty()) {
-                            Some(generic) => {
-                                check(self.constr(*generic).is_superset(*expected), CallGeneric(i))?
-                            }
-                            None => return Err(CallInvalidGeneric(i)),
+                            Some(generic) => check(
+                                self.constr(*generic).is_superset(*expected),
+                                CallGeneric(id),
+                            )?,
+                            None => return Err(CallInvalidGeneric(id)),
                         }
                     }
                     let mut types = vec![];
@@ -2425,6 +2427,272 @@ mod tests {
                 id: id::function(0),
             });
             assert_eq!(res, err(0, SelectType));
+        }
+
+        #[test]
+        fn test_call_function() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [Ty::Unit].into(),
+                    vars: [id::ty(0)].into(),
+                    params: [].into(),
+                    ret: id::var(0),
+                    body: [Instr {
+                        var: id::var(0),
+                        expr: Expr::Call {
+                            id: id::function(0),
+                            generics: [].into(),
+                            args: [].into(),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, CallFunction));
+        }
+
+        #[test]
+        fn test_call_generics_count() {
+            let res = validate(FuncInSlice {
+                funcs: &[
+                    Function {
+                        generics: [EnumSet::empty()].into(),
+                        types: [Ty::Unit].into(),
+                        vars: [id::ty(0)].into(),
+                        params: [].into(),
+                        ret: id::var(0),
+                        body: [Instr {
+                            var: id::var(0),
+                            expr: Expr::Unit,
+                        }]
+                        .into(),
+                    },
+                    Function {
+                        generics: [].into(),
+                        types: [Ty::Unit].into(),
+                        vars: [id::ty(0)].into(),
+                        params: [].into(),
+                        ret: id::var(0),
+                        body: [Instr {
+                            var: id::var(0),
+                            expr: Expr::Call {
+                                id: id::function(0),
+                                generics: [].into(),
+                                args: [].into(),
+                            },
+                        }]
+                        .into(),
+                    },
+                ],
+                id: id::function(1),
+            });
+            assert_eq!(res, err(0, CallGenericsCount));
+        }
+
+        #[test]
+        fn test_call_invalid_generic() {
+            let res = validate(FuncInSlice {
+                funcs: &[
+                    Function {
+                        generics: [EnumSet::only(Constraint::Index)].into(),
+                        types: [Ty::Generic { id: id::generic(0) }].into(),
+                        vars: [id::ty(0)].into(),
+                        params: [id::var(0)].into(),
+                        ret: id::var(0),
+                        body: [].into(),
+                    },
+                    Function {
+                        generics: [].into(),
+                        types: [Ty::Unit].into(),
+                        vars: [id::ty(0), id::ty(0)].into(),
+                        params: [id::var(0)].into(),
+                        ret: id::var(1),
+                        body: [Instr {
+                            var: id::var(1),
+                            expr: Expr::Call {
+                                id: id::function(0),
+                                generics: [id::ty(1)].into(),
+                                args: [id::var(0)].into(),
+                            },
+                        }]
+                        .into(),
+                    },
+                ],
+                id: id::function(1),
+            });
+            assert_eq!(res, err(0, CallInvalidGeneric(id::generic(0))));
+        }
+
+        #[test]
+        fn test_call_generic() {
+            let res = validate(FuncInSlice {
+                funcs: &[
+                    Function {
+                        generics: [EnumSet::only(Constraint::Index)].into(),
+                        types: [Ty::Generic { id: id::generic(0) }].into(),
+                        vars: [id::ty(0)].into(),
+                        params: [id::var(0)].into(),
+                        ret: id::var(0),
+                        body: [].into(),
+                    },
+                    Function {
+                        generics: [].into(),
+                        types: [Ty::Unit].into(),
+                        vars: [id::ty(0), id::ty(0)].into(),
+                        params: [id::var(0)].into(),
+                        ret: id::var(1),
+                        body: [Instr {
+                            var: id::var(1),
+                            expr: Expr::Call {
+                                id: id::function(0),
+                                generics: [id::ty(0)].into(),
+                                args: [id::var(0)].into(),
+                            },
+                        }]
+                        .into(),
+                    },
+                ],
+                id: id::function(1),
+            });
+            assert_eq!(res, err(0, CallGeneric(id::generic(0))));
+        }
+
+        #[test]
+        fn test_call_args_count() {
+            let res = validate(FuncInSlice {
+                funcs: &[
+                    Function {
+                        generics: [].into(),
+                        types: [Ty::Unit].into(),
+                        vars: [id::ty(0)].into(),
+                        params: [id::var(0)].into(),
+                        ret: id::var(0),
+                        body: [].into(),
+                    },
+                    Function {
+                        generics: [].into(),
+                        types: [Ty::Unit].into(),
+                        vars: [id::ty(0)].into(),
+                        params: [].into(),
+                        ret: id::var(0),
+                        body: [Instr {
+                            var: id::var(0),
+                            expr: Expr::Call {
+                                id: id::function(0),
+                                generics: [].into(),
+                                args: [].into(),
+                            },
+                        }]
+                        .into(),
+                    },
+                ],
+                id: id::function(1),
+            });
+            assert_eq!(res, err(0, CallArgsCount));
+        }
+
+        #[test]
+        fn test_call_invalid_arg() {
+            let res = validate(FuncInSlice {
+                funcs: &[
+                    Function {
+                        generics: [].into(),
+                        types: [Ty::Unit].into(),
+                        vars: [id::ty(0)].into(),
+                        params: [id::var(0)].into(),
+                        ret: id::var(0),
+                        body: [].into(),
+                    },
+                    Function {
+                        generics: [].into(),
+                        types: [Ty::Unit].into(),
+                        vars: [id::ty(0), id::ty(0)].into(),
+                        params: [id::var(0)].into(),
+                        ret: id::var(1),
+                        body: [Instr {
+                            var: id::var(1),
+                            expr: Expr::Call {
+                                id: id::function(0),
+                                generics: [].into(),
+                                args: [id::var(2)].into(),
+                            },
+                        }]
+                        .into(),
+                    },
+                ],
+                id: id::function(1),
+            });
+            assert_eq!(res, err(0, CallInvalidArg(0)));
+        }
+
+        #[test]
+        fn test_call_arg() {
+            let res = validate(FuncInSlice {
+                funcs: &[
+                    Function {
+                        generics: [].into(),
+                        types: [Ty::Unit].into(),
+                        vars: [id::ty(0)].into(),
+                        params: [id::var(0)].into(),
+                        ret: id::var(0),
+                        body: [].into(),
+                    },
+                    Function {
+                        generics: [].into(),
+                        types: [Ty::Unit, Ty::F64].into(),
+                        vars: [id::ty(1), id::ty(0)].into(),
+                        params: [id::var(0)].into(),
+                        ret: id::var(1),
+                        body: [Instr {
+                            var: id::var(1),
+                            expr: Expr::Call {
+                                id: id::function(0),
+                                generics: [].into(),
+                                args: [id::var(0)].into(),
+                            },
+                        }]
+                        .into(),
+                    },
+                ],
+                id: id::function(1),
+            });
+            assert_eq!(res, err(0, CallArg(0)));
+        }
+
+        #[test]
+        fn test_call_ret() {
+            let res = validate(FuncInSlice {
+                funcs: &[
+                    Function {
+                        generics: [].into(),
+                        types: [Ty::Unit].into(),
+                        vars: [id::ty(0)].into(),
+                        params: [id::var(0)].into(),
+                        ret: id::var(0),
+                        body: [].into(),
+                    },
+                    Function {
+                        generics: [].into(),
+                        types: [Ty::Unit, Ty::F64].into(),
+                        vars: [id::ty(0), id::ty(1)].into(),
+                        params: [id::var(0)].into(),
+                        ret: id::var(1),
+                        body: [Instr {
+                            var: id::var(1),
+                            expr: Expr::Call {
+                                id: id::function(0),
+                                generics: [].into(),
+                                args: [id::var(0)].into(),
+                            },
+                        }]
+                        .into(),
+                    },
+                ],
+                id: id::function(1),
+            });
+            assert_eq!(res, err(0, CallRet));
         }
     }
 }
