@@ -155,9 +155,7 @@ pub enum Expr {
         args: Box<[id::Var]>,
     },
     For {
-        /// Must satisfy `Constraint::Index`.
-        index: id::Ty,
-        /// has type `index`.
+        /// Type must satisfy `Constraint::Index`.
         arg: id::Var,
         body: Box<[Instr]>,
         /// Variable from `body` holding an array element.
