@@ -811,60 +811,14 @@ pub fn interp(
     Ok(to_js_value(&ret)?)
 }
 
+// dont even need to construct a wrapper function, reals become dual numbers,
+// signature of function will have the same shape so can just return the function
 #[wasm_bindgen]
 pub fn derivative(f: &Func) -> Func {
     let g = Func {
         rc: Rc::new((vec![], rose_autodiff::forward(rose_autodiff::derivative(f)))),
     };
-    let (_, inner) = g.rc.as_ref();
-    let mems = |ty: id::Ty| -> &[id::Ty] {
-        match &inner.types[ty.ty()] {
-            rose::Ty::Tuple { members } => members,
-            _ => unreachable!(),
-        }
-    };
-    let outer = mems(inner.param);
-    let primal = mems(outer[0])[0];
-    let tangent = mems(outer[1])[0];
-    let mut types = inner.types.clone();
-    let generics = inner
-        .generics
-        .iter()
-        .enumerate()
-        .map(|(i, _)| {
-            let ty = id::ty(types.len());
-            types.push(rose::Ty::Generic { id: id::generic(i) });
-            ty
-        })
-        .collect();
-    let param = id::ty(types.len());
-    types.push(rose::Ty::Tuple {
-        members: vec![primal, tangent],
-    });
-    let ret = mems(inner.ret)[1];
-    let wrapper = rose::Function {
-        generics: inner.generics.clone(),
-        types,
-        params,
-        ret,
-        vars: vec![
-            param,
-            primal,
-            tangent,
-            outer[0],
-            outer[1],
-            inner.param,
-            inner.ret,
-            ret,
-        ],
-        body: vec![rose::Instr {
-            var: id::var(0),
-            expr: rose::Expr::Tuple {
-                members: vec![id::var(1), id::var(2)].into(),
-            },
-        }],
-    };
     Func {
-        rc: Rc::new((vec![g], wrapper)),
+        rc: Rc::new((vec![g])),
     }
 }
