@@ -3620,5 +3620,277 @@ mod tests {
             });
             assert_eq!(res, err(0, AccumType));
         }
+
+        #[test]
+        fn test_ask_invalid_var() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [EnumSet::only(Constraint::Read)].into(),
+                    types: [
+                        Ty::F64,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Ask { var: id::var(1) },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AskInvalidVar));
+        }
+
+        #[test]
+        fn test_ask_not_ref() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [EnumSet::only(Constraint::Read)].into(),
+                    types: [
+                        Ty::F64,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Ask { var: id::var(0) },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AskNotRef));
+        }
+
+        #[test]
+        fn test_ask_read() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [EnumSet::empty()].into(),
+                    types: [
+                        Ty::F64,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Ask { var: id::var(0) },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AskRead));
+        }
+
+        #[test]
+        fn test_ask_type() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [EnumSet::only(Constraint::Read)].into(),
+                    types: [
+                        Ty::F64,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(2), id::ty(2)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::Ask { var: id::var(0) },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AskType));
+        }
+
+        #[test]
+        fn add_invalid_accum() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [EnumSet::only(Constraint::Accum)].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::F64,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Ref {
+                            scope: id::ty(2),
+                            inner: id::ty(1),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(3), id::ty(1), id::ty(0)].into(),
+                    params: [id::var(0), id::var(1)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Add {
+                            accum: id::var(2),
+                            addend: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AddInvalidAccum));
+        }
+
+        #[test]
+        fn add_invalid_addend() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [EnumSet::only(Constraint::Accum)].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::F64,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Ref {
+                            scope: id::ty(2),
+                            inner: id::ty(1),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(3), id::ty(1), id::ty(0)].into(),
+                    params: [id::var(0), id::var(1)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Add {
+                            accum: id::var(0),
+                            addend: id::var(2),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AddInvalidAddend));
+        }
+
+        #[test]
+        fn add_not_ref() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [EnumSet::only(Constraint::Accum)].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::F64,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Ref {
+                            scope: id::ty(2),
+                            inner: id::ty(1),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(1), id::ty(1), id::ty(0)].into(),
+                    params: [id::var(0), id::var(1)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Add {
+                            accum: id::var(0),
+                            addend: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AddNotRef));
+        }
+
+        #[test]
+        fn add_accum() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [EnumSet::empty()].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::F64,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Ref {
+                            scope: id::ty(2),
+                            inner: id::ty(1),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(3), id::ty(1), id::ty(0)].into(),
+                    params: [id::var(0), id::var(1)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Add {
+                            accum: id::var(0),
+                            addend: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AddAccum));
+        }
+
+        #[test]
+        fn add_type() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [EnumSet::only(Constraint::Accum)].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::F64,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Ref {
+                            scope: id::ty(2),
+                            inner: id::ty(1),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(3), id::ty(1), id::ty(1)].into(),
+                    params: [id::var(0), id::var(1)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Add {
+                            accum: id::var(0),
+                            addend: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AddType));
+        }
     }
 }
