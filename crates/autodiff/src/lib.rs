@@ -460,17 +460,11 @@ impl Forward<'_> {
             }
 
             // recursively call expr on the blocks in the for loop
-            &Expr::For {
-                index,
-                arg,
-                body,
-                ret,
-            } => {
+            &Expr::For { arg, body, ret } => {
                 let x = self.set(
                     code,
                     ty,
                     Expr::For {
-                        index,
                         arg,
                         body: body
                             .iter()
