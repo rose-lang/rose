@@ -578,12 +578,7 @@ impl<F: FuncNode> Validator<'_, F> {
                 }
                 None => Err(CallFunction),
             },
-            Expr::For {
-                index: _, // soon to be removed
-                arg,
-                body,
-                ret,
-            } => {
+            Expr::For { arg, body, ret } => {
                 let index = self.bind(*arg).ok_or(ForInvalidArg)?;
                 // no need to check `Index` constraint; existence of `Array` type below covers that
                 for (i, instr) in body.iter().enumerate() {
