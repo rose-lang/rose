@@ -166,11 +166,11 @@ pub enum InstrError {
     #[error("index variable ID is not fresh")]
     ForInvalidArg,
 
-    #[error("element variable ID is not in scope")]
-    ForInvalidRet,
-
     #[error("instruction {0} is invalid")]
     ForBody(usize, #[source] Box<InstrError>),
+
+    #[error("element variable ID is not in scope")]
+    ForInvalidRet,
 
     #[error("for type error")]
     ForType,
@@ -2722,37 +2722,6 @@ mod tests {
         }
 
         #[test]
-        fn test_for_invalid_ret() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
-                    generics: [Constraint::Value | Constraint::Index].into(),
-                    types: [
-                        Ty::Generic { id: id::generic(0) },
-                        Ty::Array {
-                            index: id::ty(0),
-                            elem: id::ty(0),
-                        },
-                    ]
-                    .into(),
-                    vars: [id::ty(0), id::ty(0), id::ty(1)].into(),
-                    params: [id::var(0)].into(),
-                    ret: id::var(2),
-                    body: [Instr {
-                        var: id::var(2),
-                        expr: Expr::For {
-                            arg: id::var(1),
-                            body: [].into(),
-                            ret: id::var(2),
-                        },
-                    }]
-                    .into(),
-                }],
-                id: id::function(0),
-            });
-            assert_eq!(res, err(0, ForInvalidRet));
-        }
-
-        #[test]
         fn test_for_body() {
             let res = validate(FuncInSlice {
                 funcs: &[Function {
@@ -2785,6 +2754,37 @@ mod tests {
                 id: id::function(0),
             });
             assert_eq!(res, err(0, ForBody(0, Box::new(UnitType))));
+        }
+
+        #[test]
+        fn test_for_invalid_ret() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index].into(),
+                    types: [
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(0), id::ty(1)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::For {
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(2),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ForInvalidRet));
         }
 
         #[test]
@@ -2821,6 +2821,804 @@ mod tests {
                 id: id::function(0),
             });
             assert_eq!(res, err(0, ForType));
+        }
+
+        #[test]
+        fn test_read_invalid_var() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Read,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Read {
+                            var: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ReadInvalidVar));
+        }
+
+        #[test]
+        fn test_read_invalid_arg() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Read,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Read {
+                            var: id::var(0),
+                            arg: id::var(0),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ReadInvalidArg));
+        }
+
+        #[test]
+        fn test_read_not_ref() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Read,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(0), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Read {
+                            var: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ReadNotRef));
+        }
+
+        #[test]
+        fn test_read_not_scope() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [EnumSet::only(Constraint::Read)].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Read {
+                            var: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ReadNotScope));
+        }
+
+        #[test]
+        fn test_read_scope_kind() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Accum,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Read {
+                            var: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ReadScopeKind));
+        }
+
+        #[test]
+        fn test_read_scope_id() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Read,
+                            id: id::var(0),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Read {
+                            var: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ReadScopeId));
+        }
+
+        #[test]
+        fn test_read_inner() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::F64,
+                        Ty::Scope {
+                            kind: Constraint::Read,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(2),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(1), id::ty(3), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Read {
+                            var: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ReadInner));
+        }
+
+        #[test]
+        fn test_read_body() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Read,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Read {
+                            var: id::var(0),
+                            arg: id::var(1),
+                            body: [Instr {
+                                var: id::var(0),
+                                expr: Expr::Unit,
+                            }]
+                            .into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ReadBody(0, Box::new(Redeclare))));
+        }
+
+        #[test]
+        fn test_read_invalid_ret() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Read,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Read {
+                            var: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(2),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ReadInvalidRet));
+        }
+
+        #[test]
+        fn test_read_escape() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Read,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Read {
+                            var: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ReadEscape));
+        }
+
+        #[test]
+        fn test_read_type() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::F64,
+                        Ty::Scope {
+                            kind: Constraint::Read,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(2),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(3), id::ty(1)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Read {
+                            var: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ReadType));
+        }
+
+        #[test]
+        fn test_accum_invalid_shape() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Accum,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Accum {
+                            shape: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AccumInvalidShape));
+        }
+
+        #[test]
+        fn test_accum_invalid_arg() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Accum,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Accum {
+                            shape: id::var(0),
+                            arg: id::var(0),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AccumInvalidArg));
+        }
+
+        #[test]
+        fn test_accum_not_ref() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Accum,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(0), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Accum {
+                            shape: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AccumNotRef));
+        }
+
+        #[test]
+        fn test_accum_not_scope() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [EnumSet::only(Constraint::Accum)].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Accum {
+                            shape: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AccumNotScope));
+        }
+
+        #[test]
+        fn test_accum_scope_kind() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Read,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Accum {
+                            shape: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AccumScopeKind));
+        }
+
+        #[test]
+        fn test_accum_scope_id() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Accum,
+                            id: id::var(0),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Accum {
+                            shape: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AccumScopeId));
+        }
+
+        #[test]
+        fn test_accum_inner() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::F64,
+                        Ty::Scope {
+                            kind: Constraint::Accum,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(2),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(1), id::ty(3), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Accum {
+                            shape: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AccumInner));
+        }
+
+        #[test]
+        fn test_accum_body() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Accum,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Accum {
+                            shape: id::var(0),
+                            arg: id::var(1),
+                            body: [Instr {
+                                var: id::var(0),
+                                expr: Expr::Unit,
+                            }]
+                            .into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AccumBody(0, Box::new(Redeclare))));
+        }
+
+        #[test]
+        fn test_accum_invalid_ret() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Accum,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Accum {
+                            shape: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(2),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AccumInvalidRet));
+        }
+
+        #[test]
+        fn test_accum_escape() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Scope {
+                            kind: Constraint::Accum,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(1),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(2), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Accum {
+                            shape: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(1),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AccumEscape));
+        }
+
+        #[test]
+        fn test_accum_type() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::F64,
+                        Ty::Scope {
+                            kind: Constraint::Accum,
+                            id: id::var(1),
+                        },
+                        Ty::Ref {
+                            scope: id::ty(2),
+                            inner: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(3), id::ty(1)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::Accum {
+                            shape: id::var(0),
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, AccumType));
         }
     }
 }
