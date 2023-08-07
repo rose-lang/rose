@@ -2689,5 +2689,138 @@ mod tests {
             });
             assert_eq!(res, err(0, CallRet));
         }
+
+        #[test]
+        fn test_for_invalid_arg() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index].into(),
+                    types: [
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(1)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(1),
+                    body: [Instr {
+                        var: id::var(1),
+                        expr: Expr::For {
+                            arg: id::var(0),
+                            body: [].into(),
+                            ret: id::var(0),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ForInvalidArg));
+        }
+
+        #[test]
+        fn test_for_invalid_ret() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index].into(),
+                    types: [
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(0), id::ty(1)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::For {
+                            arg: id::var(1),
+                            body: [].into(),
+                            ret: id::var(2),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ForInvalidRet));
+        }
+
+        #[test]
+        fn test_for_body() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index].into(),
+                    types: [
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(0),
+                            elem: id::ty(0),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(0), id::ty(0), id::ty(1)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::For {
+                            arg: id::var(1),
+                            body: [Instr {
+                                var: id::var(2),
+                                expr: Expr::Unit,
+                            }]
+                            .into(),
+                            ret: id::var(2),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ForBody(0, Box::new(UnitType))));
+        }
+
+        #[test]
+        fn test_for_type() {
+            let res = validate(FuncInSlice {
+                funcs: &[Function {
+                    generics: [Constraint::Value | Constraint::Index].into(),
+                    types: [
+                        Ty::Unit,
+                        Ty::Generic { id: id::generic(0) },
+                        Ty::Array {
+                            index: id::ty(1),
+                            elem: id::ty(1),
+                        },
+                    ]
+                    .into(),
+                    vars: [id::ty(1), id::ty(1), id::ty(0)].into(),
+                    params: [id::var(0)].into(),
+                    ret: id::var(2),
+                    body: [Instr {
+                        var: id::var(2),
+                        expr: Expr::For {
+                            arg: id::var(1),
+                            body: [Instr {
+                                var: id::var(2),
+                                expr: Expr::Unit,
+                            }]
+                            .into(),
+                            ret: id::var(2),
+                        },
+                    }]
+                    .into(),
+                }],
+                id: id::function(0),
+            });
+            assert_eq!(res, err(0, ForType));
+        }
     }
 }
