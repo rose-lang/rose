@@ -232,13 +232,8 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
                 let vals = args.iter().map(|id| self.vars[id.var()].clone().unwrap());
                 call(self.f.get(*id).unwrap(), self.typemap, &resolved, vals)
             }
-            Expr::For {
-                index,
-                arg,
-                body,
-                ret,
-            } => {
-                let n = match self.typemap[self.types[index.ty()].ty()] {
+            Expr::For { arg, body, ret } => {
+                let n = match self.typemap[self.types[self.f.def().vars[arg.var()].ty()].ty()] {
                     Ty::Fin { size } => size,
                     _ => unreachable!(),
                 };

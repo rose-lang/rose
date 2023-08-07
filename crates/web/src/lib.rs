@@ -134,13 +134,13 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                 print_elems(s, 'x', args.iter().map(|arg| arg.var()))?;
                 writeln!(&mut s, ")")?;
             }
-            rose::Expr::For {
-                index,
-                arg,
-                body,
-                ret,
-            } => {
-                writeln!(&mut s, "for x{}: T{} {{", arg.var(), index.ty())?;
+            rose::Expr::For { arg, body, ret } => {
+                writeln!(
+                    &mut s,
+                    "for x{}: T{} {{",
+                    arg.var(),
+                    def.vars[arg.var()].ty()
+                )?;
                 print_block(s, def, spaces + 2, body, *ret)?;
                 for _ in 0..spaces {
                     write!(&mut s, " ")?;
@@ -768,14 +768,7 @@ impl Context {
 
     // `rose::Expr::For`
     #[wasm_bindgen]
-    pub fn arr(
-        &mut self,
-        b: &mut Block,
-        index: usize,
-        arg: usize,
-        body: Block,
-        out: usize,
-    ) -> usize {
+    pub fn arr(&mut self, b: &mut Block, arg: usize, body: Block, out: usize) -> usize {
         let arg = id::var(arg);
         let ret = id::var(out);
         let ty = self.ty(rose::Ty::Array {
@@ -783,7 +776,6 @@ impl Context {
             elem: self.get(ret),
         });
         let expr = rose::Expr::For {
-            index: id::ty(index),
             arg,
             body: body.code.into(),
             ret,
