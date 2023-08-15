@@ -52,6 +52,52 @@ impl Forward<'_> {
         id
     }
 
+    fn extract(
+        &mut self,
+        left: id::Var,
+        right: id::Var,
+        code: &mut Vec<Instr>,
+        ty: id::Ty,
+    ) -> (id::Var, id::Var, id::Var, id::Var) {
+        // extract the components of the left tuple
+        let left_x = self.set(
+            code,
+            ty,
+            Expr::Member {
+                tuple: left,
+                member: id::member(0),
+            },
+        );
+        let left_dx = self.set(
+            code,
+            ty,
+            Expr::Member {
+                tuple: left,
+                member: id::member(1),
+            },
+        );
+
+        // extract the components of the right tuple
+        let right_x = self.set(
+            code,
+            ty,
+            Expr::Member {
+                tuple: right,
+                member: id::member(0),
+            },
+        );
+        let right_dx = self.set(
+            code,
+            ty,
+            Expr::Member {
+                tuple: right,
+                member: id::member(1),
+            },
+        );
+
+        (left_x, left_dx, right_x, right_dx)
+    }
+
     fn unitvar(&mut self) -> id::Var {
         let ty = self.newtype(Ty::Unit);
         self.newvar(ty)
@@ -212,41 +258,8 @@ impl Forward<'_> {
                     }
 
                     Binop::Add | Binop::Sub => {
-                        // extract the components of the left tuple
-                        let left_x = self.set(
-                            code,
-                            ty,
-                            Expr::Member {
-                                tuple: left,
-                                member: id::member(0),
-                            },
-                        );
-                        let left_dx = self.set(
-                            code,
-                            ty,
-                            Expr::Member {
-                                tuple: left,
-                                member: id::member(1),
-                            },
-                        );
-
-                        // extract the components of the right tuple
-                        let right_x = self.set(
-                            code,
-                            ty,
-                            Expr::Member {
-                                tuple: right,
-                                member: id::member(0),
-                            },
-                        );
-                        let right_dx = self.set(
-                            code,
-                            ty,
-                            Expr::Member {
-                                tuple: right,
-                                member: id::member(1),
-                            },
-                        );
+                        let (left_x, left_dx, right_x, right_dx) =
+                            self.extract(left, right, code, ty);
 
                         // add/subtract the components
                         let z_x = self.set(
@@ -274,39 +287,8 @@ impl Forward<'_> {
                         z
                     }
                     Binop::Mul => {
-                        let left_x = self.set(
-                            code,
-                            ty,
-                            Expr::Member {
-                                tuple: left,
-                                member: id::member(0),
-                            },
-                        );
-                        let left_dx = self.set(
-                            code,
-                            ty,
-                            Expr::Member {
-                                tuple: left,
-                                member: id::member(1),
-                            },
-                        );
-
-                        let right_x = self.set(
-                            code,
-                            ty,
-                            Expr::Member {
-                                tuple: right,
-                                member: id::member(0),
-                            },
-                        );
-                        let right_dx = self.set(
-                            code,
-                            ty,
-                            Expr::Member {
-                                tuple: right,
-                                member: id::member(1),
-                            },
-                        );
+                        let (left_x, left_dx, right_x, right_dx) =
+                            self.extract(left, right, code, ty);
 
                         let z_x = self.set(
                             code,
@@ -352,39 +334,8 @@ impl Forward<'_> {
                         z
                     }
                     Binop::Div => {
-                        let left_x = self.set(
-                            code,
-                            ty,
-                            Expr::Member {
-                                tuple: left,
-                                member: id::member(0),
-                            },
-                        );
-                        let left_dx = self.set(
-                            code,
-                            ty,
-                            Expr::Member {
-                                tuple: left,
-                                member: id::member(1),
-                            },
-                        );
-
-                        let right_x = self.set(
-                            code,
-                            ty,
-                            Expr::Member {
-                                tuple: right,
-                                member: id::member(0),
-                            },
-                        );
-                        let right_dx = self.set(
-                            code,
-                            ty,
-                            Expr::Member {
-                                tuple: right,
-                                member: id::member(1),
-                            },
-                        );
+                        let (left_x, left_dx, right_x, right_dx) =
+                            self.extract(left, right, code, ty);
 
                         let z_x = self.set(
                             code,
