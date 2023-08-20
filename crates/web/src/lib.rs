@@ -1,5 +1,5 @@
 use enumset::EnumSet;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use rose::id;
 use serde::Serialize;
 use std::rc::Rc;
@@ -44,7 +44,7 @@ pub fn layouts() -> Result<JsValue, serde_wasm_bindgen::Error> {
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
 pub struct Func {
-    rc: Rc<(Vec<Func>, rose::Function)>,
+    rc: Rc<(Box<[Func]>, rose::Function)>,
 }
 
 impl<'a> rose::FuncNode for &'a Func {
@@ -281,52 +281,390 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
     Ok(s)
 }
 
+enum Extra {
+    Constant,
+    Parent(Vec<rose::Instr>),
+    Child(id::Var),
+    Expired,
+}
+
+struct Var {
+    ty: id::Ty,
+    extra: Extra,
+}
+
 /// A function under construction.
 #[wasm_bindgen]
-pub struct Context {
+pub struct FuncBuilder {
     functions: Vec<Func>,
-    generics: Vec<EnumSet<rose::Constraint>>,
-    types: IndexSet<rose::Ty>,
-    vars: Vec<id::Ty>,
+    generics: Box<[EnumSet<rose::Constraint>]>,
+    types: IndexMap<rose::Ty, EnumSet<rose::Constraint>>,
+    vars: Vec<Var>,
     params: Vec<id::Var>,
+    constants: Vec<rose::Instr>,
 }
 
 #[wasm_bindgen]
-pub fn bake(ctx: Context, out: usize, main: Block) -> Func {
-    let Context {
-        functions,
-        generics,
-        types,
-        params,
-        vars,
-    } = ctx;
-    Func {
-        rc: Rc::new((
-            functions,
-            rose::Function {
-                generics: generics.into(),
-                types: types.into_iter().collect(),
-                params: params.into(),
-                ret: id::var(out),
-                vars: vars.into(),
-                body: main.code.into(),
+impl FuncBuilder {
+    #[wasm_bindgen(constructor)]
+    pub fn new(generics: usize) -> Self {
+        Self {
+            functions: vec![],
+            generics: vec![EnumSet::only(rose::Constraint::Index); generics].into(),
+            types: IndexMap::new(),
+            vars: vec![],
+            params: vec![],
+            constants: vec![],
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn finish(mut self, out: usize, body: Block) -> Func {
+        let mut code = std::mem::take(&mut self.constants);
+        body.finish(&mut self, &mut code);
+        Func {
+            rc: Rc::new((
+                self.functions.into(),
+                rose::Function {
+                    generics: self.generics,
+                    types: self.types.into_keys().collect(),
+                    vars: self.vars.into_iter().map(|x| x.ty).collect(),
+                    params: self.params.into(),
+                    ret: id::var(out),
+                    body: code.into(),
+                },
+            )),
+        }
+    }
+
+    fn extra(&mut self, x: id::Var, code: &mut Vec<rose::Instr>) {
+        match std::mem::replace(&mut self.vars[x.var()].extra, Extra::Expired) {
+            Extra::Parent(extra) => {
+                for instr in extra.iter() {
+                    self.vars[instr.var.var()].extra = Extra::Expired;
+                }
+                code.extend(extra);
+            }
+            Extra::Constant | Extra::Child(_) | Extra::Expired => unreachable!(),
+        }
+    }
+
+    #[wasm_bindgen(js_name = "isSymbol")]
+    pub fn is_symbol(&self, t: usize) -> bool {
+        let (ty, _) = self.types.get_index(t).unwrap();
+        matches!(ty, rose::Ty::Fin { .. } | rose::Ty::Generic { .. })
+    }
+
+    #[wasm_bindgen(js_name = "isArray")]
+    pub fn is_array(&self, t: usize) -> bool {
+        let (ty, _) = self.types.get_index(t).unwrap();
+        matches!(ty, rose::Ty::Array { .. })
+    }
+
+    fn ty(&self, t: usize) -> Result<&rose::Ty, JsError> {
+        match self.types.get_index(t) {
+            None => Err(JsError::new("type does not exist")),
+            Some((ty, _)) => Ok(ty),
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn index(&self, t: usize) -> Result<usize, JsError> {
+        match self.ty(t)? {
+            &rose::Ty::Array { index, elem: _ } => Ok(index.ty()),
+            _ => Err(JsError::new("type is not an array")),
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn size(&self, t: usize) -> Result<usize, JsError> {
+        match self.ty(t)? {
+            &rose::Ty::Array { index, elem: _ } => {
+                let (i, _) = self.types.get_index(index.ty()).unwrap();
+                match i {
+                    &rose::Ty::Fin { size } => Ok(size),
+                    _ => Err(JsError::new("index type is not a fixed size")),
+                }
+            }
+            _ => Err(JsError::new("type is not an array")),
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn elem(&self, t: usize) -> Result<usize, JsError> {
+        match self.ty(t)? {
+            &rose::Ty::Array { index: _, elem } => Ok(elem.ty()),
+            _ => Err(JsError::new("type is not an array")),
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn expect(&self, t: usize, x: usize) -> Result<usize, JsError> {
+        match self.vars.get(x) {
+            None => Err(JsError::new("variable does not exist")),
+            Some(var) => {
+                if var.ty == id::ty(t) {
+                    Ok(x)
+                } else {
+                    Err(JsError::new("variable type mismatch"))
+                }
+            }
+        }
+    }
+
+    fn newtype(&mut self, ty: rose::Ty, constrs: EnumSet<rose::Constraint>) -> usize {
+        let (i, _) = self.types.insert_full(ty, constrs);
+        i
+    }
+
+    fn newvar(&mut self, ty: id::Ty) -> id::Var {
+        let id = self.vars.len();
+        self.vars.push(Var {
+            ty,
+            extra: Extra::Parent(vec![]),
+        });
+        id::var(id)
+    }
+
+    #[wasm_bindgen(js_name = "tyUnit")]
+    pub fn ty_unit(&mut self) -> usize {
+        self.newtype(rose::Ty::Unit, EnumSet::only(rose::Constraint::Value))
+    }
+
+    #[wasm_bindgen(js_name = "tyBool")]
+    pub fn ty_bool(&mut self) -> usize {
+        self.newtype(rose::Ty::Bool, EnumSet::only(rose::Constraint::Value))
+    }
+
+    #[wasm_bindgen(js_name = "tyF64")]
+    pub fn ty_f64(&mut self) -> usize {
+        self.newtype(rose::Ty::F64, EnumSet::only(rose::Constraint::Value))
+    }
+
+    #[wasm_bindgen(js_name = "tyFin")]
+    pub fn ty_fin(&mut self, size: usize) -> usize {
+        self.newtype(
+            rose::Ty::Fin { size },
+            rose::Constraint::Value | rose::Constraint::Index,
+        )
+    }
+
+    #[wasm_bindgen(js_name = "tyGeneric")]
+    pub fn ty_generic(&mut self, id: usize) -> usize {
+        self.newtype(
+            rose::Ty::Generic {
+                id: id::generic(id),
             },
-        )),
+            self.generics[id],
+        )
+    }
+
+    #[wasm_bindgen(js_name = "tyArray")]
+    pub fn ty_array(&mut self, index: usize, elem: usize) -> usize {
+        self.newtype(
+            rose::Ty::Array {
+                index: id::ty(index),
+                elem: id::ty(elem),
+            },
+            EnumSet::only(rose::Constraint::Value),
+        )
+    }
+
+    #[wasm_bindgen(js_name = "tyTuple")]
+    pub fn ty_tuple(&mut self, members: &[usize]) -> usize {
+        self.newtype(
+            rose::Ty::Tuple {
+                members: members.iter().map(|&x| id::ty(x)).collect(),
+            },
+            EnumSet::only(rose::Constraint::Value),
+        )
+    }
+
+    #[wasm_bindgen]
+    pub fn param(&mut self, t: usize) -> usize {
+        let x = self.newvar(id::ty(t));
+        self.params.push(x);
+        x.var()
+    }
+
+    fn constant(&mut self, t: usize, expr: rose::Expr) -> usize {
+        let x = self.vars.len();
+        self.vars.push(Var {
+            ty: id::ty(t),
+            extra: Extra::Constant,
+        });
+        self.constants.push(rose::Instr {
+            var: id::var(x),
+            expr,
+        });
+        x
+    }
+
+    #[wasm_bindgen]
+    pub fn unit(&mut self) -> usize {
+        let ty = self.ty_unit();
+        self.constant(ty, rose::Expr::Unit)
+    }
+
+    #[wasm_bindgen]
+    pub fn bool(&mut self, val: bool) -> usize {
+        let ty = self.ty_bool();
+        self.constant(ty, rose::Expr::Bool { val })
+    }
+
+    #[wasm_bindgen]
+    pub fn f64(&mut self, val: f64) -> usize {
+        let ty = self.ty_f64();
+        self.constant(ty, rose::Expr::F64 { val })
+    }
+
+    #[wasm_bindgen]
+    pub fn fin(&mut self, size: usize, val: usize) -> usize {
+        let ty = self.ty_fin(size);
+        self.constant(ty, rose::Expr::Fin { val })
+    }
+
+    #[wasm_bindgen]
+    pub fn num(&mut self, t: usize, x: f64) -> Result<usize, JsError> {
+        match self.ty(t)? {
+            rose::Ty::F64 => Ok(self.constant(t, rose::Expr::F64 { val: x })),
+            &rose::Ty::Fin { size } => {
+                let y = x as usize;
+                if y as f64 != x {
+                    Err(JsError::new("can't be represented by an unsigned integer"))
+                } else if y >= size {
+                    Err(JsError::new("out of range"))
+                } else {
+                    Ok(self.constant(t, rose::Expr::Fin { val: y }))
+                }
+            }
+            _ => Err(JsError::new("type is not numeric")),
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn array(&mut self, t: usize, xs: &[usize]) -> usize {
+        let elems = xs.iter().map(|&x| id::var(x)).collect();
+        let expr = rose::Expr::Array { elems };
+        match xs
+            .iter()
+            .filter_map(|&x| match self.vars[x].extra {
+                Extra::Constant => None,
+                Extra::Parent(_) => Some(x),
+                Extra::Child(y) => Some(y.var()),
+                Extra::Expired => unreachable!(),
+            })
+            .max()
+        {
+            None => self.constant(t, expr),
+            Some(x) => {
+                let y = self.vars.len();
+                self.vars.push(Var {
+                    ty: id::ty(t),
+                    extra: Extra::Child(id::var(x)),
+                });
+                match &mut self.vars[x].extra {
+                    Extra::Parent(instrs) => instrs.push(rose::Instr {
+                        var: id::var(y),
+                        expr,
+                    }),
+                    _ => unreachable!(),
+                }
+                y
+            }
+        }
+    }
+
+    /// Resolve `ty` via `generics` and `types`, then return its ID in `typemap`, inserting if need
+    /// be.
+    ///
+    /// This is meant to be used to pull all the types from a callee into a broader context. The
+    /// `generics` are the IDs of all the types provided as generic type parameters for the callee.
+    /// The `types are the IDs of all the types that have been pulled in so far.
+    ///
+    /// The element type of `types`, and the return type of this function, use `Option` because some
+    /// types from the callee may be ignored, specifically those that reference internal scopes.
+    /// These cannot appear in the callee's signature if it is a valid function, so we can simply
+    /// turn them into `None` and propagate those through if we find further types that depend on
+    /// them.
+    fn resolve(
+        &mut self,
+        generics: &[usize],
+        types: &[Option<id::Ty>],
+        ty: &rose::Ty,
+    ) -> Option<id::Ty> {
+        let (deduped, constrs) = match ty {
+            // inner scopes can't be in the param or return types, which are all we care about here
+            rose::Ty::Scope { kind: _, id: _ } => return None,
+            rose::Ty::Generic { id } => return Some(id::ty(generics[id.generic()])),
+
+            rose::Ty::Unit => (rose::Ty::Unit, EnumSet::only(rose::Constraint::Value)),
+            rose::Ty::Bool => (rose::Ty::Bool, EnumSet::only(rose::Constraint::Value)),
+            rose::Ty::F64 => (rose::Ty::F64, EnumSet::only(rose::Constraint::Value)),
+            &rose::Ty::Fin { size } => (
+                rose::Ty::Fin { size },
+                rose::Constraint::Value | rose::Constraint::Index,
+            ),
+
+            rose::Ty::Ref { scope, inner } => (
+                rose::Ty::Ref {
+                    scope: types[scope.ty()]?,
+                    inner: types[inner.ty()]?,
+                },
+                EnumSet::empty(),
+            ),
+            rose::Ty::Array { index, elem } => (
+                rose::Ty::Array {
+                    index: types[index.ty()]?,
+                    elem: types[elem.ty()]?,
+                },
+                EnumSet::only(rose::Constraint::Value),
+            ),
+            rose::Ty::Tuple { members } => (
+                rose::Ty::Tuple {
+                    members: members
+                        .iter()
+                        .map(|&x| types[x.ty()])
+                        .collect::<Option<_>>()?,
+                },
+                EnumSet::only(rose::Constraint::Value),
+            ),
+        };
+        let (i, _) = self.types.insert_full(deduped, constrs);
+        Some(id::ty(i))
+    }
+
+    pub fn ingest(&mut self, f: &Func, generics: &[usize]) -> Vec<usize> {
+        let mut types = vec![];
+        let (_, def) = f.rc.as_ref();
+        // push a corresponding type onto our own `types` for each type in the callee
+        for ty in def.types.iter() {
+            types.push(self.resolve(generics, &types, ty));
+        }
+
+        let mut sig: Vec<_> = def
+            .params
+            .iter()
+            .map(|x| types[def.vars[x.var()].ty()].unwrap().ty())
+            .collect();
+        sig.push(types[def.vars[def.ret.var()].ty()].unwrap().ty());
+        sig
+    }
+
+    fn var_ty_id(&self, x: id::Var) -> id::Ty {
+        self.vars[x.var()].ty
+    }
+
+    fn var_ty(&self, x: id::Var) -> &rose::Ty {
+        let (ty, _) = self.types.get_index(self.var_ty_id(x).ty()).unwrap();
+        ty
     }
 }
 
-/// A block under construction. Implicitly refers to the current `Context`.
+/// A block under construction.
 #[wasm_bindgen]
 pub struct Block {
     code: Vec<rose::Instr>,
-}
-
-#[wasm_bindgen]
-impl Block {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        Self { code: vec![] }
-    }
 }
 
 // just to appease Clippy
@@ -336,189 +674,58 @@ impl Default for Block {
     }
 }
 
-// just an ephemeral struct to return several things which we then unpack on the JS side
 #[wasm_bindgen]
-pub struct Body {
-    ctx: Option<Context>,
-    main: Option<Block>,
-}
+impl Block {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self { code: vec![] }
+    }
 
-#[wasm_bindgen]
-impl Body {
-    #[wasm_bindgen]
-    pub fn ctx(&mut self) -> Result<Context, JsError> {
-        self.ctx
-            .take()
-            .ok_or_else(|| JsError::new("context already taken"))
+    fn finish(self, f: &mut FuncBuilder, code: &mut Vec<rose::Instr>) {
+        for instr in self.code.into_iter() {
+            let var = instr.var;
+            code.push(instr);
+            f.extra(var, code);
+            match &code.last().unwrap().expr {
+                &rose::Expr::Read { ret, .. } | &rose::Expr::Accum { ret, .. } => {
+                    f.extra(ret, code);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn instr(&mut self, f: &mut FuncBuilder, t: id::Ty, expr: rose::Expr) -> usize {
+        let x = f.newvar(t);
+        self.code.push(rose::Instr { var: x, expr });
+        x.var()
     }
 
     #[wasm_bindgen]
-    pub fn main(&mut self) -> Result<Block, JsError> {
-        self.main
-            .take()
-            .ok_or_else(|| JsError::new("block already taken"))
-    }
-}
-
-/// The `types` argument is Serde-converted to `indexmap::IndexSet<rose::Ty>`.
-#[wasm_bindgen]
-pub fn make(generics: usize, types: JsValue, params: &[usize]) -> Result<Body, JsError> {
-    let types: IndexSet<rose::Ty> = serde_wasm_bindgen::from_value(types)?;
-    let ctx = Context {
-        functions: vec![],
-        generics: vec![EnumSet::only(rose::Constraint::Index); generics],
-        types,
-        vars: params.iter().map(|&id| id::ty(id)).collect(),
-        params: (0..params.len()).map(id::var).collect(),
-    };
-    Ok(Body {
-        ctx: Some(ctx),
-        main: Some(Block { code: vec![] }),
-    })
-}
-
-/// Resolve `ty` via `generics` and `types`, then return its ID in `typemap`, inserting if need be.
-///
-/// This is meant to be used to pull all the types from a callee into a broader context. The
-/// `generics` are the IDs of all the types provided as generic type parameters for the callee. The
-/// `types are the IDs of all the types that have been pulled in so far.
-///
-/// The element type of `types`, and the return type of this function, use `Option` because some
-/// types from the callee may be ignored, specifically those that reference internal scopes. These
-/// cannot appear in the callee's signature if it is a valid function, so we can simply turn them
-/// into `None` and propagate those through if we find further types that depend on them.
-fn resolve(
-    typemap: &mut IndexSet<rose::Ty>,
-    generics: &[usize],
-    types: &[Option<id::Ty>],
-    ty: &rose::Ty,
-) -> Option<id::Ty> {
-    let resolved = match ty {
-        // inner scopes cannot appear in the return type, which is all we care about here
-        rose::Ty::Scope { kind: _, id: _ } => return None,
-        rose::Ty::Generic { id } => return Some(id::ty(generics[id.generic()])),
-
-        rose::Ty::Unit => rose::Ty::Unit,
-        rose::Ty::Bool => rose::Ty::Bool,
-        rose::Ty::F64 => rose::Ty::F64,
-        &rose::Ty::Fin { size } => rose::Ty::Fin { size },
-
-        rose::Ty::Ref { scope, inner } => rose::Ty::Ref {
-            scope: types[scope.ty()]?,
-            inner: types[inner.ty()]?,
-        },
-        rose::Ty::Array { index, elem } => rose::Ty::Array {
-            index: types[index.ty()]?,
-            elem: types[elem.ty()]?,
-        },
-        rose::Ty::Tuple { members } => rose::Ty::Tuple {
-            members: members
-                .iter()
-                .map(|&x| types[x.ty()])
-                .collect::<Option<_>>()?,
-        },
-    };
-    let (i, _) = typemap.insert_full(resolved);
-    Some(id::ty(i))
-}
-
-// TODO: catch invalid user-given indices instead of panicking
-#[wasm_bindgen]
-impl Context {
-    fn get(&self, var: id::Var) -> id::Ty {
-        self.vars[var.var()]
-    }
-
-    fn var(&mut self, t: id::Ty) -> id::Var {
-        let id = self.vars.len();
-        self.vars.push(t);
-        id::var(id)
-    }
-
-    fn ty(&mut self, ty: rose::Ty) -> id::Ty {
-        let (i, _) = self.types.insert_full(ty);
-        id::ty(i)
-    }
-
-    // for `If`
-    #[wasm_bindgen(js_name = "varUnit")]
-    pub fn var_unit(&mut self) -> usize {
-        let ty = self.ty(rose::Ty::Unit);
-        self.var(ty).var()
-    }
-
-    fn instr(&mut self, b: &mut Block, t: id::Ty, expr: rose::Expr) -> usize {
-        let var = self.var(t);
-        b.code.push(rose::Instr { var, expr });
-        var.var()
-    }
-
-    #[wasm_bindgen]
-    pub fn unit(&mut self, b: &mut Block) -> usize {
-        let ty = self.ty(rose::Ty::Unit);
-        self.instr(b, ty, rose::Expr::Unit)
-    }
-
-    #[wasm_bindgen]
-    pub fn bool(&mut self, b: &mut Block, val: bool) -> usize {
-        let ty = self.ty(rose::Ty::Bool);
-        self.instr(b, ty, rose::Expr::Bool { val })
-    }
-
-    #[wasm_bindgen]
-    pub fn f64(&mut self, b: &mut Block, val: f64) -> usize {
-        let ty = self.ty(rose::Ty::F64);
-        self.instr(b, ty, rose::Expr::F64 { val })
-    }
-
-    #[wasm_bindgen]
-    pub fn fin(&mut self, b: &mut Block, size: usize, val: usize) -> usize {
-        let ty = self.ty(rose::Ty::Fin { size });
-        self.instr(b, ty, rose::Expr::Fin { val })
-    }
-
-    #[wasm_bindgen]
-    pub fn array(&mut self, b: &mut Block, elems: &[usize]) -> Result<usize, JsError> {
-        let xs: Vec<id::Var> = elems.iter().map(|&x| id::var(x)).collect();
-        let &x = xs.get(0).ok_or_else(|| JsError::new("empty array"))?;
-        let index = self.ty(rose::Ty::Fin { size: xs.len() });
-        let ty = self.ty(rose::Ty::Array {
-            index,
-            elem: self.get(x),
-        });
-        let expr = rose::Expr::Array { elems: xs.into() };
-        Ok(self.instr(b, ty, expr))
-    }
-
-    #[wasm_bindgen]
-    pub fn tuple(&mut self, b: &mut Block, members: &[usize]) -> usize {
-        let xs: Vec<id::Var> = members.iter().map(|&x| id::var(x)).collect();
-        let types = xs.iter().map(|&x| self.get(x)).collect();
-        let ty = self.ty(rose::Ty::Tuple { members: types });
-        let expr = rose::Expr::Tuple { members: xs.into() };
-        self.instr(b, ty, expr)
-    }
-
-    #[wasm_bindgen]
-    pub fn index(&mut self, b: &mut Block, arr: usize, idx: usize) -> Result<usize, JsError> {
+    pub fn index(&mut self, f: &mut FuncBuilder, arr: usize, idx: usize) -> Result<usize, JsError> {
         let array = id::var(arr);
         let index = id::var(idx);
-        let ty = match self.types[self.get(array).ty()] {
-            rose::Ty::Array { index: _, elem } => elem,
+        let t = match f.var_ty(array) {
+            &rose::Ty::Array { index: _, elem } => elem,
             _ => return Err(JsError::new("not an array")),
         };
-        Ok(self.instr(b, ty, rose::Expr::Index { array, index }))
+        Ok(self.instr(f, t, rose::Expr::Index { array, index }))
     }
 
     #[wasm_bindgen]
-    pub fn member(&mut self, b: &mut Block, tup: usize, mem: usize) -> Result<usize, JsError> {
+    pub fn member(
+        &mut self,
+        f: &mut FuncBuilder,
+        tup: usize,
+        mem: usize,
+    ) -> Result<usize, JsError> {
         let tuple = id::var(tup);
         let member = id::member(mem);
-        let ty = match &self.types[self.get(tuple).ty()] {
+        let t = match f.var_ty(tuple) {
             rose::Ty::Tuple { members } => members[mem],
             _ => return Err(JsError::new("not a tuple")),
         };
-        Ok(self.instr(b, ty, rose::Expr::Member { tuple, member }))
+        Ok(self.instr(f, t, rose::Expr::Member { tuple, member }))
     }
 
     // no `Expr::Slice` or `Expr::Field` here, because we don't currently expose mutation to JS
@@ -526,43 +733,43 @@ impl Context {
     // unary
 
     #[wasm_bindgen]
-    pub fn not(&mut self, b: &mut Block, arg: usize) -> usize {
-        let ty = self.ty(rose::Ty::Bool);
+    pub fn not(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
+        let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Unary {
             op: rose::Unop::Not,
             arg: id::var(arg),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn neg(&mut self, b: &mut Block, arg: usize) -> usize {
-        let ty = self.ty(rose::Ty::F64);
+    pub fn neg(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
+        let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Unary {
             op: rose::Unop::Neg,
             arg: id::var(arg),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn abs(&mut self, b: &mut Block, arg: usize) -> usize {
-        let ty = self.ty(rose::Ty::F64);
+    pub fn abs(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
+        let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Unary {
             op: rose::Unop::Abs,
             arg: id::var(arg),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn sqrt(&mut self, b: &mut Block, arg: usize) -> usize {
-        let ty = self.ty(rose::Ty::F64);
+    pub fn sqrt(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
+        let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Unary {
             op: rose::Unop::Sqrt,
             arg: id::var(arg),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     // end of unary
@@ -570,217 +777,197 @@ impl Context {
     // binary
 
     #[wasm_bindgen]
-    pub fn and(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::Bool);
+    pub fn and(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
             op: rose::Binop::And,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn or(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::Bool);
+    pub fn or(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
             op: rose::Binop::Or,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn iff(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::Bool);
+    pub fn iff(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
             op: rose::Binop::Iff,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn xor(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::Bool);
+    pub fn xor(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
             op: rose::Binop::Xor,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn neq(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::Bool);
+    pub fn neq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
             op: rose::Binop::Neq,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn lt(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::Bool);
+    pub fn lt(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
             op: rose::Binop::Lt,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn leq(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::Bool);
+    pub fn leq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
             op: rose::Binop::Leq,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn eq(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::Bool);
+    pub fn eq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
             op: rose::Binop::Eq,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn gt(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::Bool);
+    pub fn gt(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
             op: rose::Binop::Gt,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn geq(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::Bool);
+    pub fn geq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
             op: rose::Binop::Geq,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn add(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::F64);
+    pub fn add(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Binary {
             op: rose::Binop::Add,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn sub(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::F64);
+    pub fn sub(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Binary {
             op: rose::Binop::Sub,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn mul(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::F64);
+    pub fn mul(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Binary {
             op: rose::Binop::Mul,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     #[wasm_bindgen]
-    pub fn div(&mut self, b: &mut Block, left: usize, right: usize) -> usize {
-        let ty = self.ty(rose::Ty::F64);
+    pub fn div(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Binary {
             op: rose::Binop::Div,
             left: id::var(left),
             right: id::var(right),
         };
-        self.instr(b, ty, expr)
+        self.instr(f, t, expr)
     }
 
     // end of binary
 
     #[wasm_bindgen]
+    pub fn select(
+        &mut self,
+        f: &mut FuncBuilder,
+        cond: usize,
+        t: usize,
+        then: usize,
+        els: usize,
+    ) -> usize {
+        let expr = rose::Expr::Select {
+            cond: id::var(cond),
+            then: id::var(then),
+            els: id::var(els),
+        };
+        self.instr(f, id::ty(t), expr)
+    }
+
+    #[wasm_bindgen]
     pub fn call(
         &mut self,
-        b: &mut Block,
-        f: &Func,
+        f: &mut FuncBuilder,
+        g: &Func,
         generics: &[usize],
+        t: usize,
         args: &[usize],
     ) -> Result<usize, JsError> {
-        let mut types = vec![];
-        let (_, def) = f.rc.as_ref();
-        // push a corresponding type onto our own `types` for each type in the callee
-        for callee_type in def.types.iter() {
-            types.push(resolve(&mut self.types, generics, &types, callee_type));
-        }
-
         // add the function reference to the callee
-        let id = id::function(self.functions.len());
-        self.functions.push(f.clone());
+        let id = id::function(f.functions.len());
+        f.functions.push(g.clone());
 
-        let ty = types[def.vars[def.ret.var()].ty()].unwrap();
         let expr = rose::Expr::Call {
             id,
             generics: generics.iter().map(|&i| id::ty(i)).collect(),
             args: args.iter().map(|&x| id::var(x)).collect(),
         };
-        Ok(self.instr(b, ty, expr))
-    }
-
-    #[wasm_bindgen]
-    pub fn select(&mut self, b: &mut Block, cond: usize, then: usize, els: usize) -> usize {
-        let then = id::var(then);
-        let els = id::var(els);
-        let t = self.get(then); // arbitrary; could have used `els` instead
-        let expr = rose::Expr::Select {
-            cond: id::var(cond),
-            then,
-            els,
-        };
-        self.instr(b, t, expr)
-    }
-
-    // `rose::Expr::For`
-    #[wasm_bindgen]
-    pub fn arr(&mut self, b: &mut Block, arg: usize, body: Block, out: usize) -> usize {
-        let arg = id::var(arg);
-        let ret = id::var(out);
-        let ty = self.ty(rose::Ty::Array {
-            index: self.get(arg),
-            elem: self.get(ret),
-        });
-        let expr = rose::Expr::For {
-            arg,
-            body: body.code.into(),
-            ret,
-        };
-        self.instr(b, ty, expr)
+        Ok(self.instr(f, id::ty(t), expr))
     }
 }
 

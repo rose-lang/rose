@@ -19,6 +19,7 @@ import {
   neq,
   not,
   or,
+  pprint,
   select,
   sqrt,
   sub,
@@ -41,24 +42,24 @@ describe("pprint", () => {
       const p = lt(x, y);
       const a = mul(x, y);
       const b = sub(y, x);
-      const z = select(p, add(a, x), mul(b, y));
+      const z = select(p, Real, add(a, x), mul(b, y));
       const w = add(z, x);
       return add(y, w);
     });
-    const s = wasm.pprint(f.f.f);
+    const s = pprint(f);
     expect(s).toBe(
       `
-T0 = Bool
-T1 = F64
-(x0: T1, x1: T1) -> T1 {
-  x2: T0 = x0 < x1
-  x3: T1 = x0 * x1
-  x4: T1 = x1 - x0
-  x5: T1 = x3 + x0
-  x6: T1 = x4 * x1
-  x7: T1 = x2 ? x5 : x6
-  x8: T1 = x7 + x0
-  x9: T1 = x1 + x8
+T0 = F64
+T1 = Bool
+(x0: T0, x1: T0) -> T0 {
+  x2: T1 = x0 < x0
+  x3: T0 = x0 * x0
+  x4: T0 = x1 - x1
+  x5: T0 = x3 + x3
+  x6: T0 = x4 * x4
+  x7: T0 = x2 ? x5 : x6
+  x8: T0 = x7 + x7
+  x9: T0 = x1 + x1
   x9
 }
 `.trimStart(),
@@ -72,15 +73,14 @@ T1 = F64
       const b = h(x);
       return add(a, b);
     });
-    const s = wasm.pprint(f.f.f);
+    const s = pprint(f);
     expect(s).toBe(
       `
-T0 = Bool
-T1 = F64
-(x0: T1) -> T1 {
-  x1: T1 = f0<>(x0)
-  x2: T1 = f1<>(x0)
-  x3: T1 = x1 + x2
+T0 = F64
+(x0: T0) -> T0 {
+  x1: T0 = f0<>(x0)
+  x2: T0 = f1<>(x0)
+  x3: T0 = x1 + x1
   x3
 }
 `.trimStart(),
@@ -94,17 +94,17 @@ T1 = F64
       const d = sqrt(x);
       return d;
     });
-    const s = wasm.pprint(f.f.f);
+    const s = pprint(f);
     expect(s).toBe(
       `
-T0 = Bool
-T1 = F64
-(x0: T1) -> T1 {
-  x1: T0 = true
-  x2: T0 = not x1
-  x3: T1 = -x0
-  x4: T1 = |x3|
-  x5: T1 = sqrt(x0)
+T0 = F64
+T1 = Bool
+(x0: T0) -> T0 {
+  x1: T1 = true
+  x2: T1 = not x1
+  x3: T0 = -x0
+  x4: T0 = |x3|
+  x5: T0 = sqrt(x0)
   x5
 }
 `.trimStart(),
@@ -127,35 +127,29 @@ T1 = F64
       const m = gt(x, y);
       return geq(c, d);
     });
-    const s = wasm.pprint(f.f.f);
+    const s = pprint(f);
     expect(s).toBe(
       `
-T0 = Bool
-T1 = F64
-(x0: T1, x1: T1) -> T0 {
-  x2: T1 = x0 + x1
-  x3: T1 = x0 - x1
-  x4: T1 = x0 * x1
-  x5: T1 = x0 / x1
-  x6: T0 = true
-  x7: T0 = false
-  x8: T0 = x6 and x7
-  x9: T0 = true
-  x10: T0 = false
-  x11: T0 = x9 or x10
-  x12: T0 = true
-  x13: T0 = false
-  x14: T0 = x12 iff x13
-  x15: T0 = true
-  x16: T0 = false
-  x17: T0 = x15 xor x16
-  x18: T0 = x0 != x1
-  x19: T0 = x0 < x1
-  x20: T0 = x0 <= x1
-  x21: T0 = x0 == x1
-  x22: T0 = x0 > x1
-  x23: T0 = x4 >= x5
-  x23
+T0 = F64
+T1 = Bool
+(x0: T0, x1: T0) -> T1 {
+  x6: T1 = true
+  x7: T1 = false
+  x2: T0 = x0 + x0
+  x3: T0 = x0 - x0
+  x4: T0 = x0 * x0
+  x5: T0 = x0 / x0
+  x8: T1 = x6 and x7
+  x9: T1 = x6 or x7
+  x10: T1 = x6 iff x7
+  x11: T1 = x6 xor x7
+  x12: T1 = x0 != x0
+  x13: T1 = x0 < x0
+  x14: T1 = x0 <= x0
+  x15: T1 = x0 == x0
+  x16: T1 = x0 > x0
+  x17: T1 = x4 >= x4
+  x17
 }
 `.trimStart(),
     );

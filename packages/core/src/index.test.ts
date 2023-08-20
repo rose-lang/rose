@@ -25,17 +25,26 @@ test("basic arithmetic", () => {
 });
 
 test("branch", () => {
-  const f = fn([Bool], Real, (x) => select(x, 1, 2));
+  const f = fn([Bool], Real, (x) => select(x, Real, 1, 2));
   const g = interp(f);
   expect(g(false)).toBe(2);
   expect(g(true)).toBe(1);
 });
 
 test("call", () => {
-  const ifCond = fn([Bool, Real, Real], Real, (p, x, y) => select(p, x, y));
+  const ifCond = fn([Bool, Real, Real], Real, (p, x, y) =>
+    select(p, Real, x, y),
+  );
   const f = fn([Real], Real, (x) => ifCond(lt(x, 0), 0, x));
   const relu = interp(f);
   expect(relu(-1)).toBe(0);
   expect(relu(0)).toBe(0);
   expect(relu(1)).toBe(1);
+});
+
+test("invalid", () => {
+  const two = true as any;
+  expect(() => fn([], Real, () => add(two, two))).toThrow(
+    "variable type mismatch",
+  );
 });
