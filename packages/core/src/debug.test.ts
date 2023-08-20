@@ -52,14 +52,14 @@ describe("pprint", () => {
 T0 = F64
 T1 = Bool
 (x0: T0, x1: T0) -> T0 {
-  x2: T1 = x0 < x0
-  x3: T0 = x0 * x0
-  x4: T0 = x1 - x1
-  x5: T0 = x3 + x3
-  x6: T0 = x4 * x4
+  x2: T1 = x0 < x1
+  x3: T0 = x0 * x1
+  x4: T0 = x1 - x0
+  x5: T0 = x3 + x0
+  x6: T0 = x4 * x1
   x7: T0 = x2 ? x5 : x6
-  x8: T0 = x7 + x7
-  x9: T0 = x1 + x1
+  x8: T0 = x7 + x0
+  x9: T0 = x1 + x8
   x9
 }
 `.trimStart(),
@@ -80,7 +80,7 @@ T0 = F64
 (x0: T0) -> T0 {
   x1: T0 = f0<>(x0)
   x2: T0 = f1<>(x0)
-  x3: T0 = x1 + x1
+  x3: T0 = x1 + x2
   x3
 }
 `.trimStart(),
@@ -135,20 +135,20 @@ T1 = Bool
 (x0: T0, x1: T0) -> T1 {
   x6: T1 = true
   x7: T1 = false
-  x2: T0 = x0 + x0
-  x3: T0 = x0 - x0
-  x4: T0 = x0 * x0
-  x5: T0 = x0 / x0
+  x2: T0 = x0 + x1
+  x3: T0 = x0 - x1
+  x4: T0 = x0 * x1
+  x5: T0 = x0 / x1
   x8: T1 = x6 and x7
   x9: T1 = x6 or x7
   x10: T1 = x6 iff x7
   x11: T1 = x6 xor x7
-  x12: T1 = x0 != x0
-  x13: T1 = x0 < x0
-  x14: T1 = x0 <= x0
-  x15: T1 = x0 == x0
-  x16: T1 = x0 > x0
-  x17: T1 = x4 >= x4
+  x12: T1 = x0 != x1
+  x13: T1 = x0 < x1
+  x14: T1 = x0 <= x1
+  x15: T1 = x0 == x1
+  x16: T1 = x0 > x1
+  x17: T1 = x4 >= x5
   x17
 }
 `.trimStart(),

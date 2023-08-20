@@ -293,50 +293,50 @@ export const sqrt = (x: Real): Real => {
 
 export const add = (x: Real, y: Real): Real => {
   const ctx = getCtx();
-  return new Var(ctx.block.add(ctx.func, realId(ctx, x), realId(ctx, x)));
+  return new Var(ctx.block.add(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
 export const sub = (x: Real, y: Real): Real => {
   const ctx = getCtx();
-  return new Var(ctx.block.sub(ctx.func, realId(ctx, x), realId(ctx, x)));
+  return new Var(ctx.block.sub(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
 export const mul = (x: Real, y: Real): Real => {
   const ctx = getCtx();
-  return new Var(ctx.block.mul(ctx.func, realId(ctx, x), realId(ctx, x)));
+  return new Var(ctx.block.mul(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
 export const div = (x: Real, y: Real): Real => {
   const ctx = getCtx();
-  return new Var(ctx.block.div(ctx.func, realId(ctx, x), realId(ctx, x)));
+  return new Var(ctx.block.div(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
 export const neq = (x: Real, y: Real): Bool => {
   const ctx = getCtx();
-  return new Var(ctx.block.neq(ctx.func, realId(ctx, x), realId(ctx, x)));
+  return new Var(ctx.block.neq(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
 export const lt = (x: Real, y: Real): Bool => {
   const ctx = getCtx();
-  return new Var(ctx.block.lt(ctx.func, realId(ctx, x), realId(ctx, x)));
+  return new Var(ctx.block.lt(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
 export const leq = (x: Real, y: Real): Bool => {
   const ctx = getCtx();
-  return new Var(ctx.block.leq(ctx.func, realId(ctx, x), realId(ctx, x)));
+  return new Var(ctx.block.leq(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
 export const eq = (x: Real, y: Real): Bool => {
   const ctx = getCtx();
-  return new Var(ctx.block.eq(ctx.func, realId(ctx, x), realId(ctx, x)));
+  return new Var(ctx.block.eq(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
 export const gt = (x: Real, y: Real): Bool => {
   const ctx = getCtx();
-  return new Var(ctx.block.gt(ctx.func, realId(ctx, x), realId(ctx, x)));
+  return new Var(ctx.block.gt(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
 export const geq = (x: Real, y: Real): Bool => {
   const ctx = getCtx();
-  return new Var(ctx.block.geq(ctx.func, realId(ctx, x), realId(ctx, x)));
+  return new Var(ctx.block.geq(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
