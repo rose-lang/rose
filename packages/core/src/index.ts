@@ -84,6 +84,7 @@ const valId = (ctx: Context, t: number, x: Val): number => {
   else {
     const size = ctx.func.size(t);
     const elem = ctx.func.elem(t);
+    if (x.length !== size) throw Error("wrong array size");
     const xs = new Uint32Array(size);
     for (let i = 0; i < size; ++i) xs[i] = valId(ctx, elem, x[i]);
     id = ctx.func.array(t, xs);

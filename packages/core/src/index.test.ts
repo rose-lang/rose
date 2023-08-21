@@ -44,9 +44,15 @@ describe("invalid", () => {
     );
   });
 
-  test("array dimension", () => {
+  test("symbolic array dimension", () => {
     expect(() => fn([Vec(3, Real)], Vec(2, Real), (v) => v)).toThrow(
       "variable type mismatch",
+    );
+  });
+
+  test("literal array dimension", () => {
+    expect(() => fn([], Vec(2, Real), () => [1, 2, 3])).toThrow(
+      "wrong array size",
     );
   });
 
@@ -95,6 +101,18 @@ describe("valid", () => {
     expect(c()).toBe(1);
   });
 
+  test("empty boolean array", () => {
+    const f = fn([], Vec(0, Bool), () => []);
+    const g = interp(f);
+    expect(g()).toEqual([]);
+  });
+
+  test("empty real array", () => {
+    const f = fn([], Vec(0, Real), () => []);
+    const g = interp(f);
+    expect(g()).toEqual([]);
+  });
+
   test("dot product", () => {
     const R3 = Vec(3, Real);
     const dot = fn([R3, R3], Real, (u, v) => {
@@ -119,5 +137,17 @@ describe("valid", () => {
     const f = fn([], R3, () => cross([3, -3, 1], [4, 9, 2]));
     const g = interp(f);
     expect(g()).toEqual([-15, -2, 39]);
+  });
+
+  test("polymorphic arrays", () => {
+    const f = fn([Vec(3, 3), Vec(3, Real)], Vec(3, Real), (i, v) => {
+      return [v[i[0] as any], v[i[1] as any], v[i[2] as any]];
+    });
+    const g = fn([], Vec(3, Real), () => {
+      const v = [2, 0, 1];
+      return f(v, v);
+    });
+    const h = interp(g);
+    expect(h()).toEqual([1, 2, 0]);
   });
 });
