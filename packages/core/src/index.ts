@@ -1,4 +1,5 @@
 import * as wasm from "@rose-lang/wasm";
+import { Val as RawVal } from "@rose-lang/wasm/interp/Val";
 
 /**
  * The user-constructed functions we expose in our API hold reference-counted
@@ -181,16 +182,16 @@ type FromType<T extends Type> = T extends Nulls
   ? FromType<V>[]
   : unknown; // TODO: is `unknown` the right default here? what about `never`?
 
-type Args<T extends readonly Type[]> = {
+type Params<T extends readonly Type[]> = {
   [K in keyof T]: FromType<T[K]>;
 };
 
 /** Constructs an abstract function with the given `types` for parameters. */
-export const fn = <const A extends readonly Type[], R extends Type>(
-  params: A,
+export const fn = <const P extends readonly Type[], R extends Type>(
+  params: P,
   ret: R,
-  f: (...args: Args<A>) => FromType<R>,
-): Fn & ((...args: Args<A>) => FromType<R>) => {
+  f: (...args: Params<P>) => FromType<R>,
+): Fn & ((...args: Params<P>) => FromType<R>) => {
   // TODO: support closures
   if (context !== undefined)
     throw Error("can't define a function while defining another function");
@@ -209,7 +210,7 @@ export const fn = <const A extends readonly Type[], R extends Type>(
       ...(params.map((ty): Val => {
         const t = tyId(ctx, ty);
         return idVal(ctx, t, ctx.func.param(t));
-      }) as Args<A>),
+      }) as Params<P>),
     );
     out = valId(ctx, tyId(ctx, ret), x);
   } finally {
@@ -220,16 +221,34 @@ export const fn = <const A extends readonly Type[], R extends Type>(
     }
   }
   const func = builder.finish(out, body);
-  const g: any = (...args: Args<A>): FromType<R> =>
+  const g: any = (...args: Params<P>): FromType<R> =>
     // TODO: support generics
     call(g, new Uint32Array(), args as Val[]) as FromType<R>;
   g[inner] = func;
   return g;
 };
 
-export const interp = (f: any): any => {
-  throw Error("TODO");
+type Js = null | boolean | number | Js[];
+
+const translate = (x: RawVal): Js => {
+  if (x === "Unit") return null;
+  if ("Bool" in x) return x.Bool;
+  if ("F64" in x) return x.F64;
+  if ("Fin" in x) return x.Fin;
+  if ("Ref" in x) throw Error("Ref not supported");
+  if ("Array" in x) return x.Array.map(translate);
+  else throw Error("Tuple not supported");
 };
+
+type ToJs<T extends Val> = T extends (infer V extends Val)[]
+  ? ToJs<V>[]
+  : Exclude<T, Var | symbol>;
+
+// TODO: support interpreting functions with parameters and generics
+export const interp =
+  <R extends Val>(f: Fn & (() => R)): (() => ToJs<R>) =>
+  () =>
+    translate(wasm.interp(f[inner])) as ToJs<R>;
 
 const boolId = (ctx: Context, x: Bool): number =>
   valId(ctx, ctx.func.tyBool(), x);

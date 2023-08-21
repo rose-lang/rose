@@ -971,21 +971,11 @@ impl Block {
     }
 }
 
-/// Interpret a function with the given arguments.
+/// Interpret a function with no generics or parameters.
 ///
-/// The `types` are Serde-converted to `indexmap::IndexSet<rose::Ty>`, the `args` are
-/// Serde-converted to `Vec<rose_interp::Val>`, and the return value is Serde-converted from
-/// `rose_interp::Val`.
+/// The return value is Serde-converted from `rose_interp::Val`.
 #[wasm_bindgen]
-pub fn interp(
-    f: &Func,
-    types: JsValue,
-    generics: &[usize],
-    args: JsValue,
-) -> Result<JsValue, JsError> {
-    let types: IndexSet<rose::Ty> = serde_wasm_bindgen::from_value(types)?;
-    let args: Vec<rose_interp::Val> = serde_wasm_bindgen::from_value(args)?;
-    let generics: Vec<id::Ty> = generics.iter().map(|&i| id::ty(i)).collect();
-    let ret = rose_interp::interp(f, types, &generics, args.into_iter())?;
+pub fn interp(f: &Func) -> Result<JsValue, JsError> {
+    let ret = rose_interp::interp(f, IndexSet::new(), &[], [].into_iter())?;
     Ok(to_js_value(&ret)?)
 }

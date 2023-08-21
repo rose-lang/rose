@@ -14,8 +14,8 @@ import {
 
 test("2 + 2 = 4", () => {
   const f = fn([Real, Real], Real, (x, y) => add(x, y));
-  const g = interp(f);
-  expect(g(2, 2)).toBe(4);
+  const g = interp(fn([], Real, () => f(2, 2)));
+  expect(g()).toBe(4);
 });
 
 test("basic arithmetic", () => {
@@ -24,11 +24,12 @@ test("basic arithmetic", () => {
   expect(g()).toBe(6);
 });
 
-test("branch", () => {
+test("select", () => {
   const f = fn([Bool], Real, (x) => select(x, Real, 1, 2));
-  const g = interp(f);
-  expect(g(false)).toBe(2);
-  expect(g(true)).toBe(1);
+  const g = interp(fn([], Real, () => f(false)));
+  const h = interp(fn([], Real, () => f(true)));
+  expect(g()).toBe(2);
+  expect(h()).toBe(1);
 });
 
 test("call", () => {
@@ -36,10 +37,12 @@ test("call", () => {
     select(p, Real, x, y),
   );
   const f = fn([Real], Real, (x) => ifCond(lt(x, 0), 0, x));
-  const relu = interp(f);
-  expect(relu(-1)).toBe(0);
-  expect(relu(0)).toBe(0);
-  expect(relu(1)).toBe(1);
+  const a = interp(fn([], Real, () => f(-1)));
+  const b = interp(fn([], Real, () => f(0)));
+  const c = interp(fn([], Real, () => f(1)));
+  expect(a()).toBe(0);
+  expect(b()).toBe(0);
+  expect(c()).toBe(1);
 });
 
 test("invalid", () => {
