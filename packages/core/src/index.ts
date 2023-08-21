@@ -66,8 +66,8 @@ const valId = (ctx: Context, t: number, x: Val): number => {
   let id = map.get(x);
   if (id !== undefined) return ctx.func.expect(t, id);
 
-  if (x === null) id = ctx.func.unit();
-  else if (typeof x === "boolean") id = ctx.func.bool(x);
+  if (x === null) id = ctx.func.unit(t);
+  else if (typeof x === "boolean") id = ctx.func.bool(t, x);
   else if (typeof x === "number") id = ctx.func.num(t, x);
   else {
     const size = ctx.func.size(t);

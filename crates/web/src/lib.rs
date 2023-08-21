@@ -501,27 +501,21 @@ impl FuncBuilder {
     }
 
     #[wasm_bindgen]
-    pub fn unit(&mut self) -> usize {
-        let ty = self.ty_unit();
-        self.constant(ty, rose::Expr::Unit)
+    pub fn unit(&mut self, t: usize) -> Result<usize, JsError> {
+        if t == self.ty_unit() {
+            Ok(self.constant(t, rose::Expr::Unit))
+        } else {
+            Err(JsError::new("did not expect null"))
+        }
     }
 
     #[wasm_bindgen]
-    pub fn bool(&mut self, val: bool) -> usize {
-        let ty = self.ty_bool();
-        self.constant(ty, rose::Expr::Bool { val })
-    }
-
-    #[wasm_bindgen]
-    pub fn f64(&mut self, val: f64) -> usize {
-        let ty = self.ty_f64();
-        self.constant(ty, rose::Expr::F64 { val })
-    }
-
-    #[wasm_bindgen]
-    pub fn fin(&mut self, size: usize, val: usize) -> usize {
-        let ty = self.ty_fin(size);
-        self.constant(ty, rose::Expr::Fin { val })
+    pub fn bool(&mut self, t: usize, val: bool) -> Result<usize, JsError> {
+        if t == self.ty_bool() {
+            Ok(self.constant(t, rose::Expr::Bool { val }))
+        } else {
+            Err(JsError::new("did not expect boolean"))
+        }
     }
 
     #[wasm_bindgen]
