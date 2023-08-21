@@ -281,10 +281,18 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
     Ok(s)
 }
 
+/// Metadata about a variable while its containing function is still under construction.
 enum Extra {
+    /// Does not depend on any of the function's parameters.
     Constant,
+
+    /// Part of the main function body; these are definitions for variables that depend on it.
     Parent(Vec<rose::Instr>),
+
+    /// Depends on another variable; others can depend on it only indirectly through its parent.
     Child(id::Var),
+
+    /// Is no longer in scope.
     Expired,
 }
 
@@ -306,6 +314,7 @@ pub struct FuncBuilder {
 
 #[wasm_bindgen]
 impl FuncBuilder {
+    /// Start building a function with the given number of `generics`, all constrained as `Index`.
     #[wasm_bindgen(constructor)]
     pub fn new(generics: usize) -> Self {
         Self {
@@ -318,8 +327,12 @@ impl FuncBuilder {
         }
     }
 
+    /// Assemble this function with return variable `out` and the given `body`.
     #[wasm_bindgen]
     pub fn finish(mut self, out: usize, body: Block) -> Func {
+        // We replace `self.constants` with an empty vec because we need to satisfy the borrow
+        // checker when we pass `self` to `body.finish` below; this is OK though, because
+        // `Block::finish` is guaranteed not to use `self.constants`.
         let mut code = std::mem::take(&mut self.constants);
         body.finish(&mut self, &mut code);
         Func {
@@ -337,6 +350,9 @@ impl FuncBuilder {
         }
     }
 
+    /// Finalize `x`, appending its dependencies onto `code` and marking it and them as expired.
+    ///
+    /// Must not use `self.constants`.
     fn extra(&mut self, x: id::Var, code: &mut Vec<rose::Instr>) {
         match std::mem::replace(&mut self.vars[x.var()].extra, Extra::Expired) {
             Extra::Parent(extra) => {
@@ -349,18 +365,33 @@ impl FuncBuilder {
         }
     }
 
+    /// Should the type with ID `t` be represented as a JavaScript `Symbol`?
+    ///
+    /// Values of index types must be symbols so that we can use the standard JavaScript indexing
+    /// notation (along with `Proxy`, see below) to generate array accessing code.
     #[wasm_bindgen(js_name = "isSymbol")]
     pub fn is_symbol(&self, t: usize) -> bool {
         let (ty, _) = self.types.get_index(t).unwrap();
+        // Because the JS API only allows constructing generics that are index types, we don't need
+        // to check for `rose::Constraint::Index` here. If that changes, this code must change too.
         matches!(ty, rose::Ty::Fin { .. } | rose::Ty::Generic { .. })
     }
 
-    #[wasm_bindgen(js_name = "isArray")]
-    pub fn is_array(&self, t: usize) -> bool {
+    /// Should the type with ID `t` be represented as a JavaScript `Proxy`?
+    ///
+    /// Values of array types must be proxies so that we can use the standard JavaScript indexing
+    /// notation (along with `Symbol`, see above) to generate array accessing code.
+    #[wasm_bindgen(js_name = "isProxy")]
+    pub fn is_proxy(&self, t: usize) -> bool {
         let (ty, _) = self.types.get_index(t).unwrap();
-        matches!(ty, rose::Ty::Array { .. })
+        matches!(ty, rose::Ty::Array { .. }) // should check for `Tuple` too once we allow structs
     }
 
+    /// Return a reference to the type with ID `t` if it exists, `Err` otherwise.
+    ///
+    /// This returns a `Result` with `JsError` because it is a helper method meant to be used by
+    /// `pub` methods exposed to JavaScript; don't prefer it for more Rusty stuff, because `JsError`
+    /// doesn't implement `Debug` so you can't easily call `Result::unwrap` here.
     fn ty(&self, t: usize) -> Result<&rose::Ty, JsError> {
         match self.types.get_index(t) {
             None => Err(JsError::new("type does not exist")),
@@ -368,6 +399,9 @@ impl FuncBuilder {
         }
     }
 
+    /// Return the ID of the index type for the array type with ID `t`.
+    ///
+    /// `Err` if `t` is out of range or does not represent an array type.
     #[wasm_bindgen]
     pub fn index(&self, t: usize) -> Result<usize, JsError> {
         match self.ty(t)? {
@@ -376,20 +410,9 @@ impl FuncBuilder {
         }
     }
 
-    #[wasm_bindgen]
-    pub fn size(&self, t: usize) -> Result<usize, JsError> {
-        match self.ty(t)? {
-            &rose::Ty::Array { index, elem: _ } => {
-                let (i, _) = self.types.get_index(index.ty()).unwrap();
-                match i {
-                    &rose::Ty::Fin { size } => Ok(size),
-                    _ => Err(JsError::new("index type is not a fixed size")),
-                }
-            }
-            _ => Err(JsError::new("type is not an array")),
-        }
-    }
-
+    /// Return the ID of the element type for the array type with ID `t`.
+    ///
+    /// `Err` if `t` is out of range or does not represent an array type.
     #[wasm_bindgen]
     pub fn elem(&self, t: usize) -> Result<usize, JsError> {
         match self.ty(t)? {
@@ -398,49 +421,62 @@ impl FuncBuilder {
         }
     }
 
+    /// Return `x` if it exists, is in scope, and has type ID `t`; `Err` otherwise.
     #[wasm_bindgen]
     pub fn expect(&self, t: usize, x: usize) -> Result<usize, JsError> {
         match self.vars.get(x) {
             None => Err(JsError::new("variable does not exist")),
-            Some(var) => {
-                if var.ty == id::ty(t) {
-                    Ok(x)
-                } else {
-                    Err(JsError::new("variable type mismatch"))
+            Some(var) => match var.extra {
+                Extra::Expired => Err(JsError::new("variable is out of scope")),
+                _ => {
+                    if var.ty == id::ty(t) {
+                        Ok(x)
+                    } else {
+                        Err(JsError::new("variable type mismatch"))
+                    }
                 }
-            }
+            },
         }
     }
 
+    /// Return the type ID for `ty`, creating if needed, and marking its constraints as `constrs`.
     fn newtype(&mut self, ty: rose::Ty, constrs: EnumSet<rose::Constraint>) -> usize {
         let (i, _) = self.types.insert_full(ty, constrs);
         i
     }
 
-    fn newvar(&mut self, ty: id::Ty) -> id::Var {
+    /// Create a new non-constant, non-child variable with type ID `t`, and return its ID.
+    ///
+    /// This method should only be used for variables that are about to be directly defined as part
+    /// of a `Block`, not for constants or any literals that get attached to other variables.
+    fn newvar(&mut self, t: id::Ty) -> id::Var {
         let id = self.vars.len();
         self.vars.push(Var {
-            ty,
+            ty: t,
             extra: Extra::Parent(vec![]),
         });
         id::var(id)
     }
 
+    /// Return the ID for the unit type, creating if needed.
     #[wasm_bindgen(js_name = "tyUnit")]
     pub fn ty_unit(&mut self) -> usize {
         self.newtype(rose::Ty::Unit, EnumSet::only(rose::Constraint::Value))
     }
 
+    /// Return the ID for the boolean type, creating if needed.
     #[wasm_bindgen(js_name = "tyBool")]
     pub fn ty_bool(&mut self) -> usize {
         self.newtype(rose::Ty::Bool, EnumSet::only(rose::Constraint::Value))
     }
 
+    /// Return the ID for the 64-bit floating-point type, creating if needed.
     #[wasm_bindgen(js_name = "tyF64")]
     pub fn ty_f64(&mut self) -> usize {
         self.newtype(rose::Ty::F64, EnumSet::only(rose::Constraint::Value))
     }
 
+    /// Return the ID for the type of nonnegative integers less than `size`, creating if needed.
     #[wasm_bindgen(js_name = "tyFin")]
     pub fn ty_fin(&mut self, size: usize) -> usize {
         self.newtype(
@@ -465,16 +501,6 @@ impl FuncBuilder {
             rose::Ty::Array {
                 index: id::ty(index),
                 elem: id::ty(elem),
-            },
-            EnumSet::only(rose::Constraint::Value),
-        )
-    }
-
-    #[wasm_bindgen(js_name = "tyTuple")]
-    pub fn ty_tuple(&mut self, members: &[usize]) -> usize {
-        self.newtype(
-            rose::Ty::Tuple {
-                members: members.iter().map(|&x| id::ty(x)).collect(),
             },
             EnumSet::only(rose::Constraint::Value),
         )
@@ -675,6 +701,9 @@ impl Block {
         Self { code: vec![] }
     }
 
+    ///
+    ///
+    /// Must not use `f.constants`.
     fn finish(self, f: &mut FuncBuilder, code: &mut Vec<rose::Instr>) {
         for instr in self.code.into_iter() {
             let var = instr.var;
@@ -705,24 +734,6 @@ impl Block {
         };
         Ok(self.instr(f, t, rose::Expr::Index { array, index }))
     }
-
-    #[wasm_bindgen]
-    pub fn member(
-        &mut self,
-        f: &mut FuncBuilder,
-        tup: usize,
-        mem: usize,
-    ) -> Result<usize, JsError> {
-        let tuple = id::var(tup);
-        let member = id::member(mem);
-        let t = match f.var_ty(tuple) {
-            rose::Ty::Tuple { members } => members[mem],
-            _ => return Err(JsError::new("not a tuple")),
-        };
-        Ok(self.instr(f, t, rose::Expr::Member { tuple, member }))
-    }
-
-    // no `Expr::Slice` or `Expr::Field` here, because we don't currently expose mutation to JS
 
     // unary
 

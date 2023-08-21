@@ -149,7 +149,7 @@ const idVal = (ctx: Context, t: number, id: number): Val => {
     const sym = Symbol();
     ctx.symbols.set(sym, id);
     return sym;
-  } else if (ctx.func.isArray(t)) return arrayProxy(t, id);
+  } else if (ctx.func.isProxy(t)) return arrayProxy(t, id);
   else return new Var(id);
 };
 
