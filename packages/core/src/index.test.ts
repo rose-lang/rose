@@ -3,6 +3,7 @@ import {
   Bool,
   Null,
   Real,
+  Vec,
   add,
   div,
   fn,
@@ -14,6 +15,22 @@ import {
 } from "./index.js";
 
 describe("invalid", () => {
+  test("undefined", () => {
+    expect(() => fn([], Real, () => undefined as any)).toThrow(
+      "undefined value",
+    );
+  });
+
+  test("bigint", () => {
+    expect(() => fn([], Real, () => 0n as any)).toThrow("bigint not supported");
+  });
+
+  test("string", () => {
+    expect(() => fn([], Real, () => "hello" as any)).toThrow(
+      "string not supported",
+    );
+  });
+
   test("literal return type", () => {
     expect(() => fn([], Real, () => null as any)).toThrow(
       "did not expect null",
@@ -25,6 +42,16 @@ describe("invalid", () => {
     expect(() => fn([], Real, () => add(two, two))).toThrow(
       "did not expect boolean",
     );
+  });
+
+  test("array dimension", () => {
+    expect(() => fn([Vec(3, Real)], Vec(2, Real), (v) => v)).toThrow(
+      "variable type mismatch",
+    );
+  });
+
+  test("out of bounds index", () => {
+    expect(() => fn([Vec(2, Real)], Real, (v) => v[2])).toThrow("out of range");
   });
 });
 
@@ -66,5 +93,31 @@ describe("valid", () => {
     expect(a()).toBe(0);
     expect(b()).toBe(0);
     expect(c()).toBe(1);
+  });
+
+  test("dot product", () => {
+    const R3 = Vec(3, Real);
+    const dot = fn([R3, R3], Real, (u, v) => {
+      const x = mul(u[0], v[0]);
+      const y = mul(u[1], v[1]);
+      const z = mul(u[2], v[2]);
+      return add(add(x, y), z);
+    });
+    const f = fn([], Real, () => dot([1, 3, -5], [4, -2, -1]));
+    const g = interp(f);
+    expect(g()).toBe(3);
+  });
+
+  test("cross product", () => {
+    const R3 = Vec(3, Real);
+    const cross = fn([R3, R3], R3, (u, v) => {
+      const x = sub(mul(u[1], v[2]), mul(u[2], v[1]));
+      const y = sub(mul(u[2], v[0]), mul(u[0], v[2]));
+      const z = sub(mul(u[0], v[1]), mul(u[1], v[0]));
+      return [x, y, z];
+    });
+    const f = fn([], R3, () => cross([3, -3, 1], [4, 9, 2]));
+    const g = interp(f);
+    expect(g()).toEqual([-15, -2, 39]);
   });
 });

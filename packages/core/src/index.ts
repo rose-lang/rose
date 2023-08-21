@@ -49,7 +49,13 @@ interface Context {
   literals: Map<number, Map<Val, number>>;
 }
 
+const variable = Symbol("variable");
+
 const valId = (ctx: Context, t: number, x: Val): number => {
+  if (x === undefined) throw Error("undefined value");
+  if (typeof x === "bigint") throw Error("bigint not supported");
+  if (typeof x === "string") throw Error("string not supported");
+
   if (x instanceof Var) return ctx.func.expect(t, x.id);
 
   if (typeof x === "symbol") {
@@ -58,12 +64,18 @@ const valId = (ctx: Context, t: number, x: Val): number => {
     return ctx.func.expect(t, id);
   }
 
+  let id: number | undefined;
+  if (typeof x === "object" && x !== null) {
+    id = (x as any)[variable];
+    if (id !== undefined) return ctx.func.expect(t, id);
+  }
+
   let map = ctx.literals.get(t);
   if (map === undefined) {
     map = new Map();
     ctx.literals.set(t, map);
   }
-  let id = map.get(x);
+  id = map.get(x);
   if (id !== undefined) return ctx.func.expect(t, id);
 
   if (x === null) id = ctx.func.unit(t);
@@ -148,6 +160,7 @@ const arrayProxy = (t: number, v: number): Val[] => {
     {},
     {
       get: (target, prop): Val => {
+        if (prop === variable) return v;
         const ctx = getCtx();
         const index = ctx.func.index(t);
         const elem = ctx.func.elem(t);
