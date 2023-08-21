@@ -40,7 +40,11 @@ export type Nat = number | symbol;
 
 export type Generic = symbol;
 
-type Val = Null | Bool | Real | Nat | Generic | Val[];
+export interface Vec<T> {
+  [K: Nat]: T;
+}
+
+type Val = Null | Bool | Real | Nat | Generic | Vec<Val>;
 
 interface Context {
   func: wasm.FuncBuilder;
@@ -81,14 +85,7 @@ const valId = (ctx: Context, t: number, x: Val): number => {
   if (x === null) id = ctx.func.unit(t);
   else if (typeof x === "boolean") id = ctx.func.bool(t, x);
   else if (typeof x === "number") id = ctx.func.num(t, x);
-  else {
-    const size = ctx.func.size(t);
-    const elem = ctx.func.elem(t);
-    if (x.length !== size) throw Error("wrong array size");
-    const xs = new Uint32Array(size);
-    for (let i = 0; i < size; ++i) xs[i] = valId(ctx, elem, x[i]);
-    id = ctx.func.array(t, xs);
-  }
+  else throw Error("undefined vector");
 
   map.set(x, id);
   return id;
@@ -156,7 +153,7 @@ const idVal = (ctx: Context, t: number, id: number): Val => {
   else return new Var(id);
 };
 
-const arrayProxy = (t: number, v: number): Val[] => {
+const arrayProxy = (t: number, v: number): Vec<Val> => {
   return new Proxy(
     {},
     {
@@ -170,7 +167,7 @@ const arrayProxy = (t: number, v: number): Val[] => {
         return idVal(ctx, elem, x);
       },
     },
-  ) as Val[];
+  );
 };
 
 const call = (f: Fn, generics: Uint32Array, args: Val[]): Val => {
@@ -193,7 +190,7 @@ type FromType<T extends Type> = T extends Nulls
   : T extends Generics
   ? Generic
   : T extends Vecs<any, infer V extends Type>
-  ? FromType<V>[]
+  ? Vec<FromType<V>>
   : unknown; // TODO: is `unknown` the right default here? what about `never`?
 
 type Params<T extends readonly Type[]> = {
@@ -372,4 +369,20 @@ export const gt = (x: Real, y: Real): Bool => {
 export const geq = (x: Real, y: Real): Bool => {
   const ctx = getCtx();
   return new Var(ctx.block.geq(ctx.func, realId(ctx, x), realId(ctx, y)));
+};
+
+export const vec = <T extends Type>(
+  ty: T,
+  xs: FromType<T>[],
+): Vec<FromType<T>> => {
+  const ctx = getCtx();
+  const size = xs.length;
+  const index = ctx.func.tyFin(size);
+  const elem = tyId(ctx, ty);
+  const t = ctx.func.tyArray(index, elem);
+  if (xs.length !== size) throw Error("wrong array size");
+  const arr = new Uint32Array(size);
+  for (let i = 0; i < size; ++i) arr[i] = valId(ctx, elem, xs[i]);
+  const id = ctx.func.array(t, arr);
+  return arrayProxy(t, id) as Vec<FromType<T>>;
 };

@@ -12,6 +12,7 @@ import {
   mul,
   select,
   sub,
+  vec,
 } from "./index.js";
 
 describe("invalid", () => {
@@ -51,8 +52,8 @@ describe("invalid", () => {
   });
 
   test("literal array dimension", () => {
-    expect(() => fn([], Vec(2, Real), () => [1, 2, 3])).toThrow(
-      "wrong array size",
+    expect(() => fn([], Vec(2, Real), () => vec(Real, [1, 2, 3]))).toThrow(
+      "variable type mismatch",
     );
   });
 
@@ -102,13 +103,13 @@ describe("valid", () => {
   });
 
   test("empty boolean array", () => {
-    const f = fn([], Vec(0, Bool), () => []);
+    const f = fn([], Vec(0, Bool), () => vec(Bool, []));
     const g = interp(f);
     expect(g()).toEqual([]);
   });
 
   test("empty real array", () => {
-    const f = fn([], Vec(0, Real), () => []);
+    const f = fn([], Vec(0, Real), () => vec(Real, []));
     const g = interp(f);
     expect(g()).toEqual([]);
   });
@@ -121,7 +122,9 @@ describe("valid", () => {
       const z = mul(u[2], v[2]);
       return add(add(x, y), z);
     });
-    const f = fn([], Real, () => dot([1, 3, -5], [4, -2, -1]));
+    const f = fn([], Real, () =>
+      dot(vec(Real, [1, 3, -5]), vec(Real, [4, -2, -1])),
+    );
     const g = interp(f);
     expect(g()).toBe(3);
   });
@@ -132,20 +135,23 @@ describe("valid", () => {
       const x = sub(mul(u[1], v[2]), mul(u[2], v[1]));
       const y = sub(mul(u[2], v[0]), mul(u[0], v[2]));
       const z = sub(mul(u[0], v[1]), mul(u[1], v[0]));
-      return [x, y, z];
+      return vec(Real, [x, y, z]);
     });
-    const f = fn([], R3, () => cross([3, -3, 1], [4, 9, 2]));
+    const f = fn([], R3, () =>
+      cross(vec(Real, [3, -3, 1]), vec(Real, [4, 9, 2])),
+    );
     const g = interp(f);
     expect(g()).toEqual([-15, -2, 39]);
   });
 
-  test("polymorphic arrays", () => {
-    const f = fn([Vec(3, 3), Vec(3, Real)], Vec(3, Real), (i, v) => {
-      return [v[i[0] as any], v[i[1] as any], v[i[2] as any]];
+  test("index array", () => {
+    const n = 3;
+    const f = fn([Vec(n, n), Vec(n, Real)], Vec(n, Real), (i, v) => {
+      return vec(Real, [v[i[0]], v[i[1]], v[i[2]]]);
     });
-    const g = fn([], Vec(3, Real), () => {
+    const g = fn([], Vec(n, Real), () => {
       const v = [2, 0, 1];
-      return f(v, v);
+      return f(vec(n, v), vec(Real, v));
     });
     const h = interp(g);
     expect(h()).toEqual([1, 2, 0]);
