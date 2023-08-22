@@ -400,14 +400,14 @@ export const geq = (x: Real, y: Real): Bool => {
   return new Var(ctx.block.geq(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
-export const vec = <T extends Type, I extends Type>(
-  elem: T,
+export const vec = <I extends Type, T extends Type>(
   index: I,
+  elem: T,
   f: (i: ToSymbolic<I>) => ToValue<T>,
 ): Vec<ToSymbolic<T>> => {
   const ctx = getCtx();
-  const e = tyId(ctx, elem);
   const i = tyId(ctx, index as Type);
+  const e = tyId(ctx, elem);
   const t = ctx.func.tyArray(i, e);
   const arg = ctx.func.bind(i);
   const block = ctx.block;

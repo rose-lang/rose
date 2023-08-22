@@ -163,7 +163,7 @@ T1 = Bool
   test("for", () => {
     const n = 3;
     const Rn = Vec(n, Real);
-    const f = fn([Rn, Rn], Rn, (a, b) => vec(Real, n, (i) => add(a[i], b[i])));
+    const f = fn([Rn, Rn], Rn, (a, b) => vec(n, Real, (i) => add(a[i], b[i])));
     const s = pprint(f);
     expect(s).toBe(
       `

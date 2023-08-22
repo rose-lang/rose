@@ -67,7 +67,7 @@ describe("invalid", () => {
     expect(() =>
       fn([], n, () => {
         let i: Nat = 0;
-        vec(Real, n, (j) => {
+        vec(n, Real, (j) => {
           i = j;
           return 42;
         });
@@ -174,7 +174,7 @@ describe("valid", () => {
     const Rn = Vec(n, Real);
 
     const dot = fn([Rn, Rn], Real, (u, v) => {
-      const w = vec(Real, n, (i) => mul(u[i], v[i]));
+      const w = vec(n, Real, (i) => mul(u[i], v[i]));
       let s = w[0];
       s = add(s, w[1]);
       s = add(s, w[2]);
@@ -194,10 +194,10 @@ describe("valid", () => {
     const Rmxp = Vec(m, Rp);
 
     const mmul = fn([Rmxn, Rnxp], Rmxp, (a, b) =>
-      vec(Rp, m, (i) => {
+      vec(m, Rp, (i) => {
         const u = a[i];
-        return vec(Real, p, (j) => {
-          const v = vec(Real, n, (k) => b[k][j]);
+        return vec(p, Real, (j) => {
+          const v = vec(n, Real, (k) => b[k][j]);
           return dot(u, v);
         });
       }),
@@ -235,7 +235,7 @@ describe("valid", () => {
 
   test("singleton array from index", () => {
     const One = Vec(1, 1);
-    const f = fn([], One, () => vec(One, 1, (i) => [i])[0]);
+    const f = fn([], One, () => vec(1, One, (i) => [i])[0]);
     const g = interp(f);
     expect(g()).toEqual([0]);
   });
