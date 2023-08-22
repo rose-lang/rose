@@ -157,9 +157,9 @@ describe("valid", () => {
 
   test("index array", () => {
     const n = 3;
-    const f = fn([Vec(n, n), Vec(n, Real)], Vec(n, Real), (i, v) => {
-      return [v[i[0]], v[i[1]], v[i[2]]];
-    });
+    const f = fn([Vec(n, n), Vec(n, Real)], Vec(n, Real), (i, v) =>
+      vec(n, Real, (j) => v[i[j]]),
+    );
     const g = fn([], Vec(n, Real), () => {
       const v = [2, 0, 1];
       return f(v, v);
