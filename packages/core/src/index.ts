@@ -371,18 +371,45 @@ export const geq = (x: Real, y: Real): Bool => {
   return new Var(ctx.block.geq(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
-export const vec = <T extends Type>(
-  ty: T,
-  xs: FromType<T>[],
+export const vec: {
+  <T extends Type>(elem: T, xs: FromType<T>[]): Vec<FromType<T>>;
+  <T extends Type, I extends Type>(
+    elem: T,
+    index: I,
+    f: (i: FromType<I>) => FromType<T>,
+  ): Vec<FromType<T>>;
+} = (<T extends Type>(
+  elem: T,
+  index: Type | FromType<T>[],
+  f: undefined | ((i: Nat) => FromType<T>),
 ): Vec<FromType<T>> => {
   const ctx = getCtx();
-  const size = xs.length;
-  const index = ctx.func.tyFin(size);
-  const elem = tyId(ctx, ty);
-  const t = ctx.func.tyArray(index, elem);
-  if (xs.length !== size) throw Error("wrong array size");
-  const arr = new Uint32Array(size);
-  for (let i = 0; i < size; ++i) arr[i] = valId(ctx, elem, xs[i]);
-  const id = ctx.func.array(t, arr);
-  return arrayProxy(t, id) as Vec<FromType<T>>;
-};
+  const e = tyId(ctx, elem);
+  if (f === undefined) {
+    const xs = index as FromType<T>[];
+    const size = xs.length;
+    const i = ctx.func.tyFin(size);
+    const t = ctx.func.tyArray(i, e);
+    if (xs.length !== size) throw Error("wrong array size");
+    const arr = new Uint32Array(size);
+    for (let j = 0; j < size; ++j) arr[j] = valId(ctx, e, xs[j]);
+    const id = ctx.func.array(t, arr);
+    return arrayProxy(t, id) as Vec<FromType<T>>;
+  } else {
+    const i = tyId(ctx, index as Type);
+    const t = ctx.func.tyArray(i, e);
+    const arg = ctx.func.bind(i);
+    const block = ctx.block;
+    let out: number | undefined = undefined;
+    const body = new wasm.Block();
+    try {
+      ctx.block = body;
+      out = valId(ctx, e, f(idVal(ctx, i, arg) as Nat));
+    } finally {
+      if (out === undefined) body.free();
+      ctx.block = block;
+    }
+    const id = block.vec(ctx.func, t, arg, body, out);
+    return idVal(ctx, t, id) as Vec<FromType<T>>;
+  }
+}) as any;

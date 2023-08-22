@@ -507,6 +507,11 @@ impl FuncBuilder {
     }
 
     #[wasm_bindgen]
+    pub fn bind(&mut self, t: usize) -> usize {
+        self.newvar(id::ty(t)).var()
+    }
+
+    #[wasm_bindgen]
     pub fn param(&mut self, t: usize) -> usize {
         let x = self.newvar(id::ty(t));
         self.params.push(x);
@@ -973,6 +978,27 @@ impl Block {
             args: args.iter().map(|&x| id::var(x)).collect(),
         };
         Ok(self.instr(f, id::ty(t), expr))
+    }
+
+    #[wasm_bindgen]
+    pub fn vec(
+        &mut self,
+        f: &mut FuncBuilder,
+        t: usize,
+        arg: usize,
+        body: Self,
+        out: usize,
+    ) -> usize {
+        let arg = id::var(arg);
+        let mut code = vec![];
+        f.extra(arg, &mut code);
+        body.finish(f, &mut code);
+        let expr = rose::Expr::For {
+            arg,
+            body: code.into(),
+            ret: id::var(out),
+        };
+        self.instr(f, id::ty(t), expr)
     }
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   Bool,
+  Nat,
   Null,
   Real,
   Vec,
@@ -59,6 +60,20 @@ describe("invalid", () => {
 
   test("out of bounds index", () => {
     expect(() => fn([Vec(2, Real)], Real, (v) => v[2])).toThrow("out of range");
+  });
+
+  test("access index out of scope", () => {
+    const n = 2;
+    expect(() =>
+      fn([], n, () => {
+        let i: Nat = 0;
+        vec(Real, n, (j) => {
+          i = j;
+          return 42;
+        });
+        return i;
+      }),
+    ).toThrow("variable is out of scope");
   });
 });
 
@@ -155,5 +170,76 @@ describe("valid", () => {
     });
     const h = interp(g);
     expect(h()).toEqual([1, 2, 0]);
+  });
+
+  test("matrix multiplication", () => {
+    const n = 6;
+
+    const Rn = Vec(n, Real);
+
+    const dot = fn([Rn, Rn], Real, (u, v) => {
+      const w = vec(Real, n, (i) => mul(u[i], v[i]));
+      let s = w[0];
+      s = add(s, w[1]);
+      s = add(s, w[2]);
+      s = add(s, w[3]);
+      s = add(s, w[4]);
+      s = add(s, w[5]);
+      return s;
+    });
+
+    const m = 5;
+    const p = 7;
+
+    const Rp = Vec(p, Real);
+
+    const Rmxn = Vec(m, Rn);
+    const Rnxp = Vec(n, Rp);
+    const Rmxp = Vec(m, Rp);
+
+    const mmul = fn([Rmxn, Rnxp], Rmxp, (a, b) =>
+      vec(Rp, m, (i) => {
+        const u = a[i];
+        return vec(Real, p, (j) => {
+          const v = vec(Real, n, (k) => b[k][j]);
+          return dot(u, v);
+        });
+      }),
+    );
+
+    const f = fn([], Rmxp, () =>
+      mmul(
+        vec(Rn, [
+          vec(Real, [-8, 5, 3, -1, 8, 0]),
+          vec(Real, [-3, -1, 7, -7, 8, 3]),
+          vec(Real, [-4, 5, 5, 5, 8, 6]),
+          vec(Real, [1, -9, 5, 4, 4, 0]),
+          vec(Real, [9, -3, 1, 3, -5, -5]),
+        ]),
+        vec(Rp, [
+          vec(Real, [-7, 9, 6, -8, 5, 8, -3]),
+          vec(Real, [3, -6, 8, 0, 7, -4, -1]),
+          vec(Real, [-4, 9, 9, 1, -8, -4, 0]),
+          vec(Real, [6, -7, 6, -6, -8, -5, 0]),
+          vec(Real, [8, 5, 3, 0, 6, 3, -7]),
+          vec(Real, [-4, 0, -5, -9, 8, -9, -1]),
+        ]),
+      ),
+    );
+
+    const g = interp(f);
+    expect(g()).toEqual([
+      [117, -28, 37, 73, 27, -67, -37],
+      [0, 131, 4, 46, 50, -16, -49],
+      [93, -16, 85, -47, 31, -127, -55],
+      [2, 100, 15, -27, -106, 16, -22],
+      [-78, 62, 67, -44, -78, 95, 16],
+    ]);
+  });
+
+  test("singleton array from index", () => {
+    const f = fn([], Vec(1, 1), () => vec(Vec(1, 1), 1, (i) => vec(1, [i]))[0]);
+    const g = interp(f);
+    expect(g()).toEqual([0]);
   });
 });
