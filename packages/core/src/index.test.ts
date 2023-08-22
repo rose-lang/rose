@@ -238,7 +238,8 @@ describe("valid", () => {
   });
 
   test("singleton array from index", () => {
-    const f = fn([], Vec(1, 1), () => vec(Vec(1, 1), 1, (i) => vec(1, [i]))[0]);
+    const One = Vec(1, 1);
+    const f = fn([], One, () => vec(One, 1, (i) => vec(1, [i]))[0]);
     const g = interp(f);
     expect(g()).toEqual([0]);
   });
