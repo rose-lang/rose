@@ -44,18 +44,22 @@ export interface Vec<T> {
   [K: Nat]: T;
 }
 
-type Val = Null | Bool | Real | Nat | Generic | Vec<Val>;
+type ArrayOrVec<T> = T[] | Vec<T>;
+
+type Symbolic = Null | Bool | Real | Nat | Generic | Vec<Symbolic>;
+
+type Value = Symbolic | Value[];
 
 interface Context {
   func: wasm.FuncBuilder;
   block: wasm.Block;
   symbols: Map<symbol, number>;
-  literals: Map<number, Map<Val, number>>;
+  literals: Map<number, Map<Value, number>>;
 }
 
 const variable = Symbol("variable");
 
-const valId = (ctx: Context, t: number, x: Val): number => {
+const valId = (ctx: Context, t: number, x: Value): number => {
   if (x === undefined) throw Error("undefined value");
   if (typeof x === "bigint") throw Error("bigint not supported");
   if (typeof x === "string") throw Error("string not supported");
@@ -85,7 +89,14 @@ const valId = (ctx: Context, t: number, x: Val): number => {
   if (x === null) id = ctx.func.unit(t);
   else if (typeof x === "boolean") id = ctx.func.bool(t, x);
   else if (typeof x === "number") id = ctx.func.num(t, x);
-  else throw Error("undefined vector");
+  else if ("length" in x) {
+    const size = ctx.func.size(t);
+    const elem = ctx.func.elem(t);
+    if (x.length !== size) throw Error("wrong array size");
+    const xs = new Uint32Array(size);
+    for (let i = 0; i < size; ++i) xs[i] = valId(ctx, elem, x[i]);
+    id = ctx.func.array(t, xs);
+  } else throw Error("undefined vector");
 
   map.set(x, id);
   return id;
@@ -144,7 +155,7 @@ const tyId = (ctx: Context, ty: Type): number => {
 export const Vec = <K, V>(index: K, elem: V): Vecs<K, V> =>
   new Vecs(index, elem);
 
-const idVal = (ctx: Context, t: number, id: number): Val => {
+const idVal = (ctx: Context, t: number, id: number): Symbolic => {
   if (ctx.func.isSymbol(t)) {
     const sym = Symbol();
     ctx.symbols.set(sym, id);
@@ -153,11 +164,11 @@ const idVal = (ctx: Context, t: number, id: number): Val => {
   else return new Var(id);
 };
 
-const arrayProxy = (t: number, v: number): Vec<Val> => {
+const arrayProxy = (t: number, v: number): Vec<Symbolic> => {
   return new Proxy(
     {},
     {
-      get: (target, prop): Val => {
+      get: (target, prop): Symbolic => {
         if (prop === variable) return v;
         const ctx = getCtx();
         const index = ctx.func.index(t);
@@ -170,7 +181,7 @@ const arrayProxy = (t: number, v: number): Vec<Val> => {
   );
 };
 
-const call = (f: Fn, generics: Uint32Array, args: Val[]): Val => {
+const call = (f: Fn, generics: Uint32Array, args: Value[]): Symbolic => {
   const ctx = getCtx();
   const sig = ctx.func.ingest(f[inner], generics);
   const ret = sig[sig.length - 1];
@@ -179,7 +190,7 @@ const call = (f: Fn, generics: Uint32Array, args: Val[]): Val => {
   return idVal(ctx, ret, id);
 };
 
-type FromType<T extends Type> = T extends Nulls
+type ToSymbolic<T extends Type> = T extends Nulls
   ? Null
   : T extends Bools
   ? Bool
@@ -190,19 +201,37 @@ type FromType<T extends Type> = T extends Nulls
   : T extends Generics
   ? Generic
   : T extends Vecs<any, infer V extends Type>
-  ? Vec<FromType<V>>
+  ? Vec<ToSymbolic<V>>
   : unknown; // TODO: is `unknown` the right default here? what about `never`?
 
-type Params<T extends readonly Type[]> = {
-  [K in keyof T]: FromType<T[K]>;
+type ToValue<T extends Type> = T extends Nulls
+  ? Null
+  : T extends Bools
+  ? Bool
+  : T extends Reals
+  ? Real
+  : T extends Nats
+  ? Nat
+  : T extends Generics
+  ? Generic
+  : T extends Vecs<any, infer V extends Type>
+  ? Vec<ToValue<V>> | ToValue<V>[]
+  : unknown; // TODO: is `unknown` the right default here? what about `never`?
+
+type SymbolicParams<T extends readonly Type[]> = {
+  [K in keyof T]: ToSymbolic<T[K]>;
+};
+
+type ValueParams<T extends readonly Type[]> = {
+  [K in keyof T]: ToValue<T[K]>;
 };
 
 /** Constructs an abstract function with the given `types` for parameters. */
 export const fn = <const P extends readonly Type[], R extends Type>(
   params: P,
   ret: R,
-  f: (...args: Params<P>) => FromType<R>,
-): Fn & ((...args: Params<P>) => FromType<R>) => {
+  f: (...args: SymbolicParams<P>) => ToValue<R>,
+): Fn & ((...args: ValueParams<P>) => ToSymbolic<R>) => {
   // TODO: support closures
   if (context !== undefined)
     throw Error("can't define a function while defining another function");
@@ -218,12 +247,12 @@ export const fn = <const P extends readonly Type[], R extends Type>(
     };
     context = ctx;
     const x = f(
-      ...(params.map((ty): Val => {
+      ...(params.map((ty): Symbolic => {
         const t = tyId(ctx, ty);
         return idVal(ctx, t, ctx.func.param(t));
-      }) as Params<P>),
+      }) as SymbolicParams<P>),
     );
-    out = valId(ctx, tyId(ctx, ret), x);
+    out = valId(ctx, tyId(ctx, ret), x as Value);
   } finally {
     context = undefined;
     if (out === undefined) {
@@ -232,9 +261,9 @@ export const fn = <const P extends readonly Type[], R extends Type>(
     }
   }
   const func = builder.finish(out, body);
-  const g: any = (...args: Params<P>): FromType<R> =>
+  const g: any = (...args: SymbolicParams<P>): ToSymbolic<R> =>
     // TODO: support generics
-    call(g, new Uint32Array(), args as Val[]) as FromType<R>;
+    call(g, new Uint32Array(), args as Value[]) as ToSymbolic<R>;
   g[inner] = func;
   return g;
 };
@@ -251,13 +280,13 @@ const translate = (x: RawVal): Js => {
   else throw Error("Tuple not supported");
 };
 
-type ToJs<T extends Val> = T extends (infer V extends Val)[]
+type ToJs<T extends Value> = T extends ArrayOrVec<infer V extends Value>
   ? ToJs<V>[]
   : Exclude<T, Var | symbol>;
 
 // TODO: support interpreting functions with parameters and generics
 export const interp =
-  <R extends Val>(f: Fn & (() => R)): (() => ToJs<R>) =>
+  <R extends Value>(f: Fn & (() => R)): (() => ToJs<R>) =>
   () =>
     translate(wasm.interp(f[inner])) as ToJs<R>;
 
@@ -292,15 +321,15 @@ export const xor = (p: Bool, q: Bool): Bool => {
 export const select = <T extends Type>(
   cond: Bool,
   ty: T,
-  then: FromType<T>,
-  els: FromType<T>,
-): FromType<T> => {
+  then: ToSymbolic<T>,
+  els: ToSymbolic<T>,
+): ToSymbolic<T> => {
   const ctx = getCtx();
   const t = tyId(ctx, ty);
   const p = boolId(ctx, cond);
   const a = valId(ctx, t, then);
   const b = valId(ctx, t, els);
-  return idVal(ctx, t, ctx.block.select(ctx.func, p, t, a, b)) as FromType<T>;
+  return idVal(ctx, t, ctx.block.select(ctx.func, p, t, a, b)) as ToSymbolic<T>;
 };
 
 const realId = (ctx: Context, x: Real): number =>
@@ -371,45 +400,26 @@ export const geq = (x: Real, y: Real): Bool => {
   return new Var(ctx.block.geq(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
-export const vec: {
-  <T extends Type>(elem: T, xs: FromType<T>[]): Vec<FromType<T>>;
-  <T extends Type, I extends Type>(
-    elem: T,
-    index: I,
-    f: (i: FromType<I>) => FromType<T>,
-  ): Vec<FromType<T>>;
-} = (<T extends Type>(
+export const vec = <T extends Type, I extends Type>(
   elem: T,
-  index: Type | FromType<T>[],
-  f: undefined | ((i: Nat) => FromType<T>),
-): Vec<FromType<T>> => {
+  index: I,
+  f: (i: ToSymbolic<I>) => ToValue<T>,
+): Vec<ToSymbolic<T>> => {
   const ctx = getCtx();
   const e = tyId(ctx, elem);
-  if (f === undefined) {
-    const xs = index as FromType<T>[];
-    const size = xs.length;
-    const i = ctx.func.tyFin(size);
-    const t = ctx.func.tyArray(i, e);
-    if (xs.length !== size) throw Error("wrong array size");
-    const arr = new Uint32Array(size);
-    for (let j = 0; j < size; ++j) arr[j] = valId(ctx, e, xs[j]);
-    const id = ctx.func.array(t, arr);
-    return arrayProxy(t, id) as Vec<FromType<T>>;
-  } else {
-    const i = tyId(ctx, index as Type);
-    const t = ctx.func.tyArray(i, e);
-    const arg = ctx.func.bind(i);
-    const block = ctx.block;
-    let out: number | undefined = undefined;
-    const body = new wasm.Block();
-    try {
-      ctx.block = body;
-      out = valId(ctx, e, f(idVal(ctx, i, arg) as Nat));
-    } finally {
-      if (out === undefined) body.free();
-      ctx.block = block;
-    }
-    const id = block.vec(ctx.func, t, arg, body, out);
-    return idVal(ctx, t, id) as Vec<FromType<T>>;
+  const i = tyId(ctx, index as Type);
+  const t = ctx.func.tyArray(i, e);
+  const arg = ctx.func.bind(i);
+  const block = ctx.block;
+  let out: number | undefined = undefined;
+  const body = new wasm.Block();
+  try {
+    ctx.block = body;
+    out = valId(ctx, e, f(idVal(ctx, i, arg) as ToSymbolic<I>) as Value);
+  } finally {
+    if (out === undefined) body.free();
+    ctx.block = block;
   }
-}) as any;
+  const id = block.vec(ctx.func, t, arg, body, out);
+  return idVal(ctx, t, id) as Vec<ToSymbolic<T>>;
+};

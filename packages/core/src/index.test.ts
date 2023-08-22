@@ -53,8 +53,8 @@ describe("invalid", () => {
   });
 
   test("literal array dimension", () => {
-    expect(() => fn([], Vec(2, Real), () => vec(Real, [1, 2, 3]))).toThrow(
-      "variable type mismatch",
+    expect(() => fn([], Vec(2, Real), () => [1, 2, 3])).toThrow(
+      "wrong array size",
     );
   });
 
@@ -118,13 +118,13 @@ describe("valid", () => {
   });
 
   test("empty boolean array", () => {
-    const f = fn([], Vec(0, Bool), () => vec(Bool, []));
+    const f = fn([], Vec(0, Bool), () => []);
     const g = interp(f);
     expect(g()).toEqual([]);
   });
 
   test("empty real array", () => {
-    const f = fn([], Vec(0, Real), () => vec(Real, []));
+    const f = fn([], Vec(0, Real), () => []);
     const g = interp(f);
     expect(g()).toEqual([]);
   });
@@ -137,9 +137,7 @@ describe("valid", () => {
       const z = mul(u[2], v[2]);
       return add(add(x, y), z);
     });
-    const f = fn([], Real, () =>
-      dot(vec(Real, [1, 3, -5]), vec(Real, [4, -2, -1])),
-    );
+    const f = fn([], Real, () => dot([1, 3, -5], [4, -2, -1]));
     const g = interp(f);
     expect(g()).toBe(3);
   });
@@ -150,11 +148,9 @@ describe("valid", () => {
       const x = sub(mul(u[1], v[2]), mul(u[2], v[1]));
       const y = sub(mul(u[2], v[0]), mul(u[0], v[2]));
       const z = sub(mul(u[0], v[1]), mul(u[1], v[0]));
-      return vec(Real, [x, y, z]);
+      return [x, y, z];
     });
-    const f = fn([], R3, () =>
-      cross(vec(Real, [3, -3, 1]), vec(Real, [4, 9, 2])),
-    );
+    const f = fn([], R3, () => cross([3, -3, 1], [4, 9, 2]));
     const g = interp(f);
     expect(g()).toEqual([-15, -2, 39]);
   });
@@ -162,11 +158,11 @@ describe("valid", () => {
   test("index array", () => {
     const n = 3;
     const f = fn([Vec(n, n), Vec(n, Real)], Vec(n, Real), (i, v) => {
-      return vec(Real, [v[i[0]], v[i[1]], v[i[2]]]);
+      return [v[i[0]], v[i[1]], v[i[2]]];
     });
     const g = fn([], Vec(n, Real), () => {
       const v = [2, 0, 1];
-      return f(vec(n, v), vec(Real, v));
+      return f(v, v);
     });
     const h = interp(g);
     expect(h()).toEqual([1, 2, 0]);
@@ -209,21 +205,21 @@ describe("valid", () => {
 
     const f = fn([], Rmxp, () =>
       mmul(
-        vec(Rn, [
-          vec(Real, [-8, 5, 3, -1, 8, 0]),
-          vec(Real, [-3, -1, 7, -7, 8, 3]),
-          vec(Real, [-4, 5, 5, 5, 8, 6]),
-          vec(Real, [1, -9, 5, 4, 4, 0]),
-          vec(Real, [9, -3, 1, 3, -5, -5]),
-        ]),
-        vec(Rp, [
-          vec(Real, [-7, 9, 6, -8, 5, 8, -3]),
-          vec(Real, [3, -6, 8, 0, 7, -4, -1]),
-          vec(Real, [-4, 9, 9, 1, -8, -4, 0]),
-          vec(Real, [6, -7, 6, -6, -8, -5, 0]),
-          vec(Real, [8, 5, 3, 0, 6, 3, -7]),
-          vec(Real, [-4, 0, -5, -9, 8, -9, -1]),
-        ]),
+        [
+          [-8, 5, 3, -1, 8, 0],
+          [-3, -1, 7, -7, 8, 3],
+          [-4, 5, 5, 5, 8, 6],
+          [1, -9, 5, 4, 4, 0],
+          [9, -3, 1, 3, -5, -5],
+        ],
+        [
+          [-7, 9, 6, -8, 5, 8, -3],
+          [3, -6, 8, 0, 7, -4, -1],
+          [-4, 9, 9, 1, -8, -4, 0],
+          [6, -7, 6, -6, -8, -5, 0],
+          [8, 5, 3, 0, 6, 3, -7],
+          [-4, 0, -5, -9, 8, -9, -1],
+        ],
       ),
     );
 
@@ -239,7 +235,7 @@ describe("valid", () => {
 
   test("singleton array from index", () => {
     const One = Vec(1, 1);
-    const f = fn([], One, () => vec(One, 1, (i) => vec(1, [i]))[0]);
+    const f = fn([], One, () => vec(One, 1, (i) => [i])[0]);
     const g = interp(f);
     expect(g()).toEqual([0]);
   });

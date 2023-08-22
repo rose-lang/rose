@@ -410,6 +410,20 @@ impl FuncBuilder {
         }
     }
 
+    #[wasm_bindgen]
+    pub fn size(&self, t: usize) -> Result<usize, JsError> {
+        match self.ty(t)? {
+            &rose::Ty::Array { index, elem: _ } => {
+                let (i, _) = self.types.get_index(index.ty()).unwrap();
+                match i {
+                    &rose::Ty::Fin { size } => Ok(size),
+                    _ => Err(JsError::new("index type is not a fixed size")),
+                }
+            }
+            _ => Err(JsError::new("type is not an array")),
+        }
+    }
+
     /// Return the ID of the element type for the array type with ID `t`.
     ///
     /// `Err` if `t` is out of range or does not represent an array type.
