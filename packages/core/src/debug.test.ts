@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   Bool,
   Real,
+  Vec,
   abs,
   add,
   and,
@@ -23,6 +24,7 @@ import {
   select,
   sqrt,
   sub,
+  vec,
   xor,
 } from "./index.js";
 
@@ -65,6 +67,7 @@ T1 = Bool
 `.trimStart(),
     );
   });
+
   test("call funcs", () => {
     const g = fn([Real], Real, (y) => add(2, y));
     const h = fn([Real], Real, (z) => mul(2, z));
@@ -86,6 +89,7 @@ T0 = F64
 `.trimStart(),
     );
   });
+
   test("unary operations", () => {
     const f = fn([Real], Real, (x) => {
       const a = not(true);
@@ -110,6 +114,7 @@ T1 = Bool
 `.trimStart(),
     );
   });
+
   test("binary operations", () => {
     const f = fn([Real, Real], Bool, (x, y) => {
       const a = add(x, y);
@@ -150,6 +155,29 @@ T1 = Bool
   x16: T1 = x0 > x1
   x17: T1 = x4 >= x5
   x17
+}
+`.trimStart(),
+    );
+  });
+
+  test("for", () => {
+    const n = 3;
+    const Rn = Vec(n, Real);
+    const f = fn([Rn, Rn], Rn, (a, b) => vec(Real, n, (i) => add(a[i], b[i])));
+    const s = pprint(f);
+    expect(s).toBe(
+      `
+T0 = 3
+T1 = F64
+T2 = [T1; T0]
+(x0: T2, x1: T2) -> T2 {
+  x6: T2 = for x2: T0 {
+    x3: T1 = x0[x2]
+    x4: T1 = x1[x2]
+    x5: T1 = x3 + x4
+    x5
+  }
+  x6
 }
 `.trimStart(),
     );
