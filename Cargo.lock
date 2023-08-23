@@ -670,6 +670,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rose-validate"
+version = "0.0.0"
+dependencies = [
+ "enumset",
+ "indexmap 2.0.0",
+ "rose",
+ "thiserror",
+]
+
+[[package]]
 name = "rose-web"
 version = "0.0.0"
 dependencies = [

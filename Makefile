@@ -35,7 +35,7 @@ wbg: rust
 
 # run Rust tests
 test-rust:
-	cargo test
+	cargo test --quiet
 
 ### JavaScript
 
