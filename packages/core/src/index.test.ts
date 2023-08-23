@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
   Bool,
-  Nat,
   Null,
   Real,
   Vec,
@@ -72,7 +71,7 @@ describe("invalid", () => {
     const n = 2;
     expect(() =>
       fn([], n, () => {
-        let i: Nat = 0;
+        let i: number | symbol = 0;
         vec(n, Real, (j) => {
           i = j;
           return 42;

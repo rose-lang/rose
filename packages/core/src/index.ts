@@ -1,7 +1,5 @@
 export {
   Bool,
-  Fn,
-  Nat,
   Null,
   Real,
   Vec,
@@ -12,7 +10,6 @@ export {
   eq,
   fn,
   geq,
-  getCtx,
   gt,
   iff,
   interp,

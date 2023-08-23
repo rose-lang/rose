@@ -14,12 +14,29 @@ import { Val as RawVal } from "@rose-lang/wasm/interp/Val";
  */
 const funcs = new FinalizationRegistry((f: wasm.Func) => f.free());
 
+/**
+ * Property key for the internal `wasm.Func` object held by a `Fn`.
+ *
+ * This can of course be reached via `Object.getOwnPropertySymbols`, but that
+ * requires an intentional effort to circumvent the encapsulation; such usage is
+ * discouraged.
+ */
 export const inner = Symbol("inner");
 
-export interface Fn {
+/** An abstract function. */
+interface Fn {
   [inner]: wasm.Func;
 }
 
+/**
+ * An abstract variable.
+ *
+ * The `Context` is implicit; don't use a `Var` outside of its original context.
+ *
+ * This class is used for primitive types that can't be indices; index types are
+ * instead represented by `Symbol`, and non-primitive types are represented by
+ * `Proxy`.
+ */
 class Var {
   id: number;
 
@@ -28,38 +45,76 @@ class Var {
   }
 }
 
+/** An abstract null value. */
 export type Null = null | Var;
 
+/** An abstract boolean. */
 export type Bool = boolean | Var;
 
+/** An abstract 64-bit floating point number. */
 export type Real = number | Var;
 
-export type Nat = number | symbol;
+/** An abstract natural number, which can be used to index into a vector. */
+type Nat = number | symbol;
 
+/** An abstract vector, which can be indexed by a natural number. */
 export interface Vec<T> {
   [K: Nat]: T;
 }
 
+/** A concrete or abstract vector. */
 type ArrayOrVec<T> = T[] | Vec<T>;
 
+/** An abstract value that is not a concrete vector. */
 type Symbolic = Null | Bool | Real | Nat | Vec<Symbolic>;
 
+/** Any abstract value. */
 type Value = Symbolic | Value[];
 
+/** The context for an abstract function under construction. */
 interface Context {
+  /** Handle to Rust-side information about the function itself. */
   func: wasm.FuncBuilder;
+
+  /** Handle to Rust-side information about the current block being built. */
   block: wasm.Block;
+
+  /** Variable IDs for symbols, which are used to represent abstract indices. */
   symbols: Map<symbol, number>;
+
+  /**
+   * Variable IDs for literals (primitives/aggregates), indexed by type ID.
+   *
+   * For instance, the number `42` may represent a floating-point number, or it
+   * may represent a natural number that is being used as an index. Similarly,
+   * an array of numbers could be a vector of floating-point numbers or a vector
+   * of indices. We need to know the type first before we can interpret it.
+   */
   literals: Map<number, Map<Value, number>>;
 }
 
+/**
+ * Property key for the variable ID of a `Proxy` vector.
+ *
+ * Such `Proxy` vectors interpret access through any other property key as a
+ * request to emit an indexing instruction into the current block.
+ */
 const variable = Symbol("variable");
 
+/**
+ * Return the variable ID for the given abstract value with the given type.
+ *
+ * Throws if the value does not match the type.
+ */
 const valId = (ctx: Context, t: number, x: Value): number => {
+  // various possible values that don't actually fall under `Value`; these are
+  // disallowed by TypeScript, but TypeScript can be circumvented e.g. by `any`
   if (x === undefined) throw Error("undefined value");
   if (typeof x === "bigint") throw Error("bigint not supported");
   if (typeof x === "string") throw Error("string not supported");
 
+  // a `Var` could be misused or even stray from a different context, so we
+  // check its type via `expect`
   if (x instanceof Var) return ctx.func.expect(t, x.id);
 
   if (typeof x === "symbol") {
@@ -70,29 +125,37 @@ const valId = (ctx: Context, t: number, x: Value): number => {
 
   let id: number | undefined;
   if (typeof x === "object" && x !== null) {
+    // this means `x` is either an actual `Array` or a `Proxy` vector
     id = (x as any)[variable];
-    if (id !== undefined) return ctx.func.expect(t, id);
+    if (id !== undefined) return ctx.func.expect(t, id); // `Proxy` vector
   }
 
   let map = ctx.literals.get(t);
   if (map === undefined) {
+    // the map is keyed by type, so we don't always have an entry for every
+    // possible type; if we're missing one, just initialize it as an empty map
     map = new Map();
     ctx.literals.set(t, map);
   }
   id = map.get(x);
-  if (id !== undefined) return ctx.func.expect(t, id);
+  // see if we already have an entry for this type and value; if so then we're
+  // done! no need to call `expect` because we checked it when inserting before
+  if (id !== undefined) return id;
 
   if (x === null) id = ctx.func.unit(t);
   else if (typeof x === "boolean") id = ctx.func.bool(t, x);
   else if (typeof x === "number") id = ctx.func.num(t, x);
-  else if ("length" in x) {
+  else if (Array.isArray(x)) {
     const size = ctx.func.size(t);
     const elem = ctx.func.elem(t);
     if (x.length !== size) throw Error("wrong array size");
     const xs = new Uint32Array(size);
+    // this is an example of why it's good to check for `undefined` above; an
+    // array can still have holes even if its length is correct, and that's
+    // something TypeScript doesn't check regardless
     for (let i = 0; i < size; ++i) xs[i] = valId(ctx, elem, x[i]);
     id = ctx.func.array(t, xs);
-  } else throw Error("undefined vector");
+  } else throw Error("unknown kind of value");
 
   map.set(x, id);
   return id;
@@ -101,24 +164,34 @@ const valId = (ctx: Context, t: number, x: Value): number => {
 /** Context for the current function under construction. */
 let context: Context | undefined = undefined;
 
-/** Throw if there's no current context. */
-export const getCtx = (): Context => {
+/** Return the current context if there is one; throw otherwise. */
+const getCtx = (): Context => {
   if (context === undefined) throw Error("no `fn` context found");
   return context;
 };
 
+/** The null type. */
 export const Null = Symbol("Null");
+
+/** The boolean type. */
 export const Bool = Symbol("Bool");
+
+/** The 64-bit floating-point type. */
 export const Real = Symbol("Real");
 
+/** Representation of the null type. */
 type Nulls = typeof Null;
 
+/** Representation of the boolean type. */
 type Bools = typeof Bool;
 
+/** Representation of the 64-bit floating point type. */
 type Reals = typeof Real;
 
+/** Representation of a bounded index type (it's just the upper bound). */
 type Nats = number;
 
+/** Representation of a vector type. */
 class Vecs<K, V> {
   index: K;
   elem: V;
@@ -129,8 +202,10 @@ class Vecs<K, V> {
   }
 }
 
+/** JavaScript-side representation of a type. */
 type Type = Nulls | Bools | Reals | Nats | Vecs<Type, Type>;
 
+/** Return the type ID for `ty` in `ctx`, creating the type if needed. */
 const tyId = (ctx: Context, ty: Type): number => {
   if (ty === Null) return ctx.func.tyUnit();
   if (ty === Bool) return ctx.func.tyBool();
@@ -139,9 +214,17 @@ const tyId = (ctx: Context, ty: Type): number => {
   return ctx.func.tyArray(tyId(ctx, ty.index), tyId(ctx, ty.elem));
 };
 
+/** The type of vectors from the index type `K` to the element type `V`. */
 export const Vec = <K, V>(index: K, elem: V): Vecs<K, V> =>
   new Vecs(index, elem);
 
+/**
+ * Return a symbolic JS representation of the variable with the given `id`.
+ *
+ * This depends on the type `t` because if the variable is of an index type then
+ * it must be represented by a `Symbol`, and if it is of a vector type then it
+ * must be represented by a `Proxy`.
+ */
 const idVal = (ctx: Context, t: number, id: number): Symbolic => {
   if (ctx.func.isSymbol(t)) {
     const sym = Symbol();
@@ -268,9 +351,9 @@ type ToJs<T extends Value> = T extends ArrayOrVec<infer V extends Value>
   ? ToJs<V>[]
   : Exclude<T, Var | symbol>;
 
-// TODO: support interpreting functions with parameters and generics
 export const interp =
   <R extends Value>(f: Fn & (() => R)): (() => ToJs<R>) =>
+  // TODO: support interpreting functions with parameters and generics
   () =>
     translate(wasm.interp(f[inner])) as ToJs<R>;
 
@@ -319,36 +402,43 @@ export const select = <T extends Type>(
 const realId = (ctx: Context, x: Real): number =>
   valId(ctx, ctx.func.tyF64(), x);
 
+/** Return the negative of the abstract number `x`. */
 export const neg = (x: Real): Real => {
   const ctx = getCtx();
   return new Var(ctx.block.neg(ctx.func, realId(ctx, x)));
 };
 
+/** Return the absolute value of the abstract number `x`. */
 export const abs = (x: Real): Real => {
   const ctx = getCtx();
   return new Var(ctx.block.abs(ctx.func, realId(ctx, x)));
 };
 
+/** Return the square root of the abstract number `x`. */
 export const sqrt = (x: Real): Real => {
   const ctx = getCtx();
   return new Var(ctx.block.sqrt(ctx.func, realId(ctx, x)));
 };
 
+/** Return the abstract number `x` plus the abstract number `y`. */
 export const add = (x: Real, y: Real): Real => {
   const ctx = getCtx();
   return new Var(ctx.block.add(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
+/** Return the abstract number `x` minus the abstract number `y`. */
 export const sub = (x: Real, y: Real): Real => {
   const ctx = getCtx();
   return new Var(ctx.block.sub(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
+/** Return the abstract number `x` times the abstract number `y`. */
 export const mul = (x: Real, y: Real): Real => {
   const ctx = getCtx();
   return new Var(ctx.block.mul(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
+/** Return the abstract number `x` divided by the abstract number `y`. */
 export const div = (x: Real, y: Real): Real => {
   const ctx = getCtx();
   return new Var(ctx.block.div(ctx.func, realId(ctx, x), realId(ctx, y)));
