@@ -52,6 +52,7 @@ impl Forward<'_> {
         id
     }
 
+    // F64s get differentiated as dual numbers
     fn extract(
         &mut self,
         left: id::Var,
@@ -419,7 +420,7 @@ impl Forward<'_> {
                         arg,
                         body: body
                             .iter()
-                            .map(|&block| self.expr(code, ty, block))
+                            .map(|&block| self.expr(code, ty, &block.expr))
                             .collect(),
                         ret,
                     },
@@ -427,22 +428,52 @@ impl Forward<'_> {
                 x
             }
             Expr::Accum {
-                shape: _,
-                arg: _,
-                body: _,
-                ret: _,
-            } => todo!(),
+                shape,
+                arg,
+                body,
+                ret,
+            } => {
+                let x = self.set(
+                    code,
+                    ty,
+                    Expr::Accum {
+                        shape: *shape,
+                        arg: *arg,
+                        body: body
+                            .iter()
+                            .map(|&block| self.expr(code, ty, &block.expr))
+                            .collect(),
+                        ret: *ret,
+                    },
+                );
+                x
+            }
 
             Expr::Add {
                 accum: _,
                 addend: _,
             } => todo!(),
             Expr::Read {
-                var: _,
-                arg: _,
-                body: _,
-                ret: _,
-            } => todo!(),
+                var,
+                arg,
+                body,
+                ret,
+            } => {
+                let x = self.set(
+                    code,
+                    ty,
+                    Expr::Read {
+                        var: *var,
+                        arg: *arg,
+                        body: body
+                            .iter()
+                            .map(|&block| self.expr(code, ty, &block.expr))
+                            .collect(),
+                        ret: *ret,
+                    },
+                );
+                x
+            }
             Expr::Ask { var: _ } => todo!(),
         }
     }
