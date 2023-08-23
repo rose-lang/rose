@@ -339,7 +339,6 @@ impl FuncBuilder {
     }
 
     /// Assemble this function with return variable `out` and the given `body`.
-    #[wasm_bindgen]
     pub fn finish(mut self, out: usize, body: Block) -> Func {
         // We replace `self.constants` with an empty vec because we need to satisfy the borrow
         // checker when we pass `self` to `body.finish` below; this is OK though, because
@@ -413,7 +412,6 @@ impl FuncBuilder {
     /// Return the ID of the index type for the array type with ID `t`.
     ///
     /// `Err` if `t` is out of range or does not represent an array type.
-    #[wasm_bindgen]
     pub fn index(&self, t: usize) -> Result<usize, JsError> {
         match self.ty(t)? {
             &rose::Ty::Array { index, elem: _ } => Ok(index.ty()),
@@ -425,7 +423,6 @@ impl FuncBuilder {
     ///
     /// `Err` if `t` is out of range or does not represent an array type, or if its index type is
     /// not a fixed size (e.g. if it is a generic type parameter of the function).
-    #[wasm_bindgen]
     pub fn size(&self, t: usize) -> Result<usize, JsError> {
         match self.ty(t)? {
             &rose::Ty::Array { index, elem: _ } => {
@@ -442,7 +439,6 @@ impl FuncBuilder {
     /// Return the ID of the element type for the array type with ID `t`.
     ///
     /// `Err` if `t` is out of range or does not represent an array type.
-    #[wasm_bindgen]
     pub fn elem(&self, t: usize) -> Result<usize, JsError> {
         match self.ty(t)? {
             &rose::Ty::Array { index: _, elem } => Ok(elem.ty()),
@@ -451,7 +447,6 @@ impl FuncBuilder {
     }
 
     /// Return `x` if it exists, is in scope, and has type ID `t`; `Err` otherwise.
-    #[wasm_bindgen]
     pub fn expect(&self, t: usize, x: usize) -> Result<usize, JsError> {
         match self.vars.get(x) {
             None => Err(JsError::new("variable does not exist")),
@@ -535,13 +530,11 @@ impl FuncBuilder {
     }
 
     /// Return the ID of a new variable with type ID `t`.
-    #[wasm_bindgen]
     pub fn bind(&mut self, t: usize) -> usize {
         self.newvar(id::ty(t)).var()
     }
 
     /// Append a parameter with type ID `t` and return its variable ID.
-    #[wasm_bindgen]
     pub fn param(&mut self, t: usize) -> usize {
         let x = self.newvar(id::ty(t));
         self.params.push(x);
@@ -565,7 +558,6 @@ impl FuncBuilder {
     /// Create a constant variable with the unit type, and return its ID.
     ///
     /// `Err` if `t` is not the ID of the unit type.
-    #[wasm_bindgen]
     pub fn unit(&mut self, t: usize) -> Result<usize, JsError> {
         if t == self.ty_unit() {
             Ok(self.constant(t, rose::Expr::Unit))
@@ -577,7 +569,6 @@ impl FuncBuilder {
     /// Create a constant variable with the boolean type and value `val`, and return its ID.
     ///
     /// `Err` if `t` is not the ID of the boolean type.
-    #[wasm_bindgen]
     pub fn bool(&mut self, t: usize, val: bool) -> Result<usize, JsError> {
         if t == self.ty_bool() {
             Ok(self.constant(t, rose::Expr::Bool { val }))
@@ -590,7 +581,6 @@ impl FuncBuilder {
     ///
     /// `Err` unless `t` is the ID of either the 64-bit floating-point type or a finite nonnegative
     /// integer type; or if `t` is an integer type which cannot represent the given value of `x`.
-    #[wasm_bindgen]
     pub fn num(&mut self, t: usize, x: f64) -> Result<usize, JsError> {
         match self.ty(t)? {
             rose::Ty::F64 => Ok(self.constant(t, rose::Expr::F64 { val: x })),
@@ -613,7 +603,6 @@ impl FuncBuilder {
     /// Assumes that `t` is a valid type ID and `xs` are all valid variable IDs. If there are no
     /// dependencies on parameters then the new array variable is a constant; otherwise, it is
     /// attached to whichever parent variable reachable from `xs` has the highest ID.
-    #[wasm_bindgen]
     pub fn array(&mut self, t: usize, xs: &[usize]) -> usize {
         let elems = xs.iter().map(|&x| id::var(x)).collect();
         let expr = rose::Expr::Array { elems };
@@ -775,7 +764,6 @@ impl Block {
         x.var()
     }
 
-    #[wasm_bindgen]
     pub fn index(&mut self, f: &mut FuncBuilder, arr: usize, idx: usize) -> Result<usize, JsError> {
         let array = id::var(arr);
         let index = id::var(idx);
@@ -788,7 +776,6 @@ impl Block {
 
     // unary
 
-    #[wasm_bindgen]
     pub fn not(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Unary {
@@ -798,7 +785,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn neg(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Unary {
@@ -808,7 +794,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn abs(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Unary {
@@ -818,7 +803,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn sqrt(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Unary {
@@ -832,7 +816,6 @@ impl Block {
 
     // binary
 
-    #[wasm_bindgen]
     pub fn and(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -843,7 +826,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn or(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -854,7 +836,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn iff(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -865,7 +846,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn xor(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -876,7 +856,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn neq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -887,7 +866,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn lt(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -898,7 +876,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn leq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -909,7 +886,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn eq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -920,7 +896,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn gt(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -931,7 +906,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn geq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -942,7 +916,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn add(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Binary {
@@ -953,7 +926,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn sub(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Binary {
@@ -964,7 +936,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn mul(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Binary {
@@ -975,7 +946,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    #[wasm_bindgen]
     pub fn div(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Binary {
@@ -988,7 +958,6 @@ impl Block {
 
     // end of binary
 
-    #[wasm_bindgen]
     pub fn select(
         &mut self,
         f: &mut FuncBuilder,
@@ -1005,7 +974,6 @@ impl Block {
         self.instr(f, id::ty(t), expr)
     }
 
-    #[wasm_bindgen]
     pub fn call(
         &mut self,
         f: &mut FuncBuilder,
@@ -1026,7 +994,6 @@ impl Block {
         Ok(self.instr(f, id::ty(t), expr))
     }
 
-    #[wasm_bindgen]
     pub fn vec(
         &mut self,
         f: &mut FuncBuilder,
