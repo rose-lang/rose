@@ -289,7 +289,7 @@ enum Extra {
     /// Part of the main function body; these are definitions for variables that depend on it.
     Parent(Vec<rose::Instr>),
 
-    /// Depends on another variable; others can depend on it only indirectly through its parent.
+    /// Depends on a `Parent` variable; others can depend on it only indirectly through its parent.
     Child(id::Var),
 
     /// Is no longer in scope.
@@ -297,18 +297,29 @@ enum Extra {
 }
 
 struct Var {
-    ty: id::Ty,
+    t: id::Ty,
     extra: Extra,
 }
 
 /// A function under construction.
 #[wasm_bindgen]
 pub struct FuncBuilder {
+    /// Called functions. More can be added as the function is built.
     functions: Vec<Func>,
+
+    /// Constraints on generic type parameters. These are fixed when the `FuncBuilder` is started.
     generics: Box<[EnumSet<rose::Constraint>]>,
+
+    /// Index of types, with constraints tracked for validation (e.g. array index must be `Index`).
     types: IndexMap<rose::Ty, EnumSet<rose::Constraint>>,
+
+    /// Variable types, scopes (expired or not?), and dependent definitions.
     vars: Vec<Var>,
+
+    /// Parameters, in order. Typically added all at once right after the `FuncBuilder` is started.
     params: Vec<id::Var>,
+
+    /// Definitions that don't depend on parameters (but may depend on each other), in order.
     constants: Vec<rose::Instr>,
 }
 
@@ -341,7 +352,7 @@ impl FuncBuilder {
                 rose::Function {
                     generics: self.generics,
                     types: self.types.into_keys().collect(),
-                    vars: self.vars.into_iter().map(|x| x.ty).collect(),
+                    vars: self.vars.into_iter().map(|x| x.t).collect(),
                     params: self.params.into(),
                     ret: id::var(out),
                     body: code.into(),
@@ -410,6 +421,10 @@ impl FuncBuilder {
         }
     }
 
+    /// Return the number of elements for the array type with ID `t`.
+    ///
+    /// `Err` if `t` is out of range or does not represent an array type, or if its index type is
+    /// not a fixed size (e.g. if it is a generic type parameter of the function).
     #[wasm_bindgen]
     pub fn size(&self, t: usize) -> Result<usize, JsError> {
         match self.ty(t)? {
@@ -443,7 +458,7 @@ impl FuncBuilder {
             Some(var) => match var.extra {
                 Extra::Expired => Err(JsError::new("variable is out of scope")),
                 _ => {
-                    if var.ty == id::ty(t) {
+                    if var.t == id::ty(t) {
                         Ok(x)
                     } else {
                         Err(JsError::new("variable type mismatch"))
@@ -466,7 +481,7 @@ impl FuncBuilder {
     fn newvar(&mut self, t: id::Ty) -> id::Var {
         let id = self.vars.len();
         self.vars.push(Var {
-            ty: t,
+            t,
             extra: Extra::Parent(vec![]),
         });
         id::var(id)
@@ -499,32 +514,33 @@ impl FuncBuilder {
         )
     }
 
-    #[wasm_bindgen(js_name = "tyGeneric")]
-    pub fn ty_generic(&mut self, id: usize) -> usize {
-        self.newtype(
-            rose::Ty::Generic {
-                id: id::generic(id),
-            },
-            self.generics[id],
-        )
-    }
-
+    /// Return the ID for the type of arrays with index type `index` and element type `elem`,
+    ///
+    /// Assumes `index` and `elem` are valid type IDs.
     #[wasm_bindgen(js_name = "tyArray")]
-    pub fn ty_array(&mut self, index: usize, elem: usize) -> usize {
-        self.newtype(
-            rose::Ty::Array {
-                index: id::ty(index),
-                elem: id::ty(elem),
-            },
-            EnumSet::only(rose::Constraint::Value),
-        )
+    pub fn ty_array(&mut self, index: usize, elem: usize) -> Result<usize, JsError> {
+        let (_, constrs) = self.types.get_index(index).unwrap();
+        // If we support non-`Value` types then we should also check that `elem` satisfies `Value`.
+        if constrs.contains(rose::Constraint::Index) {
+            Ok(self.newtype(
+                rose::Ty::Array {
+                    index: id::ty(index),
+                    elem: id::ty(elem),
+                },
+                EnumSet::only(rose::Constraint::Value),
+            ))
+        } else {
+            Err(JsError::new("index type cannot be used as an index"))
+        }
     }
 
+    /// Return the ID of a new variable with type ID `t`.
     #[wasm_bindgen]
     pub fn bind(&mut self, t: usize) -> usize {
         self.newvar(id::ty(t)).var()
     }
 
+    /// Append a parameter with type ID `t` and return its variable ID.
     #[wasm_bindgen]
     pub fn param(&mut self, t: usize) -> usize {
         let x = self.newvar(id::ty(t));
@@ -532,10 +548,11 @@ impl FuncBuilder {
         x.var()
     }
 
+    /// Append a constant with type ID `t` and definition `expr`, and return its variable ID.
     fn constant(&mut self, t: usize, expr: rose::Expr) -> usize {
         let x = self.vars.len();
         self.vars.push(Var {
-            ty: id::ty(t),
+            t: id::ty(t),
             extra: Extra::Constant,
         });
         self.constants.push(rose::Instr {
@@ -545,6 +562,9 @@ impl FuncBuilder {
         x
     }
 
+    /// Create a constant variable with the unit type, and return its ID.
+    ///
+    /// `Err` if `t` is not the ID of the unit type.
     #[wasm_bindgen]
     pub fn unit(&mut self, t: usize) -> Result<usize, JsError> {
         if t == self.ty_unit() {
@@ -554,6 +574,9 @@ impl FuncBuilder {
         }
     }
 
+    /// Create a constant variable with the boolean type and value `val`, and return its ID.
+    ///
+    /// `Err` if `t` is not the ID of the boolean type.
     #[wasm_bindgen]
     pub fn bool(&mut self, t: usize, val: bool) -> Result<usize, JsError> {
         if t == self.ty_bool() {
@@ -563,6 +586,10 @@ impl FuncBuilder {
         }
     }
 
+    /// Return the ID of a new numeric constant variable with type `t` and value converted from `x`.
+    ///
+    /// `Err` unless `t` is the ID of either the 64-bit floating-point type or a finite nonnegative
+    /// integer type; or if `t` is an integer type which cannot represent the given value of `x`.
     #[wasm_bindgen]
     pub fn num(&mut self, t: usize, x: f64) -> Result<usize, JsError> {
         match self.ty(t)? {
@@ -581,6 +608,11 @@ impl FuncBuilder {
         }
     }
 
+    /// Return the ID of a new array variable with type ID `t` and elements `xs`.
+    ///
+    /// Assumes that `t` is a valid type ID and `xs` are all valid variable IDs. If there are no
+    /// dependencies on parameters then the new array variable is a constant; otherwise, it is
+    /// attached to whichever parent variable reachable from `xs` has the highest ID.
     #[wasm_bindgen]
     pub fn array(&mut self, t: usize, xs: &[usize]) -> usize {
         let elems = xs.iter().map(|&x| id::var(x)).collect();
@@ -599,7 +631,7 @@ impl FuncBuilder {
             Some(x) => {
                 let y = self.vars.len();
                 self.vars.push(Var {
-                    ty: id::ty(t),
+                    t: id::ty(t),
                     extra: Extra::Child(id::var(x)),
                 });
                 match &mut self.vars[x].extra {
@@ -691,7 +723,7 @@ impl FuncBuilder {
     }
 
     fn var_ty_id(&self, x: id::Var) -> id::Ty {
-        self.vars[x.var()].ty
+        self.vars[x.var()].t
     }
 
     fn var_ty(&self, x: id::Var) -> &rose::Ty {

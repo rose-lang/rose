@@ -38,15 +38,13 @@ export type Real = number | Var;
 
 export type Nat = number | symbol;
 
-export type Generic = symbol;
-
 export interface Vec<T> {
   [K: Nat]: T;
 }
 
 type ArrayOrVec<T> = T[] | Vec<T>;
 
-type Symbolic = Null | Bool | Real | Nat | Generic | Vec<Symbolic>;
+type Symbolic = Null | Bool | Real | Nat | Vec<Symbolic>;
 
 type Value = Symbolic | Value[];
 
@@ -123,14 +121,6 @@ type Reals = typeof Real;
 
 type Nats = number;
 
-class Generics {
-  id: number;
-
-  constructor(id: number) {
-    this.id = id;
-  }
-}
-
 class Vecs<K, V> {
   index: K;
   elem: V;
@@ -141,14 +131,13 @@ class Vecs<K, V> {
   }
 }
 
-type Type = Nulls | Bools | Reals | Nats | Generics | Vecs<Type, Type>;
+type Type = Nulls | Bools | Reals | Nats | Vecs<Type, Type>;
 
 const tyId = (ctx: Context, ty: Type): number => {
   if (ty === Null) return ctx.func.tyUnit();
   if (ty === Bool) return ctx.func.tyBool();
   if (ty === Real) return ctx.func.tyF64();
   if (typeof ty === "number") return ctx.func.tyFin(ty);
-  if (ty instanceof Generics) return ctx.func.tyGeneric(ty.id);
   return ctx.func.tyArray(tyId(ctx, ty.index), tyId(ctx, ty.elem));
 };
 
@@ -198,8 +187,6 @@ type ToSymbolic<T extends Type> = T extends Nulls
   ? Real
   : T extends Nats
   ? Nat
-  : T extends Generics
-  ? Generic
   : T extends Vecs<any, infer V extends Type>
   ? Vec<ToSymbolic<V>>
   : unknown; // TODO: is `unknown` the right default here? what about `never`?
@@ -212,8 +199,6 @@ type ToValue<T extends Type> = T extends Nulls
   ? Real
   : T extends Nats
   ? Nat
-  : T extends Generics
-  ? Generic
   : T extends Vecs<any, infer V extends Type>
   ? Vec<ToValue<V>> | ToValue<V>[]
   : unknown; // TODO: is `unknown` the right default here? what about `never`?

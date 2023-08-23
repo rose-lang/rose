@@ -46,6 +46,12 @@ describe("invalid", () => {
     );
   });
 
+  test("invalid index type", () => {
+    expect(() =>
+      fn([Vec(Real, Null), Real], Null, (v, i) => v[i as any]),
+    ).toThrow("index type cannot be used as an index");
+  });
+
   test("symbolic array dimension", () => {
     expect(() => fn([Vec(3, Real)], Vec(2, Real), (v) => v)).toThrow(
       "variable type mismatch",
