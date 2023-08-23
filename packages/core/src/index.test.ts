@@ -39,3 +39,10 @@ test("call", () => {
   expect(relu(0)).toBe(0);
   expect(relu(1)).toBe(1);
 });
+
+test("invalid", () => {
+  const two = true as any;
+  expect(() => fn([], Real, () => add(two, two))).toThrow(
+    /instruction \d+ is invalid/,
+  );
+});

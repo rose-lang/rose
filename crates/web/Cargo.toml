@@ -13,6 +13,7 @@ enumset = "1"
 indexmap = { version = "2", features = ["serde"] }
 rose = { path = "../core", features = ["serde"] }
 rose-interp = { path = "../interp", features = ["serde"] }
+rose-validate = { path = "../validate" }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.4"
 ts-rs = "6"

@@ -77,17 +77,16 @@ export const fn = <const A extends readonly Type[], R extends Type>(
   if (context !== undefined)
     throw Error("can't define a function while defining another function");
   const sig = makeSig(params, ret);
-  let func: ffi.Fn;
+  let retVar: number;
   const { ctx, main } = ffi.make(0, sig.types, sig.params);
   try {
     setCtx(ctx);
     setBlock(main);
     const x = f(...(params.map((_, id): Var => ({ ctx, id })) as Args<A>));
-    const y = getVar(ctx, main, x);
-    func = ffi.bake(ctx, y, main);
+    retVar = getVar(ctx, main, x);
   } catch (e) {
-    // `ctx` and `main` point into Wasm memory, so if we didn't finish the
-    // `ffi.bake` call above then we need to be sure to `free` them
+    // `ctx` and `main` point into Wasm memory, so if we don't reach the
+    // `ffi.bake` call below then we need to be sure to `free` them
     main.free();
     ctx.free();
     throw e;
@@ -95,6 +94,7 @@ export const fn = <const A extends readonly Type[], R extends Type>(
     setBlock(undefined);
     setCtx(undefined);
   }
+  const func = ffi.bake(ctx, retVar, main);
   const g = (...args: Args<A>): Resolve<R> =>
     call(g, args as Val[]) as Resolve<R>;
   g.params = params as unknown as Type[];
