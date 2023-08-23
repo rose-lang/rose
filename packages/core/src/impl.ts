@@ -234,6 +234,13 @@ const idVal = (ctx: Context, t: number, id: number): Symbolic => {
   else return new Var(id);
 };
 
+/**
+ * Return a `Proxy` vector of type `t` for the variable ID `v`.
+ *
+ * The original variable ID `v` can be accessed via the `variable` symbol
+ * property key. Any string access will be parsed as a literal integer index.
+ * Any other symbol access will use the `Context`'s `symbols` map.
+ */
 const arrayProxy = (t: number, v: number): Vec<Symbolic> => {
   return new Proxy(
     {},
@@ -251,15 +258,26 @@ const arrayProxy = (t: number, v: number): Vec<Symbolic> => {
   );
 };
 
+/** Insert a call instruction to `f` in the current context. */
 const call = (f: Fn, generics: Uint32Array, args: Value[]): Symbolic => {
   const ctx = getCtx();
+  // we first need to pull in the signature types from `f` so we know how to
+  // interpret the abstract values for its arguments
   const sig = ctx.func.ingest(f[inner], generics);
-  const ret = sig[sig.length - 1];
+  const ret = sig[sig.length - 1]; // the last type is the return type
+  // TODO: we should probably check that `args` is the right length
   const vars = new Uint32Array(args.map((arg, i) => valId(ctx, sig[i], arg)));
   const id = ctx.block.call(ctx.func, f[inner], generics, ret, vars);
   return idVal(ctx, ret, id);
 };
 
+/**
+ * Map from a type of a type to the type of the symbolic values it represents.
+ *
+ * The result should be `Symbolic`, so this should be used in any situation
+ * where the abstract value is being synthesized (e.g. the parameters of the
+ * body of `fn` or `vec`, or the returned value from a call or `select`).
+ */
 type ToSymbolic<T extends Type> = T extends Nulls
   ? Null
   : T extends Bools
@@ -272,6 +290,13 @@ type ToSymbolic<T extends Type> = T extends Nulls
   ? Vec<ToSymbolic<V>>
   : unknown; // TODO: is `unknown` the right default here? what about `never`?
 
+/**
+ * Map from a type of a type to the type of the abstract values it represents.
+ *
+ * The result should be `Value`, so this should be used in any situation where
+ * the abstract value is provided by the user (e.g. the returned value in the
+ * body of `fn` or `vec`, or the inputs to a call or `select).
+ */
 type ToValue<T extends Type> = T extends Nulls
   ? Null
   : T extends Bools
@@ -284,10 +309,12 @@ type ToValue<T extends Type> = T extends Nulls
   ? Vec<ToValue<V>> | ToValue<V>[]
   : unknown; // TODO: is `unknown` the right default here? what about `never`?
 
+/** Map from a parameter type array to a symbolic parameter value type array. */
 type SymbolicParams<T extends readonly Type[]> = {
   [K in keyof T]: ToSymbolic<T[K]>;
 };
 
+/** Map from a parameter type array to an abstract parameter value type array. */
 type ValueParams<T extends readonly Type[]> = {
   [K in keyof T]: ToValue<T[K]>;
 };
@@ -301,7 +328,7 @@ export const fn = <const P extends readonly Type[], R extends Type>(
   // TODO: support closures
   if (context !== undefined)
     throw Error("can't define a function while defining another function");
-  let out: number | undefined = undefined;
+  let out: number | undefined = undefined; // function return variable ID
   const builder = new wasm.FuncBuilder(0); // TODO: support generics
   const body = new wasm.Block();
   try {
@@ -315,13 +342,21 @@ export const fn = <const P extends readonly Type[], R extends Type>(
     const x = f(
       ...(params.map((ty): Symbolic => {
         const t = tyId(ctx, ty);
+        // it's important that `map` runs eagerly an in order, because the
+        // ordering of these calls to `param` must match the order of `params`
         return idVal(ctx, t, ctx.func.param(t));
       }) as SymbolicParams<P>),
     );
+    // TODO: we have to wait until after running the function body to typecheck
+    // the returned value, but we can check whether the return type itself makes
+    // sense before running the function body; maybe we should do that?
     out = valId(ctx, tyId(ctx, ret), x as Value);
   } finally {
     context = undefined;
     if (out === undefined) {
+      // if we didn't reach the assignment statement defining `out` then there
+      // must have been an error, so we won't reach the below call to
+      // `builder.finish`; thus we must free these handles to avoid memory leaks
       body.free();
       builder.free();
     }
@@ -335,8 +370,10 @@ export const fn = <const P extends readonly Type[], R extends Type>(
   return g;
 };
 
+/** A concrete value. */
 type Js = null | boolean | number | Js[];
 
+/** Translate a concrete value from the raw format given by the interpreter. */
 const translate = (x: RawVal): Js => {
   if (x === "Unit") return null;
   if ("Bool" in x) return x.Bool;
@@ -347,58 +384,68 @@ const translate = (x: RawVal): Js => {
   else throw Error("Tuple not supported");
 };
 
+/** Map from an abstract value type to its corresponding concrete value type. */
 type ToJs<T extends Value> = T extends ArrayOrVec<infer V extends Value>
   ? ToJs<V>[]
   : Exclude<T, Var | symbol>;
 
+/** Concretize the nullary abstract function `f` using the interpreter. */
 export const interp =
   <R extends Value>(f: Fn & (() => R)): (() => ToJs<R>) =>
   // TODO: support interpreting functions with parameters and generics
   () =>
     translate(wasm.interp(f[inner])) as ToJs<R>;
 
+/** Return the variable ID for the abstract boolean `x`. */
 const boolId = (ctx: Context, x: Bool): number =>
   valId(ctx, ctx.func.tyBool(), x);
 
+/** Return the negation of the abstract boolean `p`. */
 export const not = (p: Bool): Bool => {
   const ctx = getCtx();
   return new Var(ctx.block.not(ctx.func, boolId(ctx, p)));
 };
 
+/** Return the conjunction of the abstract booleans `p` and `q`. */
 export const and = (p: Bool, q: Bool): Bool => {
   const ctx = getCtx();
   return new Var(ctx.block.and(ctx.func, boolId(ctx, p), boolId(ctx, q)));
 };
 
+/** Return the disjunction of the abstract booleans `p` and `q`. */
 export const or = (p: Bool, q: Bool): Bool => {
   const ctx = getCtx();
   return new Var(ctx.block.or(ctx.func, boolId(ctx, p), boolId(ctx, q)));
 };
 
+/** Return the biconditional of the abstract booleans `p` and `q`. */
 export const iff = (p: Bool, q: Bool): Bool => {
   const ctx = getCtx();
   return new Var(ctx.block.iff(ctx.func, boolId(ctx, p), boolId(ctx, q)));
 };
 
+/** Return the exclusive disjunction of the abstract booleans `p` and `q`. */
 export const xor = (p: Bool, q: Bool): Bool => {
   const ctx = getCtx();
   return new Var(ctx.block.xor(ctx.func, boolId(ctx, p), boolId(ctx, q)));
 };
 
+/** Return an abstract value selecting between `then` and `els` via `cond`. */
 export const select = <T extends Type>(
   cond: Bool,
   ty: T,
-  then: ToSymbolic<T>,
-  els: ToSymbolic<T>,
+  then: ToValue<T>,
+  els: ToValue<T>,
 ): ToSymbolic<T> => {
   const ctx = getCtx();
   const t = tyId(ctx, ty);
   const p = boolId(ctx, cond);
-  const a = valId(ctx, t, then);
-  const b = valId(ctx, t, els);
+  const a = valId(ctx, t, then as Value);
+  const b = valId(ctx, t, els as Value);
   return idVal(ctx, t, ctx.block.select(ctx.func, p, t, a, b)) as ToSymbolic<T>;
 };
 
+/** Return the variable ID for the abstract floating point number `x`. */
 const realId = (ctx: Context, x: Real): number =>
   valId(ctx, ctx.func.tyF64(), x);
 
@@ -444,43 +491,50 @@ export const div = (x: Real, y: Real): Real => {
   return new Var(ctx.block.div(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
+/** Return an abstract boolean for if `x` is not equal to `y`. */
 export const neq = (x: Real, y: Real): Bool => {
   const ctx = getCtx();
   return new Var(ctx.block.neq(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
+/** Return an abstract boolean for if `x` is less than `y`. */
 export const lt = (x: Real, y: Real): Bool => {
   const ctx = getCtx();
   return new Var(ctx.block.lt(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
+/** Return an abstract boolean for if `x` is less than or equal to `y`. */
 export const leq = (x: Real, y: Real): Bool => {
   const ctx = getCtx();
   return new Var(ctx.block.leq(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
+/** Return an abstract boolean for if `x` is equal to `y`. */
 export const eq = (x: Real, y: Real): Bool => {
   const ctx = getCtx();
   return new Var(ctx.block.eq(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
+/** Return an abstract boolean for if `x` is greater than `y`. */
 export const gt = (x: Real, y: Real): Bool => {
   const ctx = getCtx();
   return new Var(ctx.block.gt(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
+/** Return an abstract boolean for if `x` is greater than or equal to `y`. */
 export const geq = (x: Real, y: Real): Bool => {
   const ctx = getCtx();
   return new Var(ctx.block.geq(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
+/** Return an abstract vector by computing each element via `f`. */
 export const vec = <I extends Type, T extends Type>(
   index: I,
   elem: T,
   f: (i: ToSymbolic<I>) => ToValue<T>,
 ): Vec<ToSymbolic<T>> => {
   const ctx = getCtx();
-  const i = tyId(ctx, index as Type);
+  const i = tyId(ctx, index);
   const e = tyId(ctx, elem);
   const t = ctx.func.tyArray(i, e);
   const arg = ctx.func.bind(i);
