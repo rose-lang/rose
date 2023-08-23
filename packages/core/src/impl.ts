@@ -24,7 +24,7 @@ const funcs = new FinalizationRegistry((f: wasm.Func) => f.free());
 export const inner = Symbol("inner");
 
 /** An abstract function. */
-interface Fn {
+export interface Fn {
   [inner]: wasm.Func;
 }
 
