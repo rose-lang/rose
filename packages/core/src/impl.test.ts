@@ -2,6 +2,7 @@ import * as wasm from "@rose-lang/wasm";
 import { describe, expect, test } from "vitest";
 import {
   Bool,
+  Fn,
   Real,
   Vec,
   abs,
@@ -13,6 +14,7 @@ import {
   geq,
   gt,
   iff,
+  inner,
   leq,
   lt,
   mul,
@@ -20,13 +22,14 @@ import {
   neq,
   not,
   or,
-  pprint,
   select,
   sqrt,
   sub,
   vec,
   xor,
-} from "./index.js";
+} from "./impl.js";
+
+const pprint = (f: Fn): string => wasm.pprint(f[inner]);
 
 test("core IR type layouts", () => {
   // these don't matter too much, but it's good to notice if sizes increase
