@@ -694,6 +694,12 @@ impl FuncBuilder {
         Some(id::ty(i))
     }
 
+    /// Return the parameter and return type IDs in this function for calling `f` with `generics`.
+    ///
+    /// Assumes `generics` are all valid type IDs, and have the right length and constraints.
+    ///
+    /// The returned `Vec` is always nonempty, since its last element is the return type; all the
+    /// other elements are the parameter types.
     pub fn ingest(&mut self, f: &Func, generics: &[usize]) -> Vec<usize> {
         let mut types = vec![];
         let (_, def) = f.rc.as_ref();
@@ -711,10 +717,12 @@ impl FuncBuilder {
         sig
     }
 
+    /// Return the type ID for the existing variable ID `x`.
     fn var_ty_id(&self, x: id::Var) -> id::Ty {
         self.vars[x.var()].t
     }
 
+    /// Return the type for the existing variable ID `x`.
     fn var_ty(&self, x: id::Var) -> &rose::Ty {
         let (ty, _) = self.types.get_index(self.var_ty_id(x).ty()).unwrap();
         ty
@@ -736,14 +744,15 @@ impl Default for Block {
 
 #[wasm_bindgen]
 impl Block {
+    /// Start building a block.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self { code: vec![] }
     }
 
+    /// Pour the contents of this block (including dependent variables) into `code`.
     ///
-    ///
-    /// Must not use `f.constants`.
+    /// Must not use `f.constants`. Marks all variables defined in this block as expired.
     fn finish(self, f: &mut FuncBuilder, code: &mut Vec<rose::Instr>) {
         for instr in self.code.into_iter() {
             let var = instr.var;
@@ -758,12 +767,17 @@ impl Block {
         }
     }
 
+    /// Define a new variable in this block with type `t` and definition `expr`, and return its ID.
     fn instr(&mut self, f: &mut FuncBuilder, t: id::Ty, expr: rose::Expr) -> usize {
         let x = f.newvar(t);
         self.code.push(rose::Instr { var: x, expr });
         x.var()
     }
 
+    /// Add an instruction getting the element of `arr` at index `idx`, and return its variable ID.
+    ///
+    /// Assumes `arr` and `idx` are valid variable IDs, and that `idx` matches up with `arr`'s
+    /// `index` type. `Err` if `arr` is not an array type.
     pub fn index(&mut self, f: &mut FuncBuilder, arr: usize, idx: usize) -> Result<usize, JsError> {
         let array = id::var(arr);
         let index = id::var(idx);
@@ -776,6 +790,9 @@ impl Block {
 
     // unary
 
+    /// Return the variable ID for a new boolean negation instruction on `arg`.
+    ///
+    /// Assumes `arg` is defined, in scope, and has boolean type.
     pub fn not(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Unary {
@@ -785,6 +802,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new floating-point negation instruction on `arg`.
+    ///
+    /// Assumes `arg` is defined, in scope, and has 64-bit floating point type.
     pub fn neg(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Unary {
@@ -794,6 +814,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new absolute value instruction on `arg`.
+    ///
+    /// Assumes `arg` is defined, in scope, and has 64-bit floating point type.
     pub fn abs(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Unary {
@@ -803,6 +826,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new square root instruction on `arg`.
+    ///
+    /// Assumes `arg` is defined, in scope, and has 64-bit floating point type.
     pub fn sqrt(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Unary {
@@ -816,6 +842,9 @@ impl Block {
 
     // binary
 
+    /// Return the variable ID for a new logical conjunction instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have boolean type.
     pub fn and(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -826,6 +855,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new logical disjunction instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have boolean type.
     pub fn or(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -836,6 +868,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new boolean equality instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have boolean type.
     pub fn iff(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -846,6 +881,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new exclusive disjunction instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have boolean type.
     pub fn xor(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -856,6 +894,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new "not equal" instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn neq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -866,6 +907,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new "less than" instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn lt(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -876,6 +920,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new "less than or equal" instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn leq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -886,6 +933,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new "equal" instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn eq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -896,6 +946,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new "greater than" instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn gt(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -906,6 +959,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new "greater than or equal" instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn geq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Binary {
@@ -916,6 +972,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new addition instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn add(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Binary {
@@ -926,6 +985,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new subtraction instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn sub(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Binary {
@@ -936,6 +998,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new multiplication instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn mul(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Binary {
@@ -946,6 +1011,9 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new division instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn div(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Binary {
@@ -958,6 +1026,10 @@ impl Block {
 
     // end of binary
 
+    /// Return the variable ID for a new instruction using `cond` to choose `then` or `els`.
+    ///
+    /// Assumes `cond`, `then`, and `els` are defined and in scope, that `cond` has boolean type,
+    /// and that `then` and `els` both have type `t`.
     pub fn select(
         &mut self,
         f: &mut FuncBuilder,
@@ -974,6 +1046,11 @@ impl Block {
         self.instr(f, id::ty(t), expr)
     }
 
+    /// Return the variable ID for a new instruction calling `g` with `generics` and `args`.
+    ///
+    /// Assumes that `generics` are all valid type IDs, and have the right length and constraints;
+    /// that `args` are all valid variable IDs and match up with `g`'s parameter types; and that the
+    /// return type of `g` matches `t` (all in the context of the given `generics`).
     pub fn call(
         &mut self,
         f: &mut FuncBuilder,
@@ -981,7 +1058,7 @@ impl Block {
         generics: &[usize],
         t: usize,
         args: &[usize],
-    ) -> Result<usize, JsError> {
+    ) -> usize {
         // add the function reference to the callee
         let id = id::function(f.functions.len());
         f.functions.push(g.clone());
@@ -991,9 +1068,16 @@ impl Block {
             generics: generics.iter().map(|&i| id::ty(i)).collect(),
             args: args.iter().map(|&x| id::var(x)).collect(),
         };
-        Ok(self.instr(f, id::ty(t), expr))
+        self.instr(f, id::ty(t), expr)
     }
 
+    /// Return the variable ID for a new instruction defining an array elementwise via `body`.
+    ///
+    /// Assumes `arg` is defined and in scope; this represents the index variable for the element
+    /// definition body, so its dependencies are prepended to the body code and it is marked as
+    /// expired. Also assumes `out` is defined by `body`; this represents the final variable
+    /// defining each array element. Finally, assumes the type of the array (not the element)
+    /// matches `t`.
     pub fn vec(
         &mut self,
         f: &mut FuncBuilder,
