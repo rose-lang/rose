@@ -359,17 +359,17 @@ type ToValue<T> = T extends Nulls
     };
 
 /** Map from a parameter type array to a symbolic parameter value type array. */
-type SymbolicParams<T extends readonly any[]> = {
+type SymbolicParams<T> = {
   [K in keyof T]: ToSymbolic<T[K]>;
 };
 
 /** Map from a parameter type array to an abstract parameter value type array. */
-type ValueParams<T extends readonly any[]> = {
+type ValueParams<T> = {
   [K in keyof T]: ToValue<T[K]>;
 };
 
 /** Constructs an abstract function with the given `types` for parameters. */
-export const fn = <const P extends readonly any[], R extends any>(
+export const fn = <const P extends readonly any[], const R>(
   params: P,
   ret: R,
   f: (...args: SymbolicParams<P>) => ToValue<R>,
@@ -423,14 +423,22 @@ export const fn = <const P extends readonly any[], R extends any>(
 type Js = null | boolean | number | Js[] | { [K: string]: Js };
 
 /** Translate a concrete value from the raw format given by the interpreter. */
-const translate = (x: RawVal): Js => {
+const translate = (f: Fn, t: number, x: RawVal): Js => {
+  const func = f[inner];
   if (x === "Unit") return null;
   if ("Bool" in x) return x.Bool;
   if ("F64" in x) return x.F64;
   if ("Fin" in x) return x.Fin;
   if ("Ref" in x) throw Error("Ref not supported");
-  if ("Array" in x) return x.Array.map(translate);
-  else throw Error("Tuple not supported");
+  if ("Array" in x)
+    return x.Array.map((y: RawVal) => translate(f, func.elem(t), y));
+  else
+    return Object.fromEntries(
+      x.Tuple.map((y: RawVal, i: number) => [
+        f[strings][func.key(t, i)],
+        translate(f, func.mem(t, i), y),
+      ]),
+    );
 };
 
 /** Map from an abstract value type to its corresponding concrete value type. */
@@ -442,8 +450,10 @@ type ToJs<T> = T extends ArrayOrVec<infer V>
 export const interp =
   <R>(f: Fn & (() => R)): (() => ToJs<R>) =>
   // TODO: support interpreting functions with parameters and generics
-  () =>
-    translate(wasm.interp(f[inner])) as ToJs<R>;
+  () => {
+    const func = f[inner];
+    return translate(f, func.retType(), func.interp()) as ToJs<R>;
+  };
 
 /** Return the variable ID for the abstract boolean `x`. */
 const boolId = (ctx: Context, x: Bool): number =>

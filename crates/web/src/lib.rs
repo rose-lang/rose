@@ -81,6 +81,41 @@ impl<'a> rose::FuncNode for &'a Func {
     }
 }
 
+#[wasm_bindgen]
+impl Func {
+    #[wasm_bindgen(js_name = "retType")]
+    pub fn ret_type(&self) -> usize {
+        let def = &self.rc.as_ref().def;
+        def.vars[def.ret.var()].ty()
+    }
+
+    pub fn elem(&self, t: usize) -> usize {
+        match self.rc.as_ref().def.types[t] {
+            rose::Ty::Array { index: _, elem } => elem.ty(),
+            _ => panic!("not an array"),
+        }
+    }
+
+    pub fn key(&self, t: usize, i: usize) -> usize {
+        self.rc.as_ref().structs[t].as_ref().unwrap()[i].str()
+    }
+
+    pub fn mem(&self, t: usize, i: usize) -> usize {
+        match &self.rc.as_ref().def.types[t] {
+            rose::Ty::Tuple { members } => members[i].ty(),
+            _ => panic!("not a struct"),
+        }
+    }
+
+    /// Interpret a function with no generics or parameters.
+    ///
+    /// The return value is Serde-converted from `rose_interp::Val`.
+    pub fn interp(&self) -> Result<JsValue, JsError> {
+        let ret = rose_interp::interp(self, IndexSet::new(), &[], [].into_iter())?;
+        Ok(to_js_value(&ret)?)
+    }
+}
+
 #[cfg(feature = "debug")]
 #[wasm_bindgen]
 pub fn pprint(f: &Func) -> Result<String, JsError> {
@@ -1189,13 +1224,4 @@ impl Block {
         };
         self.instr(f, id::ty(t), expr)
     }
-}
-
-/// Interpret a function with no generics or parameters.
-///
-/// The return value is Serde-converted from `rose_interp::Val`.
-#[wasm_bindgen]
-pub fn interp(f: &Func) -> Result<JsValue, JsError> {
-    let ret = rose_interp::interp(f, IndexSet::new(), &[], [].into_iter())?;
-    Ok(to_js_value(&ret)?)
 }

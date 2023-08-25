@@ -248,4 +248,23 @@ describe("valid", () => {
     const h = interp(fn([], Real, () => f(g(3, 5))));
     expect(h()).toBe(2);
   });
+
+  test("return struct", () => {
+    const f = fn([], { p: Bool, x: Real }, () => ({ p: true, x: 42 }));
+    const g = interp(f);
+    expect(g()).toEqual({ p: true, x: 42 });
+  });
+
+  test("array of structs", () => {
+    const n = 2;
+    const Indexed = { i: n, x: Real } as const;
+    const f = fn([Vec(n, Real)], Vec(n, Indexed), (v) =>
+      vec(n, Indexed, (i) => ({ i, x: v[i] })),
+    );
+    const h = interp(fn([], Vec(n, Indexed), () => f([3, 5])));
+    expect(h()).toEqual([
+      { i: 0, x: 3 },
+      { i: 1, x: 5 },
+    ]);
+  });
 });
