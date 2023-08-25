@@ -276,7 +276,7 @@ describe("valid", () => {
     ]);
   });
 
-  test("internal struct of arrays", () => {
+  test("internal array of structs", () => {
     const n = 2;
     const f = fn([Vec(n, Real)], Vec(n, n), (v) => {
       const u = vec(n, { i: n }, (i) => ({ i }));
