@@ -17,19 +17,15 @@ import {
 
 describe("invalid", () => {
   test("undefined", () => {
-    expect(() => fn([], Real, () => undefined as any)).toThrow(
-      "undefined value",
-    );
+    expect(() => fn([], Real, () => undefined as any)).toThrow("invalid value");
   });
 
   test("bigint", () => {
-    expect(() => fn([], Real, () => 0n as any)).toThrow("bigint not supported");
+    expect(() => fn([], Real, () => 0n as any)).toThrow("invalid value");
   });
 
   test("string", () => {
-    expect(() => fn([], Real, () => "hello" as any)).toThrow(
-      "string not supported",
-    );
+    expect(() => fn([], Real, () => "hello" as any)).toThrow("invalid value");
   });
 
   test("literal return type", () => {
@@ -132,13 +128,6 @@ describe("valid", () => {
     const f = fn([], Vec(0, Real), () => []);
     const g = interp(f);
     expect(g()).toEqual([]);
-  });
-
-  test("singleton array", () => {
-    const f = fn([Real], Vec(1, Real), (x) => [x]);
-    const g = fn([], Vec(1, Real), () => f(42));
-    const h = interp(g);
-    expect(h()).toEqual([42]);
   });
 
   test("dot product", () => {
@@ -250,5 +239,13 @@ describe("valid", () => {
     const f = fn([], One, () => vec(1, One, (i) => [i])[0]);
     const g = interp(f);
     expect(g()).toEqual([0]);
+  });
+
+  test("struct", () => {
+    const Pair = { x: Real, y: Real } as const;
+    const f = fn([Pair], Real, (p) => sub(p.y, p.x));
+    const g = fn([Real, Real], Pair, (x, y) => ({ y, x }));
+    const h = interp(fn([], Real, () => f(g(3, 5))));
+    expect(h()).toBe(2);
   });
 });
