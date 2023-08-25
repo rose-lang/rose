@@ -255,16 +255,34 @@ describe("valid", () => {
     expect(g()).toEqual({ p: true, x: 42 });
   });
 
+  test("select struct", () => {
+    const f = fn([], Real, () => {
+      return select(false, { x: Real }, { x: 3 }, { x: 5 }).x;
+    });
+    const g = interp(f);
+    expect(g()).toBe(5);
+  });
+
   test("array of structs", () => {
     const n = 2;
     const Indexed = { i: n, x: Real } as const;
     const f = fn([Vec(n, Real)], Vec(n, Indexed), (v) =>
       vec(n, Indexed, (i) => ({ i, x: v[i] })),
     );
-    const h = interp(fn([], Vec(n, Indexed), () => f([3, 5])));
-    expect(h()).toEqual([
+    const g = interp(fn([], Vec(n, Indexed), () => f([3, 5])));
+    expect(g()).toEqual([
       { i: 0, x: 3 },
       { i: 1, x: 5 },
     ]);
+  });
+
+  test("internal struct of arrays", () => {
+    const n = 2;
+    const f = fn([Vec(n, Real)], Vec(n, n), (v) => {
+      const u = vec(n, { i: n }, (i) => ({ i }));
+      return vec(n, n, (i) => u[i].i);
+    });
+    const g = interp(fn([], Vec(n, n), () => f([3, 5])));
+    expect(g()).toEqual([0, 1]);
   });
 });

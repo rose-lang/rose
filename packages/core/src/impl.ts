@@ -490,7 +490,7 @@ export const xor = (p: Bool, q: Bool): Bool => {
 };
 
 /** Return an abstract value selecting between `then` and `els` via `cond`. */
-export const select = <T>(
+export const select = <const T>(
   cond: Bool,
   ty: T,
   then: ToValue<T>,
@@ -587,7 +587,7 @@ export const geq = (x: Real, y: Real): Bool => {
 };
 
 /** Return an abstract vector by computing each element via `f`. */
-export const vec = <I, T>(
+export const vec = <const I, const T>(
   index: I,
   elem: T,
   f: (i: ToSymbolic<I>) => ToValue<T>,
