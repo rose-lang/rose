@@ -134,6 +134,13 @@ describe("valid", () => {
     expect(g()).toEqual([]);
   });
 
+  test("singleton array", () => {
+    const f = fn([Real], Vec(1, Real), (x) => [x]);
+    const g = fn([], Vec(1, Real), () => f(42));
+    const h = interp(g);
+    expect(h()).toEqual([42]);
+  });
+
   test("dot product", () => {
     const R3 = Vec(3, Real);
     const dot = fn([R3, R3], Real, (u, v) => {

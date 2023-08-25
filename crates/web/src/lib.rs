@@ -340,10 +340,14 @@ impl FuncBuilder {
 
     /// Assemble this function with return variable `out` and the given `body`.
     pub fn finish(mut self, out: usize, body: Block) -> Func {
-        // We replace `self.constants` with an empty vec because we need to satisfy the borrow
-        // checker when we pass `self` to `body.finish` below; this is OK though, because
-        // `Block::finish` is guaranteed not to use `self.constants`.
+        // We replace `self.params` and `self.constants` with empty vec because we need to satisfy
+        // the borrow checker when we pass `self` to `body.finish` below; this is OK though, because
+        // `Block::finish` is guaranteed not to use either `self.params` or `self.constants`.
+        let params = std::mem::take(&mut self.params).into_boxed_slice();
         let mut code = std::mem::take(&mut self.constants);
+        for &x in params.iter() {
+            self.extra(x, &mut code);
+        }
         body.finish(&mut self, &mut code);
         Func {
             rc: Rc::new((
@@ -352,7 +356,7 @@ impl FuncBuilder {
                     generics: self.generics,
                     types: self.types.into_keys().collect(),
                     vars: self.vars.into_iter().map(|x| x.t).collect(),
-                    params: self.params.into(),
+                    params,
                     ret: id::var(out),
                     body: code.into(),
                 },
@@ -362,7 +366,7 @@ impl FuncBuilder {
 
     /// Finalize `x`, appending its dependencies onto `code` and marking it and them as expired.
     ///
-    /// Must not use `self.constants`.
+    /// Must not use `self.params` or `self.constants`.
     fn extra(&mut self, x: id::Var, code: &mut Vec<rose::Instr>) {
         match std::mem::replace(&mut self.vars[x.var()].extra, Extra::Expired) {
             Extra::Parent(extra) => {
@@ -752,7 +756,8 @@ impl Block {
 
     /// Pour the contents of this block (including dependent variables) into `code`.
     ///
-    /// Must not use `f.constants`. Marks all variables defined in this block as expired.
+    /// Must not use `self.params` or `f.constants`. Marks all variables defined in this block as
+    /// expired.
     fn finish(self, f: &mut FuncBuilder, code: &mut Vec<rose::Instr>) {
         for instr in self.code.into_iter() {
             let var = instr.var;
