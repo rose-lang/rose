@@ -76,6 +76,12 @@ describe("invalid", () => {
       }),
     ).toThrow("variable is out of scope");
   });
+
+  test("wrong struct member names", () => {
+    expect(() =>
+      fn([{ a: Real, b: Real }], { b: Real, c: Real }, (x) => x as any),
+    ).toThrow("variable type mismatch");
+  });
 });
 
 describe("valid", () => {
