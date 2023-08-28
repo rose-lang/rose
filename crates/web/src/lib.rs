@@ -355,7 +355,7 @@ enum Ty {
         /// String IDs for key names, in order; the actual strings are stored in JavaScript.
         keys: Box<[usize]>,
 
-        /// Member types of the underlying tuple.
+        /// Member types of the underlying tuple. Must be the same length as `keys`.
         members: Vec<id::Ty>,
     },
 }
@@ -486,12 +486,20 @@ impl FuncBuilder {
         matches!(ty, Ty::Fin { .. })
     }
 
+    /// Is the type with ID `t` an array that should be represented as a JavaScript `Proxy`?
+    ///
+    /// Values of array types must be proxies so that we can use the standard JavaScript indexing
+    /// notation (along with `Symbol`, see above) to generate array accessing code.
     #[wasm_bindgen(js_name = "isArray")]
     pub fn is_array(&self, t: usize) -> bool {
         let (ty, _) = self.types.get_index(t).unwrap();
         matches!(ty, Ty::Array { .. })
     }
 
+    /// Is the type with ID `t` a struct that should be represented as a JavaScript `Proxy`?
+    ///
+    /// Values of struct types must be proxies so that we can use the standard JavaScript property
+    /// access notation to generate member accessing code.
     #[wasm_bindgen(js_name = "isStruct")]
     pub fn is_struct(&self, t: usize) -> bool {
         let (ty, _) = self.types.get_index(t).unwrap();
@@ -547,6 +555,9 @@ impl FuncBuilder {
         }
     }
 
+    /// Return the string IDs of the keys for the struct type with ID `t`.
+    ///
+    /// `Err` if `t` is out of range or does not represent a struct type.
     pub fn keys(&self, t: usize) -> Result<Box<[usize]>, JsError> {
         match self.ty(t)? {
             Ty::Struct { keys, members: _ } => Ok(keys.clone()),
@@ -554,6 +565,9 @@ impl FuncBuilder {
         }
     }
 
+    /// Return the type IDs of the members for the struct type with ID `t`.
+    ///
+    /// `Err` if `t` is out of range or does not represent a struct type.
     pub fn members(&self, t: usize) -> Result<Vec<usize>, JsError> {
         match self.ty(t)? {
             Ty::Struct { keys: _, members } => Ok(members.iter().map(|t| t.ty()).collect()),
@@ -644,6 +658,9 @@ impl FuncBuilder {
         }
     }
 
+    /// Return the ID fr the type of structs with key string IDs `keys` and member type IDs `mems`.
+    ///
+    /// Assumes `keys` are valid string IDs and `mems` are valid type IDs.
     #[wasm_bindgen(js_name = "tyStruct")]
     pub fn ty_struct(&mut self, keys: &[usize], mems: &[usize]) -> usize {
         self.newtype(
@@ -724,6 +741,11 @@ impl FuncBuilder {
         }
     }
 
+    /// Return the ID of a new variable with type ID `t` and value `expr`, depending on `xs`.
+    ///
+    /// Assumes that `t` is a valid type ID and `xs` are all valid variable IDs. If they all have
+    /// `Extra::Constant` then the new variable is a constant; otherwise, it is attached to
+    /// whichever parent variable reachable from `xs` has the highest ID.
     fn attach(&mut self, t: usize, xs: &[usize], expr: rose::Expr) -> usize {
         match xs
             .iter()
@@ -765,6 +787,11 @@ impl FuncBuilder {
         self.attach(t, xs, expr)
     }
 
+    /// Return the ID of a new struct variable with type ID `t` and elements `xs`.
+    ///
+    /// Assumes that `t` is a valid type ID and `xs` are all valid variable IDs. If there are no
+    /// dependencies on parameters then the new struct variable is a constant; otherwise, it is
+    /// attached to whichever parent variable reachable from `xs` has the highest ID.
     pub fn obj(&mut self, t: usize, xs: &[usize]) -> usize {
         let members = xs.iter().map(|&x| id::var(x)).collect();
         let expr = rose::Expr::Tuple { members };
@@ -910,12 +937,20 @@ impl Block {
         x.var()
     }
 
+    /// Add an instruction getting the element of `arr` at index `idx`, and return its variable ID.
+    ///
+    /// Assumes `arr` and `idx` are valid variable IDs, that `idx` matches up with `arr`'s `index`
+    /// type, and that `arr`'s `elem` type is `t`.
     pub fn index(&mut self, f: &mut FuncBuilder, t: usize, arr: usize, idx: usize) -> usize {
         let array = id::var(arr);
         let index = id::var(idx);
         self.instr(f, id::ty(t), rose::Expr::Index { array, index })
     }
 
+    /// Add an instruction getting member `mem` of `x`, and return its variable ID.
+    ///
+    /// Assumes `x` is a valid variable ID, that `mem` is a valid member ID for `x`'s struct type,
+    /// and that the type of that member is `t`.
     pub fn member(&mut self, f: &mut FuncBuilder, t: usize, x: usize, mem: usize) -> usize {
         let tuple = id::var(x);
         let member = id::member(mem);
