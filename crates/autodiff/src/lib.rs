@@ -175,71 +175,190 @@ impl Forward<'_> {
                 x
             }
 
-            Expr::Slice { array: _, index: _ } => todo!(),
-            Expr::Field {
-                tuple: _,
-                member: _,
-            } => todo!(),
+            Expr::Slice { array, index } => {
+                let x = self.set(
+                    code,
+                    ty,
+                    Expr::Slice {
+                        array: *array,
+                        index: *index,
+                    },
+                );
+                x
+            }
+            Expr::Field { tuple, member } => {
+                let x = self.set(
+                    code,
+                    ty,
+                    Expr::Field {
+                        tuple: *tuple,
+                        member: *member,
+                    },
+                );
+                x
+            }
 
             &Expr::Unary { op, arg } => match op {
-                Unop::Not => {
-                    let x = self.set(code, ty, Expr::Unary { op, arg });
-                    x
-                }
+                Unop::Not | Unop::Neg => {
+                    let x = self.set(
+                        code,
+                        ty,
+                        Expr::Member {
+                            tuple: arg,
+                            member: id::member(0),
+                        },
+                    );
+                    let dx = self.set(
+                        code,
+                        ty,
+                        Expr::Member {
+                            tuple: arg,
+                            member: id::member(1),
+                        },
+                    );
 
-                Unop::Neg => {
-                    let x = self.set(code, ty, Expr::Unary { op, arg });
-                    x
+                    let z_val = self.set(code, ty, Expr::Unary { op, arg: x });
+                    let z_dx = self.set(code, ty, Expr::Unary { op, arg: dx });
+
+                    let dual: Box<[id::Var]> = vec![z_val, z_dx].into_boxed_slice();
+                    let z = self.set(code, ty, Expr::Tuple { members: dual });
+                    z
                 }
                 Unop::Abs => {
-                    let x = self.set(code, ty, Expr::Unary { op, arg });
+                    // Unpack F64 Tuple
+                    let x = self.set(
+                        code,
+                        ty,
+                        Expr::Member {
+                            tuple: arg,
+                            member: id::member(0),
+                        },
+                    );
+                    let dx = self.set(
+                        code,
+                        ty,
+                        Expr::Member {
+                            tuple: arg,
+                            member: id::member(1),
+                        },
+                    );
+
+                    // Compute the absolute value of the primal and tangent components
+                    let x_abs = self.set(
+                        code,
+                        ty,
+                        Expr::Unary {
+                            op: Unop::Abs,
+                            arg: x,
+                        },
+                    );
+
                     let sign = self.set(
                         code,
                         ty,
                         Expr::Unary {
                             op: Unop::Sign,
-                            arg,
+                            arg: x,
+                        },
+                    );
+
+                    let dx_abs = self.set(
+                        code,
+                        ty,
+                        Expr::Binary {
+                            op: Binop::Mul,
+                            left: dx,
+                            right: sign,
+                        },
+                    );
+                    let dual: Box<[id::Var]> = vec![x_abs, dx_abs].into_boxed_slice();
+                    let z = self.set(code, ty, Expr::Tuple { members: dual });
+                    z
+                }
+                Unop::Sign => {
+                    // Extract the components of the tuple
+                    let x = self.set(
+                        code,
+                        ty,
+                        Expr::Member {
+                            tuple: arg,
+                            member: id::member(0),
                         },
                     );
                     let dx = self.set(
                         code,
                         ty,
-                        Expr::Binary {
-                            op: Binop::Mul,
-                            left: dy,
-                            right: sign,
+                        Expr::Member {
+                            tuple: arg,
+                            member: id::member(1),
                         },
                     );
-                    (x, dx)
-                }
-                Unop::Sign => {
-                    let x = self.set(code, ty, Expr::Unary { op, arg: y });
-                    let dx = self.set(code, ty, Expr::F64 { val: 0. });
-                    (x, dx)
+                    let z = self.set(
+                        code,
+                        ty,
+                        Expr::Unary {
+                            op: Unop::Sign,
+                            arg: x,
+                        },
+                    );
+
+                    let z_dx = self.set(code, ty, Expr::F64 { val: 0. });
+                    let dual: Box<[id::Var]> = vec![z, z_dx].into_boxed_slice();
+                    let z = self.set(code, ty, Expr::Tuple { members: dual });
+                    z
                 }
                 Unop::Sqrt => {
-                    let (y, dy) = self.map(arg);
-                    let x = self.set(code, ty, Expr::Unary { op, arg: y });
-                    let two = self.set(code, ty, Expr::F64 { val: 2. });
+                    let x = self.set(
+                        code,
+                        ty,
+                        Expr::Member {
+                            tuple: arg,
+                            member: id::member(0),
+                        },
+                    );
+                    let dx = self.set(
+                        code,
+                        ty,
+                        Expr::Member {
+                            tuple: x,
+                            member: id::member(1),
+                        },
+                    );
+
                     let z = self.set(
+                        code,
+                        ty,
+                        Expr::Unary {
+                            op: Unop::Sqrt,
+                            arg: x,
+                        },
+                    );
+
+                    // Calculate 2 * z for later use
+                    let two = self.set(code, ty, Expr::F64 { val: 2. });
+                    let z_two = self.set(
                         code,
                         ty,
                         Expr::Binary {
                             op: Binop::Mul,
                             left: two,
-                            right: x,
+                            right: z,
                         },
                     );
-                    let dx = self.set(
+
+                    // dx = dy / (2 * sqrt(x))
+                    let z_dx = self.set(
                         code,
                         ty,
                         Expr::Binary {
                             op: Binop::Div,
-                            left: dy,
-                            right: z,
+                            left: dx,
+                            right: z_two,
                         },
                     );
-                    (x, dx)
+                    let dual: Box<[id::Var]> = vec![z, z_dx].into_boxed_slice();
+                    let z = self.set(code, ty, Expr::Tuple { members: dual });
+                    z
                 }
             },
             &Expr::Binary { op, left, right } => {
@@ -375,21 +494,23 @@ impl Forward<'_> {
                             },
                         );
 
-                        // sum the tangent components
+                        // calculate intermediate values to avoid borrowing issues
+                        let diff_result = self.set(
+                            code,
+                            ty,
+                            Expr::Binary {
+                                op: Binop::Sub,
+                                left: a,
+                                right: b,
+                            },
+                        );
+
                         let z_dx = self.set(
                             code,
                             ty,
                             Expr::Binary {
                                 op: Binop::Div,
-                                left: self.set(
-                                    code,
-                                    ty,
-                                    Expr::Binary {
-                                        op: Binop::Sub,
-                                        left: a,
-                                        right: b,
-                                    },
-                                ),
+                                left: diff_result,
                                 right: c,
                             },
                         );
@@ -401,27 +522,43 @@ impl Forward<'_> {
                 }
             }
 
-            Expr::Call {
-                id: _,
-                generics: _,
-                args: _,
-            } => todo!(),
+            Expr::Call { id, generics, args } => {
+                let x = self.set(
+                    code,
+                    ty,
+                    Expr::Call {
+                        id: *id,
+                        generics: generics.clone(),
+                        args: args.clone(),
+                    },
+                );
+                x
+            }
             &Expr::Select { cond, then, els } => {
                 let x = self.set(code, ty, Expr::Select { cond, then, els });
                 x
             }
 
-            // recursively call expr on the blocks in the for loop
+            // recursively call expr on the blocks in the for loop...this isn't working yet though because of Rust borrowing rules :(
             &Expr::For { arg, body, ret } => {
+                let processed_body: Vec<_> = body
+                    .iter()
+                    .map(|block| {
+                        let processed_var = self.expr(code, ty, &block.expr);
+                        Instr {
+                            var: processed_var,
+                            expr: block.expr.clone(),
+                        }
+                    })
+                    .collect();
+
+                // create a new For expression with the processed instructions
                 let x = self.set(
                     code,
                     ty,
                     Expr::For {
                         arg,
-                        body: body
-                            .iter()
-                            .map(|&block| self.expr(code, ty, &block.expr))
-                            .collect(),
+                        body: processed_body.into_boxed_slice(),
                         ret,
                     },
                 );
@@ -433,48 +570,74 @@ impl Forward<'_> {
                 body,
                 ret,
             } => {
+                let processed_body: Vec<_> = body
+                    .iter()
+                    .map(|block| {
+                        let processed_var = self.expr(code, ty, &block.expr);
+                        Instr {
+                            var: processed_var,
+                            expr: block.expr.clone(),
+                        }
+                    })
+                    .collect();
+
                 let x = self.set(
                     code,
                     ty,
                     Expr::Accum {
                         shape: *shape,
                         arg: *arg,
-                        body: body
-                            .iter()
-                            .map(|&block| self.expr(code, ty, &block.expr))
-                            .collect(),
+                        body: processed_body.into_boxed_slice(),
                         ret: *ret,
                     },
                 );
                 x
             }
 
-            Expr::Add {
-                accum: _,
-                addend: _,
-            } => todo!(),
+            Expr::Add { accum, addend } => {
+                let x = self.set(
+                    code,
+                    ty,
+                    Expr::Add {
+                        accum: *accum,
+                        addend: *addend,
+                    },
+                );
+                x
+            }
             Expr::Read {
                 var,
                 arg,
                 body,
                 ret,
             } => {
+                let processed_body: Vec<_> = body
+                    .iter()
+                    .map(|block| {
+                        let processed_var = self.expr(code, ty, &block.expr);
+                        Instr {
+                            var: processed_var,
+                            expr: block.expr.clone(),
+                        }
+                    })
+                    .collect();
+
                 let x = self.set(
                     code,
                     ty,
                     Expr::Read {
                         var: *var,
                         arg: *arg,
-                        body: body
-                            .iter()
-                            .map(|&block| self.expr(code, ty, &block.expr))
-                            .collect(),
+                        body: processed_body.into_boxed_slice(),
                         ret: *ret,
                     },
                 );
                 x
             }
-            Expr::Ask { var: _ } => todo!(),
+            Expr::Ask { var } => {
+                let x = self.set(code, ty, Expr::Ask { var: *var });
+                x
+            }
         }
     }
 }
@@ -490,7 +653,6 @@ pub fn forward(f: Derivative) -> Function {
         mapping: vec![None; f.vars.len()],
         var_mapping: vec![None; f.vars.len()],
     };
-    let unitvar = g.unitvar();
 
     // create a mapping from the old scope IDs to the new scope IDs
     for (var_idx, _) in f.vars.iter().enumerate() {
@@ -580,76 +742,77 @@ pub fn transpose(f: Linear) -> Linear {
     f // TODO
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// Some ideas for testing from ealier, not updated though!
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
 
-    #[derive(Clone, Debug)]
-    struct TestFuncNode {
-        f: Function,
-    }
+//     #[derive(Clone, Debug)]
+//     struct TestFuncNode {
+//         f: Function,
+//     }
 
-    impl rose::FuncNode for TestFuncNode {
-        fn def(&self) -> &rose::Function {
-            &self.f
-        }
+//     impl rose::FuncNode for TestFuncNode {
+//         fn def(&self) -> &rose::Function {
+//             &self.f
+//         }
 
-        fn get(&self, _id: id::Function) -> Option<Self> {
-            None
-        }
-    }
+//         fn get(&self, _id: id::Function) -> Option<Self> {
+//             None
+//         }
+//     }
 
-    fn func1() -> Function {
-        Function {
-            generics: vec![].into(),
-            types: vec![Ty::F64].into(),
-            vars: vec![id::ty(0), id::ty(2)].into(),
-            params: vec![].into(),
-            ret: id::var(0),
-            body: vec![
-                Instr {
-                    var: id::var(0),
-                    expr: Expr::F64 { val: 42. },
-                },
-                Instr {
-                    var: id::var(2),
-                    expr: Expr::Accum {
-                        shape: id::var(0),
-                        arg: id::var(1),
-                        body: Box::new([]),
-                        ret: id::var(2),
-                    },
-                },
-            ]
-            .into(),
-        }
-    }
+//     fn func1() -> Function {
+//         Function {
+//             generics: vec![].into(),
+//             types: vec![Ty::F64].into(),
+//             vars: vec![id::ty(0), id::ty(2)].into(),
+//             params: vec![].into(),
+//             ret: id::var(0),
+//             body: vec![
+//                 Instr {
+//                     var: id::var(0),
+//                     expr: Expr::F64 { val: 42. },
+//                 },
+//                 Instr {
+//                     var: id::var(2),
+//                     expr: Expr::Accum {
+//                         shape: id::var(0),
+//                         arg: id::var(1),
+//                         body: Box::new([]),
+//                         ret: id::var(2),
+//                     },
+//                 },
+//             ]
+//             .into(),
+//         }
+//     }
 
-    #[test]
-    fn test_scope_mapping() {
-        // get funcs
-        let og_func = TestFuncNode { f: func1() };
-        let cloned_func = og_func.f.clone();
-        let derivative = derivative(og_func);
-        let new_func = forward(derivative);
+//     #[test]
+//     fn test_scope_mapping() {
+//         // get funcs
+//         let og_func = TestFuncNode { f: func1() };
+//         let cloned_func = og_func.f.clone();
+//         let derivative = derivative(og_func);
+//         let new_func = forward(derivative);
 
-        // extract types and vars
-        let old_types = &cloned_func.types;
-        let new_types = &new_func.types;
-        let old_vars = &cloned_func.vars;
-        let new_vars = &new_func.vars;
+//         // extract types and vars
+//         let old_types = &cloned_func.types;
+//         let new_types = &new_func.types;
+//         let old_vars = &cloned_func.vars;
+//         let new_vars = &new_func.vars;
 
-        // check if the variable indices of Scope types match up
-        for (i, var) in old_vars.iter().enumerate() {
-            if let Ty::Scope { id, .. } = old_types[i] {
-                let old_id = id.var();
-                if let Some(&new_id) = scope_mapping.get(&old_id) {
-                    // check if the new var ID matches the new scope ID
-                    assert_eq!(new_id.var(), var.ty());
-                }
-            }
-        }
+//         // check if the variable indices of Scope types match up
+//         for (i, var) in old_vars.iter().enumerate() {
+//             if let Ty::Scope { id, .. } = old_types[i] {
+//                 let old_id = id.var();
+//                 if let Some(&new_id) = scope_mapping.get(&old_id) {
+//                     // check if the new var ID matches the new scope ID
+//                     assert_eq!(new_id.var(), var.ty());
+//                 }
+//             }
+//         }
 
-        // check if the new block index is strictly greater than the number of scopes in the original function
-    }
-}
+//         // check if the new block index is strictly greater than the number of scopes in the original function
+//     }
+// }
