@@ -40,22 +40,18 @@ pub fn layouts() -> Result<JsValue, serde_wasm_bindgen::Error> {
     ])
 }
 
-mod str_id {
-    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-    pub struct StrId(usize);
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct StrId(usize);
 
-    pub fn str_id(id: usize) -> StrId {
-        StrId(id)
-    }
-
-    impl StrId {
-        pub fn str(self) -> usize {
-            self.0
-        }
-    }
+fn str_id(id: usize) -> StrId {
+    StrId(id)
 }
 
-use str_id::{str_id, StrId};
+impl StrId {
+    fn str(self) -> usize {
+        self.0
+    }
+}
 
 #[derive(Debug)]
 struct Inner {
