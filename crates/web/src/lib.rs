@@ -40,24 +40,18 @@ pub fn layouts() -> Result<JsValue, serde_wasm_bindgen::Error> {
     ])
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct StrId(usize);
-
-fn str_id(id: usize) -> StrId {
-    StrId(id)
-}
-
-impl StrId {
-    fn str(self) -> usize {
-        self.0
-    }
-}
-
 #[derive(Debug)]
 struct Inner {
+    /// The functions this one depends on; see `rose::FuncNode`.
     deps: Box<[Func]>,
+
+    /// The definition of this function.
     def: rose::Function,
-    structs: Box<[Option<Box<[StrId]>>]>,
+
+    /// Indices for string keys on tuple types that represent structs.
+    ///
+    /// The actual strings are stored in JavaScript.
+    structs: Box<[Option<Box<[usize]>>]>,
 }
 
 /// A node in a reference-counted acyclic digraph of functions.
@@ -79,12 +73,14 @@ impl<'a> rose::FuncNode for &'a Func {
 
 #[wasm_bindgen]
 impl Func {
+    /// Return the ID of this function's return type.
     #[wasm_bindgen(js_name = "retType")]
     pub fn ret_type(&self) -> usize {
         let def = &self.rc.as_ref().def;
         def.vars[def.ret.var()].ty()
     }
 
+    /// Return the ID of the element type for the array type with ID `t`.
     pub fn elem(&self, t: usize) -> usize {
         match self.rc.as_ref().def.types[t] {
             rose::Ty::Array { index: _, elem } => elem.ty(),
@@ -92,10 +88,12 @@ impl Func {
         }
     }
 
+    /// Return the string ID for member `i` of the struct type with ID `t`.
     pub fn key(&self, t: usize, i: usize) -> usize {
-        self.rc.as_ref().structs[t].as_ref().unwrap()[i].str()
+        self.rc.as_ref().structs[t].as_ref().unwrap()[i]
     }
 
+    /// Return the member type ID for member `i` of the struct type with ID `t`.
     pub fn mem(&self, t: usize, i: usize) -> usize {
         match &self.rc.as_ref().def.types[t] {
             rose::Ty::Tuple { members } => members[i].ty(),
@@ -334,36 +332,45 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
     Ok(s)
 }
 
+/// A type, with key name information in the case of tuples (which thus become structs).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum Ty {
     Unit,
     Bool,
     F64,
-    Fin { size: usize },
-    Ref { scope: id::Ty, inner: id::Ty },
-    Array { index: id::Ty, elem: id::Ty },
-    Struct { members: Box<[(StrId, id::Ty)]> },
+    Fin {
+        size: usize,
+    },
+    Ref {
+        scope: id::Ty,
+        inner: id::Ty,
+    },
+    Array {
+        index: id::Ty,
+        elem: id::Ty,
+    },
+
+    /// A tuple type, with additional information about key names that makes it into a struct.
+    Struct {
+        /// String IDs for key names, in order; the actual strings are stored in JavaScript.
+        keys: Box<[usize]>,
+
+        /// Member types of the underlying tuple.
+        members: Vec<id::Ty>,
+    },
 }
 
 impl Ty {
-    fn ty(&self) -> rose::Ty {
+    /// Split this augmented type into an actual `rose::Ty` and any additional struct information.
+    fn separate(self) -> (rose::Ty, Option<Box<[usize]>>) {
         match self {
-            Ty::Unit => rose::Ty::Unit,
-            Ty::Bool => rose::Ty::Bool,
-            Ty::F64 => rose::Ty::F64,
-            &Ty::Fin { size } => rose::Ty::Fin { size },
-            &Ty::Ref { scope, inner } => rose::Ty::Ref { scope, inner },
-            &Ty::Array { index, elem } => rose::Ty::Array { index, elem },
-            Ty::Struct { members } => rose::Ty::Tuple {
-                members: members.iter().map(|&(_, t)| t).collect(),
-            },
-        }
-    }
-
-    fn keys(&self) -> Option<Box<[StrId]>> {
-        match self {
-            Ty::Struct { members } => Some(members.iter().map(|&(k, _)| k).collect()),
-            _ => None,
+            Ty::Unit => (rose::Ty::Unit, None),
+            Ty::Bool => (rose::Ty::Bool, None),
+            Ty::F64 => (rose::Ty::F64, None),
+            Ty::Fin { size } => (rose::Ty::Fin { size }, None),
+            Ty::Ref { scope, inner } => (rose::Ty::Ref { scope, inner }, None),
+            Ty::Array { index, elem } => (rose::Ty::Array { index, elem }, None),
+            Ty::Struct { keys, members } => (rose::Ty::Tuple { members }, Some(keys)),
         }
     }
 }
@@ -436,18 +443,20 @@ impl FuncBuilder {
             self.extra(x, &mut code);
         }
         body.finish(&mut self, &mut code);
+        let (types, structs): (Vec<_>, Vec<_>) =
+            self.types.into_keys().map(|ty| ty.separate()).unzip();
         Func {
             rc: Rc::new(Inner {
                 deps: self.functions.into(),
                 def: rose::Function {
                     generics: self.generics,
-                    types: self.types.keys().map(|t| t.ty()).collect(),
+                    types: types.into(),
                     vars: self.vars.into_iter().map(|x| x.t).collect(),
                     params,
                     ret: id::var(out),
                     body: code.into(),
                 },
-                structs: self.types.keys().map(|t| t.keys()).collect(),
+                structs: structs.into(),
             }),
         }
     }
@@ -538,16 +547,16 @@ impl FuncBuilder {
         }
     }
 
-    pub fn keys(&self, t: usize) -> Result<Vec<usize>, JsError> {
+    pub fn keys(&self, t: usize) -> Result<Box<[usize]>, JsError> {
         match self.ty(t)? {
-            Ty::Struct { members } => Ok(members.iter().map(|&(id, _)| id.str()).collect()),
+            Ty::Struct { keys, members: _ } => Ok(keys.clone()),
             _ => Err(JsError::new("type is not a struct")),
         }
     }
 
     pub fn members(&self, t: usize) -> Result<Vec<usize>, JsError> {
         match self.ty(t)? {
-            Ty::Struct { members } => Ok(members.iter().map(|&(_, id)| id.ty()).collect()),
+            Ty::Struct { keys: _, members } => Ok(members.iter().map(|t| t.ty()).collect()),
             _ => Err(JsError::new("type is not a struct")),
         }
     }
@@ -639,11 +648,8 @@ impl FuncBuilder {
     pub fn ty_struct(&mut self, keys: &[usize], mems: &[usize]) -> usize {
         self.newtype(
             Ty::Struct {
-                members: keys
-                    .iter()
-                    .zip(mems.iter())
-                    .map(|(&s, &t)| (str_id(s), id::ty(t)))
-                    .collect(),
+                keys: keys.into(),
+                members: mems.iter().map(|&t| id::ty(t)).collect(),
             },
             EnumSet::only(rose::Constraint::Value),
         )
@@ -781,7 +787,7 @@ impl FuncBuilder {
         &mut self,
         generics: &[usize],
         strings: &[usize],
-        structs: &[Option<Box<[StrId]>>],
+        structs: &[Option<Box<[usize]>>],
         types: &[Option<id::Ty>],
         t: usize,
         ty: &rose::Ty,
@@ -815,10 +821,15 @@ impl FuncBuilder {
             ),
             rose::Ty::Tuple { members } => (
                 Ty::Struct {
+                    keys: structs[t]
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .map(|&s| strings[s])
+                        .collect(),
                     members: members
                         .iter()
-                        .zip(structs[t].as_ref().unwrap().iter())
-                        .map(|(x, s)| Some((str_id(strings[s.str()]), types[x.ty()]?)))
+                        .map(|x| types[x.ty()])
                         .collect::<Option<_>>()?,
                 },
                 EnumSet::only(rose::Constraint::Value),
