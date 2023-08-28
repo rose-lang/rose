@@ -23,6 +23,7 @@ const funcs = new FinalizationRegistry((f: wasm.Func) => f.free());
  */
 export const inner = Symbol("inner");
 
+/** Property key for a `Fn`'s string array for resolving struct key names. */
 const strings = Symbol("strings");
 
 /** An abstract function. */
@@ -47,6 +48,12 @@ interface Var {
   [variable]: number;
 }
 
+/**
+ * Construct an abstract variable with the given `id`.
+ *
+ * This should not be used for any values that instead needs to be represented
+ * as a `Symbol` or a `Proxy`.
+ */
 const newVar = (id: number): Var => ({ [variable]: id });
 
 /** An abstract null value. */
@@ -87,11 +94,14 @@ interface Context {
    */
   variables: Map<number, Map<unknown, number>>;
 
+  /** The actual string represented each string ID. */
   strings: string[];
 
+  /** Reverse lookup from strings to IDs; also used for deduplication. */
   stringIds: Map<string, number>;
 }
 
+/** Return the variable ID map for type ID `t`, creating it if necessary. */
 const typeMap = (ctx: Context, t: number): Map<unknown, number> => {
   let map = ctx.variables.get(t);
   if (map === undefined) {
@@ -119,9 +129,21 @@ const valId = (ctx: Context, t: number, x: unknown): number => {
     if (x === null) id = ctx.func.unit(t);
     else {
       id = (x as any)[variable];
+      // if `x` is a `Var` or some sort of `Proxy` that we constructed then the
+      // `variable` property will be present and it will be a number, but
+      // otherwise it shouldn't be present; we just get it directly and check
+      // its type instead of using JavaScript's `in` operator, because
+      // TypeScript doesn't really like that here, and also because it's
+      // possible that someone manually reached in and extracted the `variable`
+      // symbol from somewhere else and put it somewhere it wasn't supposed to
+      // be; that's one of the reasons we still call `expect` here to
+      // double-check the type (the other reasons being that a `Var` could be
+      // accidentally used outside its original `Context`, or inside its
+      // original context but after it has already dropped out of scope)
       if (typeof id === "number") id = ctx.func.expect(t, id);
       else {
         if (Array.isArray(x)) {
+          // arrays
           const size = ctx.func.size(t);
           const elem = ctx.func.elem(t);
           if (x.length !== size) throw Error("wrong array size");
@@ -129,6 +151,7 @@ const valId = (ctx: Context, t: number, x: unknown): number => {
           for (let i = 0; i < size; ++i) xs[i] = valId(ctx, elem, x[i]);
           id = ctx.func.array(t, xs);
         } else {
+          // structs
           const keys = ctx.func.keys(t);
           const mems = ctx.func.members(t);
           const entries = Object.entries(x).sort(([a], [b]) => compare(a, b));
@@ -183,24 +206,27 @@ type Reals = typeof Real;
 /** Representation of a bounded index type (it's just the upper bound). */
 type Nats = number;
 
-const foo = Symbol("index");
+/** Property key for the index type ID of a vector type. */
+const ind = Symbol("index");
 
-const bar = Symbol("elem");
+/** Property key for the element type ID of a vector type. */
+const elm = Symbol("elem");
 
 /** Representation of a vector type. */
 interface Vecs<K, V> {
-  [foo]: K;
-  [bar]: V;
+  [ind]: K;
+  [elm]: V;
 }
 
 /** The type of vectors from the index type `K` to the element type `V`. */
 export const Vec = <K, V>(index: K, elem: V): Vecs<K, V> => {
-  return { [foo]: index, [bar]: elem };
+  return { [ind]: index, [elm]: elem };
 };
 
 // TODO: make this locale-independent
 const compare = (a: string, b: string): number => a.localeCompare(b);
 
+/** Return an array of the IDs for the given `strs` in `ctx`. */
 const intern = (ctx: Context, strs: string[]): Uint32Array =>
   new Uint32Array(
     strs.map((s) => {
@@ -221,9 +247,11 @@ const tyId = (ctx: Context, ty: unknown): number => {
   else if (ty === Real) return ctx.func.tyF64();
   else if (typeof ty === "number") return ctx.func.tyFin(ty);
   else if (typeof ty === "object" && ty !== null) {
-    if (foo in ty && bar in ty)
-      return ctx.func.tyArray(tyId(ctx, ty[foo]), tyId(ctx, ty[bar]));
+    if (ind in ty && elm in ty)
+      // arrays
+      return ctx.func.tyArray(tyId(ctx, ty[ind]), tyId(ctx, ty[elm]));
     else {
+      // structs
       const entries = Object.entries(ty).sort(([a], [b]) => compare(a, b));
       const strs = intern(
         ctx,
@@ -276,6 +304,13 @@ const arrayProxy = (ctx: Context, t: number, v: number): Vec<unknown> => {
   );
 };
 
+/**
+ * Return a `Proxy` struct of type `t` for the variable ID `x`.
+ *
+ * The original variable ID `x` can be accessed via the `variable` symbol
+ * property key. Any other symbol access will throw an `Error`. Any string
+ * access will emit a member instruction if the key is valid, throw otherwise.
+ */
 const structProxy = (
   ctx: Context,
   t: number,
