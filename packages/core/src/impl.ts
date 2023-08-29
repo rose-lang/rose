@@ -454,6 +454,20 @@ export const fn = <const P extends readonly any[], const R>(
   return g;
 };
 
+export const custom = <const P extends readonly Reals[], const R extends Reals>(
+  params: P,
+  ret: R,
+  f: (...args: ToJs<SymbolicParams<P>>) => ToJs<ToValue<R>>,
+): Fn & ((...args: ValueParams<P>) => ToSymbolic<R>) => {
+  const func = new wasm.Func(params.length, f);
+  const g: any = (...args: SymbolicParams<P>): Real =>
+    call(g, new Uint32Array(), args as unknown[]) as Real;
+  funcs.register(g, func);
+  g[inner] = func;
+  g[strings] = [];
+  return g;
+};
+
 /** A concrete value. */
 type Js = null | boolean | number | Js[] | { [K: string]: Js };
 

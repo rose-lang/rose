@@ -40,64 +40,163 @@ pub fn layouts() -> Result<JsValue, serde_wasm_bindgen::Error> {
     ])
 }
 
-#[derive(Debug)]
-struct Inner {
-    /// The functions this one depends on; see `rose::FuncNode`.
-    deps: Box<[Func]>,
-
-    /// The definition of this function.
-    def: rose::Function,
-
-    /// Indices for string keys on tuple types that represent structs.
-    ///
-    /// The actual strings are stored in JavaScript.
-    structs: Box<[Option<Box<[usize]>>]>,
+fn val_to_js(x: &rose_interp::Val) -> JsValue {
+    match x {
+        rose_interp::Val::F64(x) => JsValue::from_f64(x.get()),
+        _ => todo!(),
+    }
 }
+
+struct Opaque<'a> {
+    f: &'a js_sys::Function,
+}
+
+impl rose_interp::Opaque for Opaque<'_> {
+    fn call(
+        &self,
+        _: &IndexSet<rose::Ty>,
+        _: &[id::Ty],
+        args: &[rose_interp::Val],
+    ) -> rose_interp::Val {
+        let context = &JsValue::UNDEFINED;
+        rose_interp::val_f64(
+            match args.len() {
+                0 => self.f.call0(context),
+                1 => self.f.call1(context, &val_to_js(&args[0])),
+                2 => self
+                    .f
+                    .call2(context, &val_to_js(&args[0]), &val_to_js(&args[1])),
+                3 => self.f.call3(
+                    context,
+                    &val_to_js(&args[0]),
+                    &val_to_js(&args[1]),
+                    &val_to_js(&args[2]),
+                ),
+                _ => todo!(),
+            }
+            .unwrap()
+            .as_f64()
+            .unwrap(),
+        )
+    }
+}
+
+enum Inner {
+    Transparent {
+        /// The functions this one depends on; see `rose::FuncNode`.
+        deps: Box<[Func]>,
+
+        /// The definition of this function.
+        def: rose::Function,
+    },
+    Opaque {
+        generics: Box<[EnumSet<rose::Constraint>]>,
+        types: Box<[rose::Ty]>,
+        params: Box<[id::Ty]>,
+        ret: id::Ty,
+        def: js_sys::Function,
+    },
+}
+
+struct Refs<'a> {
+    deps: &'a [Func],
+}
+
+impl<'a> rose::Refs<'a> for Refs<'a> {
+    type Opaque = Opaque<'a>;
+
+    fn get(&self, id: id::Function) -> Option<rose::Node<'a, Opaque<'a>, Self>> {
+        self.deps.get(id.function()).map(|f| f.node())
+    }
+}
+
+type Stuff = (Inner, Box<[Option<Box<[usize]>>]>);
 
 /// A node in a reference-counted acyclic digraph of functions.
 #[wasm_bindgen]
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Func {
-    rc: Rc<Inner>,
-}
-
-impl<'a> rose::FuncNode for &'a Func {
-    fn def(&self) -> &rose::Function {
-        &self.rc.as_ref().def
-    }
-
-    fn get(&self, id: id::Function) -> Option<Self> {
-        self.rc.as_ref().deps.get(id.function())
-    }
+    rc: Rc<Stuff>,
 }
 
 #[wasm_bindgen]
 impl Func {
+    #[wasm_bindgen(constructor)]
+    pub fn new(params: usize, def: js_sys::Function) -> Self {
+        Self {
+            rc: Rc::new((
+                Inner::Opaque {
+                    generics: [].into(),
+                    types: [rose::Ty::F64].into(),
+                    params: vec![id::ty(0); params].into(),
+                    ret: id::ty(0),
+                    def,
+                },
+                [].into(),
+            )),
+        }
+    }
+
+    fn node(&self) -> rose::Node<Opaque, Refs> {
+        let (inner, _) = self.rc.as_ref();
+        match inner {
+            Inner::Transparent { deps, def } => rose::Node::Transparent {
+                refs: Refs { deps },
+                def,
+            },
+            Inner::Opaque {
+                generics,
+                types,
+                params,
+                ret,
+                def,
+            } => rose::Node::Opaque {
+                generics,
+                types,
+                params,
+                ret: *ret,
+                def: Opaque { f: def },
+            },
+        }
+    }
+
     /// Return the ID of this function's return type.
     #[wasm_bindgen(js_name = "retType")]
     pub fn ret_type(&self) -> usize {
-        let def = &self.rc.as_ref().def;
-        def.vars[def.ret.var()].ty()
+        let (inner, _) = self.rc.as_ref();
+        match inner {
+            Inner::Transparent { def, .. } => def.vars[def.ret.var()].ty(),
+            Inner::Opaque { ret, .. } => ret.ty(),
+        }
     }
 
     /// Return the ID of the element type for the array type with ID `t`.
     pub fn elem(&self, t: usize) -> usize {
-        match self.rc.as_ref().def.types[t] {
-            rose::Ty::Array { index: _, elem } => elem.ty(),
-            _ => panic!("not an array"),
+        let (inner, _) = self.rc.as_ref();
+        match inner {
+            Inner::Transparent { def, .. } => match def.types[t] {
+                rose::Ty::Array { index: _, elem } => elem.ty(),
+                _ => panic!("not an array"),
+            },
+            Inner::Opaque { .. } => panic!(),
         }
     }
 
     /// Return the string ID for member `i` of the struct type with ID `t`.
     pub fn key(&self, t: usize, i: usize) -> usize {
-        self.rc.as_ref().structs[t].as_ref().unwrap()[i]
+        let (_, structs) = self.rc.as_ref();
+        structs[t].as_ref().unwrap()[i]
     }
 
     /// Return the member type ID for member `i` of the struct type with ID `t`.
     pub fn mem(&self, t: usize, i: usize) -> usize {
-        match &self.rc.as_ref().def.types[t] {
-            rose::Ty::Tuple { members } => members[i].ty(),
-            _ => panic!("not a struct"),
+        let (inner, _) = self.rc.as_ref();
+        match inner {
+            Inner::Transparent { def, .. } => match &def.types[t] {
+                rose::Ty::Tuple { members } => members[i].ty(),
+                _ => panic!("not a struct"),
+            },
+            Inner::Opaque { .. } => panic!(),
         }
     }
 
@@ -105,7 +204,7 @@ impl Func {
     ///
     /// The return value is Serde-converted from `rose_interp::Val`.
     pub fn interp(&self) -> Result<JsValue, JsError> {
-        let ret = rose_interp::interp(self, IndexSet::new(), &[], [].into_iter())?;
+        let ret = rose_interp::interp(self.node(), IndexSet::new(), &[], [].into_iter())?;
         Ok(to_js_value(&ret)?)
     }
 }
@@ -277,7 +376,11 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
     }
 
     let mut s = String::new();
-    let def = &f.rc.as_ref().def;
+    let (inner, _) = f.rc.as_ref();
+    let def = match inner {
+        Inner::Transparent { def, .. } => def,
+        Inner::Opaque { .. } => todo!(),
+    };
 
     for (i, constraints) in def.generics.iter().enumerate() {
         write!(&mut s, "G{i} = ")?;
@@ -446,18 +549,20 @@ impl FuncBuilder {
         let (types, structs): (Vec<_>, Vec<_>) =
             self.types.into_keys().map(|ty| ty.separate()).unzip();
         Func {
-            rc: Rc::new(Inner {
-                deps: self.functions.into(),
-                def: rose::Function {
-                    generics: self.generics,
-                    types: types.into(),
-                    vars: self.vars.into_iter().map(|x| x.t).collect(),
-                    params,
-                    ret: id::var(out),
-                    body: code.into(),
+            rc: Rc::new((
+                Inner::Transparent {
+                    deps: self.functions.into(),
+                    def: rose::Function {
+                        generics: self.generics,
+                        types: types.into(),
+                        vars: self.vars.into_iter().map(|x| x.t).collect(),
+                        params,
+                        ret: id::var(out),
+                        body: code.into(),
+                    },
                 },
-                structs: structs.into(),
-            }),
+                structs.into(),
+            )),
         }
     }
 
@@ -873,12 +978,18 @@ impl FuncBuilder {
     /// The returned `Vec` is always nonempty, since its last element is the return type; all the
     /// other elements are the parameter types.
     pub fn ingest(&mut self, f: &Func, strings: &[usize], generics: &[usize]) -> Vec<usize> {
+        let (inner, structs) = f.rc.as_ref();
+        let def = match inner {
+            Inner::Transparent { def, .. } => def,
+            Inner::Opaque { params, .. } => {
+                let t = self.ty_f64();
+                return vec![t; params.len() + 1];
+            }
+        };
         let mut types = vec![];
-        let inner = f.rc.as_ref();
-        let def = &inner.def;
         // push a corresponding type onto our own `types` for each type in the callee
         for (t, ty) in def.types.iter().enumerate() {
-            types.push(self.resolve(generics, strings, &inner.structs, &types, t, ty));
+            types.push(self.resolve(generics, strings, structs, &types, t, ty));
         }
 
         let mut sig: Vec<_> = def

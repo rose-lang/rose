@@ -113,19 +113,26 @@ pub struct Module<'input> {
     funcs: IndexMap<&'input str, rose::Function>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct FuncRef<'input, 'a> {
-    m: &'a Module<'input>,
-    id: id::Function,
+pub enum Opaque {}
+
+impl rose_interp::Opaque for Opaque {
+    fn call(
+        &self,
+        _: &IndexSet<rose::Ty>,
+        _: &[id::Ty],
+        _: &[rose_interp::Val],
+    ) -> rose_interp::Val {
+        match *self {}
+    }
 }
 
-impl<'input, 'a> rose::FuncNode for FuncRef<'input, 'a> {
-    fn def(&self) -> &rose::Function {
-        &self.m.funcs[self.id.function()]
-    }
+impl<'input, 'a> rose::Refs<'a> for &'a Module<'input> {
+    type Opaque = Opaque;
 
-    fn get(&self, id: id::Function) -> Option<Self> {
-        Some(Self { m: self.m, id })
+    fn get(&self, id: id::Function) -> Option<ir::Node<'a, Opaque, Self>> {
+        self.funcs
+            .get_index(id.function())
+            .map(|(_, def)| ir::Node::Transparent { refs: *self, def })
     }
 }
 
@@ -134,12 +141,9 @@ impl Module<'_> {
         self.types.get(name)
     }
 
-    pub fn get_func(&self, name: &str) -> Option<FuncRef> {
+    pub fn get_func(&self, name: &str) -> Option<ir::Node<Opaque, &Module>> {
         let i = self.funcs.get_index_of(name)?;
-        Some(FuncRef {
-            m: self,
-            id: id::function(i),
-        })
+        ir::Refs::get(&self, id::function(i))
     }
 }
 

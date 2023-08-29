@@ -76,13 +76,26 @@ pub struct Function {
     pub body: Box<[Instr]>,
 }
 
-/// Wrapper for a `Function` that knows how to resolve its `id::Function`s.
-pub trait FuncNode {
-    fn def(&self) -> &Function;
+pub trait Refs<'a> {
+    type Opaque;
 
-    fn get(&self, id: id::Function) -> Option<Self>
+    fn get(&self, id: id::Function) -> Option<Node<'a, Self::Opaque, Self>>
     where
         Self: Sized;
+}
+
+pub enum Node<'a, O, T: Refs<'a, Opaque = O>> {
+    Transparent {
+        refs: T,
+        def: &'a Function,
+    },
+    Opaque {
+        generics: &'a [EnumSet<Constraint>],
+        types: &'a [Ty],
+        params: &'a [id::Ty],
+        ret: id::Ty,
+        def: O,
+    },
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

@@ -1,6 +1,6 @@
 use enumset::EnumSet;
 use indexmap::IndexMap;
-use rose::{id, Binop, Constraint, Expr, FuncNode, Function, Instr, Ty, Unop};
+use rose::{id, Binop, Constraint, Expr, Function, Instr, Refs, Ty, Unop};
 
 #[derive(Debug, Eq, thiserror::Error, PartialEq)]
 pub enum InstrError {
@@ -284,9 +284,9 @@ enum Scope {
     Expired,
 }
 
-struct Validator<'a, F: FuncNode> {
-    node: &'a F,
-    f: &'a Function,
+struct Validator<'a, O, T: Refs<'a, Opaque = O>> {
+    refs: T,
+    def: &'a Function,
     constraints: IndexMap<Ty, EnumSet<Constraint>>,
     /// indices from `self.f.types` into `self.constraints`
     types: Vec<id::Ty>,
@@ -294,7 +294,7 @@ struct Validator<'a, F: FuncNode> {
     vars: Vec<Scope>,
 }
 
-impl<F: FuncNode> Validator<'_, F> {
+impl<'a, O, T: Refs<'a, Opaque = O>> Validator<'a, O, T> {
     fn ty(&self, t: id::Ty) -> &Ty {
         let (ty, _) = self.constraints.get_index(t.ty()).unwrap();
         ty
@@ -306,7 +306,7 @@ impl<F: FuncNode> Validator<'_, F> {
     }
 
     fn var_ty_id(&self, x: id::Var) -> id::Ty {
-        self.types[self.f.vars[x.var()].ty()]
+        self.types[self.def.vars[x.var()].ty()]
     }
 
     fn get_ty_id(&self, x: id::Var) -> Option<id::Ty> {
@@ -539,15 +539,43 @@ impl<F: FuncNode> Validator<'_, F> {
                 check(*c == Ty::Bool && a == b && t == a, SelectType)
             }
 
-            Expr::Call { id, generics, args } => match self.node.get(*id) {
+            Expr::Call { id, generics, args } => match self.refs.get(*id) {
                 Some(node) => {
-                    let g = node.def();
-                    if generics.len() != g.generics.len() {
+                    struct Stuff<'a> {
+                        gens: &'a [EnumSet<Constraint>],
+                        typs: &'a [Ty],
+                        params: Box<[id::Ty]>,
+                        ret: id::Ty,
+                    }
+                    let Stuff {
+                        gens,
+                        typs,
+                        params,
+                        ret,
+                    } = match node {
+                        rose::Node::Transparent { refs: _, def } => Stuff {
+                            gens: &def.generics,
+                            typs: &def.types,
+                            params: def.params.iter().map(|x| def.vars[x.var()]).collect(),
+                            ret: def.vars[def.ret.var()],
+                        },
+                        rose::Node::Opaque {
+                            generics,
+                            types,
+                            params,
+                            ret,
+                            def: _,
+                        } => Stuff {
+                            gens: generics,
+                            typs: types,
+                            params: params.into(),
+                            ret,
+                        },
+                    };
+                    if generics.len() != gens.len() {
                         return Err(CallGenericsCount);
                     }
-                    for (i, (expected, actual)) in
-                        g.generics.iter().zip(generics.iter()).enumerate()
-                    {
+                    for (i, (expected, actual)) in gens.iter().zip(generics.iter()).enumerate() {
                         let id = id::generic(i);
                         match self.types.get(actual.ty()) {
                             Some(generic) => check(
@@ -558,23 +586,20 @@ impl<F: FuncNode> Validator<'_, F> {
                         }
                     }
                     let mut types = vec![];
-                    for typ in g.types.iter() {
+                    for typ in typs.iter() {
                         let i = self.resolve(generics, &types, typ);
                         types.push(i);
                     }
-                    if args.len() != g.params.len() {
+                    if args.len() != params.len() {
                         return Err(CallArgsCount);
                     }
-                    for (i, (expected, &actual)) in g.params.iter().zip(args.iter()).enumerate() {
+                    for (i, (expected, &actual)) in params.iter().zip(args.iter()).enumerate() {
                         match self.get_ty_id(actual) {
-                            Some(arg) => check(
-                                arg == types[g.vars[expected.var()].ty()].unwrap(),
-                                CallArg(i),
-                            )?,
+                            Some(arg) => check(arg == types[expected.ty()].unwrap(), CallArg(i))?,
                             None => return Err(CallInvalidArg(i)),
                         }
                     }
-                    check(t == types[g.vars[g.ret.var()].ty()].unwrap(), CallRet)
+                    check(t == types[ret.ty()].unwrap(), CallRet)
                 }
                 None => Err(CallFunction),
             },
@@ -737,9 +762,7 @@ pub enum Error {
 }
 
 /// Validate `f`, assuming that all of its referenced functions are valid.
-pub fn validate(f: impl FuncNode) -> Result<(), Error> {
-    let def = f.def();
-
+pub fn validate<'a, O, T: Refs<'a, Opaque = O>>(refs: T, def: &'a Function) -> Result<(), Error> {
     for (i, constrs) in def.generics.iter().enumerate() {
         // for now we have no compatible constraints
         if (constrs.contains(Constraint::Index) && !constrs.contains(Constraint::Value))
@@ -846,8 +869,8 @@ pub fn validate(f: impl FuncNode) -> Result<(), Error> {
     }
 
     let mut validator = Validator {
-        node: &f,
-        f: def,
+        refs,
+        def,
         constraints,
         types,
         vars,
@@ -867,32 +890,39 @@ pub fn validate(f: impl FuncNode) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rose::Node;
 
     struct FuncInSlice<'a> {
         funcs: &'a [Function],
         id: id::Function,
     }
 
-    impl FuncNode for FuncInSlice<'_> {
-        fn def(&self) -> &Function {
-            &self.funcs[self.id.function()]
-        }
+    impl<'a> Refs<'a> for FuncInSlice<'a> {
+        type Opaque = ();
 
-        fn get(&self, id: id::Function) -> Option<Self> {
+        fn get(&self, id: id::Function) -> Option<Node<'a, (), Self>> {
             if id.function() < self.id.function() {
-                Some(Self {
-                    funcs: self.funcs,
-                    id,
-                })
+                node(self.funcs, id)
             } else {
                 None
             }
         }
     }
 
+    fn node(funcs: &[Function], id: id::Function) -> Option<Node<(), FuncInSlice>> {
+        funcs.get(id.function()).map(|def| Node::Transparent {
+            refs: FuncInSlice { funcs, id },
+            def,
+        })
+    }
+
+    fn validate_in_slice(funcs: &[Function], id: id::Function) -> Result<(), Error> {
+        validate(FuncInSlice { funcs, id }, &funcs[id.function()])
+    }
+
     fn example_constraints(constraints: EnumSet<Constraint>) {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [constraints].into(),
                 types: [Ty::Unit].into(),
                 vars: [id::ty(0)].into(),
@@ -904,8 +934,8 @@ mod tests {
                 }]
                 .into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::ImpossibleConstraints(id::generic(0))));
     }
 
@@ -931,8 +961,8 @@ mod tests {
 
     #[test]
     fn test_invalid_generic() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [].into(),
                 types: [Ty::Generic { id: id::generic(0) }].into(),
                 vars: [id::ty(0)].into(),
@@ -940,14 +970,14 @@ mod tests {
                 ret: id::var(0),
                 body: [].into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::InvalidGeneric(id::ty(0))));
     }
 
     fn example_kind(kind: Constraint) {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [].into(),
                 types: [
                     Ty::Unit,
@@ -962,8 +992,8 @@ mod tests {
                 ret: id::var(0),
                 body: [].into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::InvalidKind(id::ty(1))));
     }
 
@@ -979,8 +1009,8 @@ mod tests {
 
     #[test]
     fn test_scope_id() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [].into(),
                 types: [
                     Ty::Unit,
@@ -995,15 +1025,15 @@ mod tests {
                 ret: id::var(0),
                 body: [].into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::InvalidRef(id::ty(1))));
     }
 
     #[test]
     fn test_ref_scope() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [].into(),
                 types: [
                     Ty::Unit,
@@ -1032,15 +1062,15 @@ mod tests {
                 }]
                 .into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::InvalidScope(id::ty(2))));
     }
 
     #[test]
     fn test_inner() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [].into(),
                 types: [
                     Ty::Unit,
@@ -1069,15 +1099,15 @@ mod tests {
                 }]
                 .into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::InvalidInner(id::ty(2))));
     }
 
     #[test]
     fn test_nested_ref() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [].into(),
                 types: [
                     Ty::Unit,
@@ -1123,15 +1153,15 @@ mod tests {
                 }]
                 .into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::InnerNotValue(id::ty(5))));
     }
 
     #[test]
     fn test_invalid_index() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [Constraint::Value | Constraint::Index].into(),
                 types: [
                     Ty::F64,
@@ -1147,15 +1177,15 @@ mod tests {
                 ret: id::var(0),
                 body: [].into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::InvalidIndex(id::ty(1))));
     }
 
     #[test]
     fn test_invalid_elem() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [Constraint::Value | Constraint::Index].into(),
                 types: [
                     Ty::Generic { id: id::generic(0) },
@@ -1171,15 +1201,15 @@ mod tests {
                 ret: id::var(0),
                 body: [].into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::InvalidElem(id::ty(1))));
     }
 
     #[test]
     fn test_not_index() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [].into(),
                 types: [
                     Ty::F64,
@@ -1194,15 +1224,15 @@ mod tests {
                 ret: id::var(0),
                 body: [].into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::NotIndex(id::ty(1))));
     }
 
     #[test]
     fn test_elem_not_value() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [EnumSet::empty()].into(),
                 types: [
                     Ty::Fin { size: 1 },
@@ -1218,15 +1248,15 @@ mod tests {
                 ret: id::var(0),
                 body: [].into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::ElemNotValue(id::ty(2))));
     }
 
     #[test]
     fn test_invalid_member() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [].into(),
                 types: [
                     Ty::Tuple {
@@ -1240,15 +1270,15 @@ mod tests {
                 ret: id::var(0),
                 body: [].into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::InvalidMember(id::ty(0), id::member(0))));
     }
 
     #[test]
     fn test_member_not_value() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [EnumSet::empty()].into(),
                 types: [
                     Ty::Generic { id: id::generic(0) },
@@ -1262,15 +1292,15 @@ mod tests {
                 ret: id::var(0),
                 body: [].into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::MemberNotValue(id::ty(1), id::member(0))));
     }
 
     #[test]
     fn test_invalid_var() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [].into(),
                 types: [].into(),
                 vars: [id::ty(0)].into(),
@@ -1282,15 +1312,15 @@ mod tests {
                 }]
                 .into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::InvalidVar(id::var(0))));
     }
 
     #[test]
     fn test_invalid_param() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [].into(),
                 types: [Ty::Unit].into(),
                 vars: [id::ty(0)].into(),
@@ -1302,15 +1332,15 @@ mod tests {
                 }]
                 .into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::InvalidParam(0)));
     }
 
     #[test]
     fn test_duplicate_param() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [].into(),
                 types: [Ty::Unit].into(),
                 vars: [id::ty(0), id::ty(0)].into(),
@@ -1322,15 +1352,15 @@ mod tests {
                 }]
                 .into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::DuplicateParam(1)));
     }
 
     #[test]
     fn test_invalid_ret() {
-        let res = validate(FuncInSlice {
-            funcs: &[Function {
+        let res = validate_in_slice(
+            &[Function {
                 generics: [].into(),
                 types: [].into(),
                 vars: [].into(),
@@ -1338,8 +1368,8 @@ mod tests {
                 ret: id::var(0),
                 body: [].into(),
             }],
-            id: id::function(0),
-        });
+            id::function(0),
+        );
         assert_eq!(res, Err(Error::InvalidRet));
     }
 
@@ -1353,8 +1383,8 @@ mod tests {
 
         #[test]
         fn test_invalid_var() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Unit].into(),
                     vars: [id::ty(0)].into(),
@@ -1366,15 +1396,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, InvalidVar));
         }
 
         #[test]
         fn test_redeclare() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Unit].into(),
                     vars: [id::ty(0)].into(),
@@ -1386,15 +1416,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, Redeclare));
         }
 
         #[test]
         fn test_unit() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::F64].into(),
                     vars: [id::ty(0)].into(),
@@ -1406,15 +1436,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, UnitType));
         }
 
         #[test]
         fn test_bool() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Unit].into(),
                     vars: [id::ty(0)].into(),
@@ -1426,14 +1456,14 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, BoolType));
         }
         #[test]
         fn test_f64() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Unit].into(),
                     vars: [id::ty(0)].into(),
@@ -1445,15 +1475,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, F64Type));
         }
 
         #[test]
         fn test_fin_type() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Unit].into(),
                     vars: [id::ty(0)].into(),
@@ -1465,15 +1495,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, FinType));
         }
 
         #[test]
         fn test_fin_too_big() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Fin { size: 2 }].into(),
                     vars: [id::ty(0)].into(),
@@ -1485,15 +1515,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, FinTooBig));
         }
 
         #[test]
         fn test_array_type() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Unit].into(),
                     vars: [id::ty(0)].into(),
@@ -1505,15 +1535,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ArrayType));
         }
 
         #[test]
         fn test_array_index() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [Constraint::Value | Constraint::Index].into(),
                     types: [
                         Ty::Unit,
@@ -1533,15 +1563,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ArrayIndex));
         }
 
         #[test]
         fn test_array_size() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Fin { size: 1 },
@@ -1560,15 +1590,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ArraySize));
         }
 
         #[test]
         fn test_array_invalid_elem() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Fin { size: 1 },
@@ -1589,15 +1619,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ArrayInvalidElem(0)));
         }
 
         #[test]
         fn test_array_elem_type() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -1619,15 +1649,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ArrayElemType(0)));
         }
 
         #[test]
         fn test_tuple_type() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Unit].into(),
                     vars: [id::ty(0)].into(),
@@ -1639,15 +1669,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, TupleType));
         }
 
         #[test]
         fn test_tuple_size() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -1665,15 +1695,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, TupleSize));
         }
 
         #[test]
         fn test_tuple_invalid_member() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -1693,15 +1723,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, TupleInvalidMember(id::member(0))));
         }
 
         #[test]
         fn test_tuple_member_type() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -1722,15 +1752,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, TupleMemberType(id::member(0))));
         }
 
         #[test]
         fn test_index_invalid_array() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [Constraint::Value | Constraint::Index].into(),
                     types: [
                         Ty::Generic { id: id::generic(0) },
@@ -1752,15 +1782,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, IndexInvalidArray));
         }
 
         #[test]
         fn test_index_invalid_index() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [Constraint::Value | Constraint::Index].into(),
                     types: [
                         Ty::Generic { id: id::generic(0) },
@@ -1782,15 +1812,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, IndexInvalidIndex));
         }
 
         #[test]
         fn test_index_type() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [Constraint::Value | Constraint::Index].into(),
                     types: [
                         Ty::Generic { id: id::generic(0) },
@@ -1813,15 +1843,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, IndexType));
         }
 
         #[test]
         fn test_member_invalid_tuple() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -1842,15 +1872,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, MemberInvalidTuple));
         }
 
         #[test]
         fn test_member_not_tuple() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Unit].into(),
                     vars: [id::ty(0), id::ty(0)].into(),
@@ -1865,15 +1895,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, MemberNotTuple));
         }
 
         #[test]
         fn test_member_invalid_member() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Tuple { members: [].into() }].into(),
                     vars: [id::ty(0), id::ty(0)].into(),
@@ -1888,15 +1918,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, MemberInvalidMember));
         }
 
         #[test]
         fn test_member_type() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -1918,15 +1948,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, MemberType));
         }
 
         #[test]
         fn test_slice_invalid_array() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [Constraint::Value | Constraint::Index].into(),
                     types: [
                         Ty::Generic { id: id::generic(0) },
@@ -1948,15 +1978,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, SliceInvalidArray));
         }
 
         #[test]
         fn test_slice_invalid_index() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [Constraint::Value | Constraint::Index].into(),
                     types: [
                         Ty::Generic { id: id::generic(0) },
@@ -1978,15 +2008,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, SliceInvalidIndex));
         }
 
         #[test]
         fn test_slice_array_not_ref() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [Constraint::Value | Constraint::Index].into(),
                     types: [
                         Ty::Generic { id: id::generic(0) },
@@ -2008,15 +2038,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, SliceArrayNotRef));
         }
 
         #[test]
         fn test_slice_not_ref() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [Constraint::Value | Constraint::Index, EnumSet::empty()].into(),
                     types: [
                         Ty::Generic { id: id::generic(0) },
@@ -2043,15 +2073,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, SliceNotRef));
         }
 
         #[test]
         fn test_slice_scope() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [
                         Constraint::Value | Constraint::Index,
                         EnumSet::empty(),
@@ -2088,15 +2118,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, SliceScope));
         }
 
         #[test]
         fn test_slice_type() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [Constraint::Value | Constraint::Index, EnumSet::empty()].into(),
                     types: [
                         Ty::Unit,
@@ -2128,15 +2158,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, SliceType));
         }
 
         #[test]
         fn test_unary_invalid_arg() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Bool].into(),
                     vars: [id::ty(0)].into(),
@@ -2151,14 +2181,14 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, UnaryInvalidArg));
         }
 
         fn example_unary_type(types: Box<[Ty]>, op: Unop) {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types,
                     vars: [id::ty(0), id::ty(1)].into(),
@@ -2173,8 +2203,8 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, UnaryType));
         }
 
@@ -2200,8 +2230,8 @@ mod tests {
 
         #[test]
         fn test_binary_invalid_left() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Bool].into(),
                     vars: [id::ty(0)].into(),
@@ -2217,15 +2247,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, BinaryInvalidLeft));
         }
 
         #[test]
         fn test_binary_invalid_right() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Bool].into(),
                     vars: [id::ty(0), id::ty(0)].into(),
@@ -2241,14 +2271,14 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, BinaryInvalidRight));
         }
 
         fn example_binary_type(types: Box<[Ty]>, op: Binop) {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types,
                     vars: [id::ty(0), id::ty(1), id::ty(2)].into(),
@@ -2264,8 +2294,8 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, BinaryType));
         }
 
@@ -2315,8 +2345,8 @@ mod tests {
         }
 
         fn example_select_invalid(cond: usize, then: usize, els: usize, e: InstrError) {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Bool].into(),
                     vars: [id::ty(0), id::ty(0)].into(),
@@ -2332,8 +2362,8 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, e));
         }
 
@@ -2354,8 +2384,8 @@ mod tests {
 
         #[test]
         fn test_select_type_cond() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Unit].into(),
                     vars: [id::ty(0), id::ty(0), id::ty(0)].into(),
@@ -2371,15 +2401,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, SelectType));
         }
 
         #[test]
         fn test_select_type_match() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Bool, Ty::Unit].into(),
                     vars: [id::ty(0), id::ty(0), id::ty(1), id::ty(0)].into(),
@@ -2395,15 +2425,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, SelectType));
         }
 
         #[test]
         fn test_select_type_ret() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Bool, Ty::Unit].into(),
                     vars: [id::ty(0), id::ty(0), id::ty(0), id::ty(1)].into(),
@@ -2419,15 +2449,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, SelectType));
         }
 
         #[test]
         fn test_call_function() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [Ty::Unit].into(),
                     vars: [id::ty(0)].into(),
@@ -2443,15 +2473,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, CallFunction));
         }
 
         #[test]
         fn test_call_generics_count() {
-            let res = validate(FuncInSlice {
-                funcs: &[
+            let res = validate_in_slice(
+                &[
                     Function {
                         generics: [EnumSet::empty()].into(),
                         types: [Ty::Unit].into(),
@@ -2481,15 +2511,15 @@ mod tests {
                         .into(),
                     },
                 ],
-                id: id::function(1),
-            });
+                id::function(1),
+            );
             assert_eq!(res, err(0, CallGenericsCount));
         }
 
         #[test]
         fn test_call_invalid_generic() {
-            let res = validate(FuncInSlice {
-                funcs: &[
+            let res = validate_in_slice(
+                &[
                     Function {
                         generics: [EnumSet::only(Constraint::Index)].into(),
                         types: [Ty::Generic { id: id::generic(0) }].into(),
@@ -2515,15 +2545,15 @@ mod tests {
                         .into(),
                     },
                 ],
-                id: id::function(1),
-            });
+                id::function(1),
+            );
             assert_eq!(res, err(0, CallInvalidGeneric(id::generic(0))));
         }
 
         #[test]
         fn test_call_generic() {
-            let res = validate(FuncInSlice {
-                funcs: &[
+            let res = validate_in_slice(
+                &[
                     Function {
                         generics: [EnumSet::only(Constraint::Index)].into(),
                         types: [Ty::Generic { id: id::generic(0) }].into(),
@@ -2549,15 +2579,15 @@ mod tests {
                         .into(),
                     },
                 ],
-                id: id::function(1),
-            });
+                id::function(1),
+            );
             assert_eq!(res, err(0, CallGeneric(id::generic(0))));
         }
 
         #[test]
         fn test_call_args_count() {
-            let res = validate(FuncInSlice {
-                funcs: &[
+            let res = validate_in_slice(
+                &[
                     Function {
                         generics: [].into(),
                         types: [Ty::Unit].into(),
@@ -2583,15 +2613,15 @@ mod tests {
                         .into(),
                     },
                 ],
-                id: id::function(1),
-            });
+                id::function(1),
+            );
             assert_eq!(res, err(0, CallArgsCount));
         }
 
         #[test]
         fn test_call_invalid_arg() {
-            let res = validate(FuncInSlice {
-                funcs: &[
+            let res = validate_in_slice(
+                &[
                     Function {
                         generics: [].into(),
                         types: [Ty::Unit].into(),
@@ -2617,15 +2647,15 @@ mod tests {
                         .into(),
                     },
                 ],
-                id: id::function(1),
-            });
+                id::function(1),
+            );
             assert_eq!(res, err(0, CallInvalidArg(0)));
         }
 
         #[test]
         fn test_call_arg() {
-            let res = validate(FuncInSlice {
-                funcs: &[
+            let res = validate_in_slice(
+                &[
                     Function {
                         generics: [].into(),
                         types: [Ty::Unit].into(),
@@ -2651,15 +2681,15 @@ mod tests {
                         .into(),
                     },
                 ],
-                id: id::function(1),
-            });
+                id::function(1),
+            );
             assert_eq!(res, err(0, CallArg(0)));
         }
 
         #[test]
         fn test_call_ret() {
-            let res = validate(FuncInSlice {
-                funcs: &[
+            let res = validate_in_slice(
+                &[
                     Function {
                         generics: [].into(),
                         types: [Ty::Unit].into(),
@@ -2685,15 +2715,15 @@ mod tests {
                         .into(),
                     },
                 ],
-                id: id::function(1),
-            });
+                id::function(1),
+            );
             assert_eq!(res, err(0, CallRet));
         }
 
         #[test]
         fn test_for_invalid_arg() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [Constraint::Value | Constraint::Index].into(),
                     types: [
                         Ty::Generic { id: id::generic(0) },
@@ -2716,15 +2746,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ForInvalidArg));
         }
 
         #[test]
         fn test_for_body() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [Constraint::Value | Constraint::Index].into(),
                     types: [
                         Ty::Generic { id: id::generic(0) },
@@ -2751,15 +2781,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ForBody(0, Box::new(UnitType))));
         }
 
         #[test]
         fn test_for_invalid_ret() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [Constraint::Value | Constraint::Index].into(),
                     types: [
                         Ty::Generic { id: id::generic(0) },
@@ -2782,15 +2812,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ForInvalidRet));
         }
 
         #[test]
         fn test_for_type() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [Constraint::Value | Constraint::Index].into(),
                     types: [
                         Ty::Unit,
@@ -2818,15 +2848,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ForType));
         }
 
         #[test]
         fn test_read_invalid_var() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -2854,15 +2884,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ReadInvalidVar));
         }
 
         #[test]
         fn test_read_invalid_arg() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -2890,15 +2920,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ReadInvalidArg));
         }
 
         #[test]
         fn test_read_not_ref() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -2926,15 +2956,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ReadNotRef));
         }
 
         #[test]
         fn test_read_not_scope() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [EnumSet::only(Constraint::Read)].into(),
                     types: [
                         Ty::Unit,
@@ -2959,15 +2989,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ReadNotScope));
         }
 
         #[test]
         fn test_read_scope_kind() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -2995,15 +3025,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ReadScopeKind));
         }
 
         #[test]
         fn test_read_scope_id() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3031,15 +3061,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ReadScopeId));
         }
 
         #[test]
         fn test_read_inner() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3068,15 +3098,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ReadInner));
         }
 
         #[test]
         fn test_read_body() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3108,15 +3138,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ReadBody(0, Box::new(Redeclare))));
         }
 
         #[test]
         fn test_read_invalid_ret() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3144,15 +3174,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ReadInvalidRet));
         }
 
         #[test]
         fn test_read_escape() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3180,15 +3210,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ReadEscape));
         }
 
         #[test]
         fn test_read_type() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3217,15 +3247,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, ReadType));
         }
 
         #[test]
         fn test_accum_invalid_shape() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3253,15 +3283,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AccumInvalidShape));
         }
 
         #[test]
         fn test_accum_invalid_arg() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3289,15 +3319,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AccumInvalidArg));
         }
 
         #[test]
         fn test_accum_not_ref() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3325,15 +3355,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AccumNotRef));
         }
 
         #[test]
         fn test_accum_not_scope() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [EnumSet::only(Constraint::Accum)].into(),
                     types: [
                         Ty::Unit,
@@ -3358,15 +3388,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AccumNotScope));
         }
 
         #[test]
         fn test_accum_scope_kind() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3394,15 +3424,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AccumScopeKind));
         }
 
         #[test]
         fn test_accum_scope_id() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3430,15 +3460,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AccumScopeId));
         }
 
         #[test]
         fn test_accum_inner() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3467,15 +3497,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AccumInner));
         }
 
         #[test]
         fn test_accum_body() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3507,15 +3537,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AccumBody(0, Box::new(Redeclare))));
         }
 
         #[test]
         fn test_accum_invalid_ret() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3543,15 +3573,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AccumInvalidRet));
         }
 
         #[test]
         fn test_accum_escape() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3579,15 +3609,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AccumEscape));
         }
 
         #[test]
         fn test_accum_type() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [].into(),
                     types: [
                         Ty::Unit,
@@ -3616,15 +3646,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AccumType));
         }
 
         #[test]
         fn test_ask_invalid_var() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [EnumSet::only(Constraint::Read)].into(),
                     types: [
                         Ty::F64,
@@ -3644,15 +3674,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AskInvalidVar));
         }
 
         #[test]
         fn test_ask_not_ref() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [EnumSet::only(Constraint::Read)].into(),
                     types: [
                         Ty::F64,
@@ -3672,15 +3702,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AskNotRef));
         }
 
         #[test]
         fn test_ask_read() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [EnumSet::empty()].into(),
                     types: [
                         Ty::F64,
@@ -3700,15 +3730,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AskRead));
         }
 
         #[test]
         fn test_ask_type() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [EnumSet::only(Constraint::Read)].into(),
                     types: [
                         Ty::F64,
@@ -3728,15 +3758,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AskType));
         }
 
         #[test]
         fn add_invalid_accum() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [EnumSet::only(Constraint::Accum)].into(),
                     types: [
                         Ty::Unit,
@@ -3760,15 +3790,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AddInvalidAccum));
         }
 
         #[test]
         fn add_invalid_addend() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [EnumSet::only(Constraint::Accum)].into(),
                     types: [
                         Ty::Unit,
@@ -3792,15 +3822,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AddInvalidAddend));
         }
 
         #[test]
         fn add_not_ref() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [EnumSet::only(Constraint::Accum)].into(),
                     types: [
                         Ty::Unit,
@@ -3824,15 +3854,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AddNotRef));
         }
 
         #[test]
         fn add_accum() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [EnumSet::empty()].into(),
                     types: [
                         Ty::Unit,
@@ -3856,15 +3886,15 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AddAccum));
         }
 
         #[test]
         fn add_type() {
-            let res = validate(FuncInSlice {
-                funcs: &[Function {
+            let res = validate_in_slice(
+                &[Function {
                     generics: [EnumSet::only(Constraint::Accum)].into(),
                     types: [
                         Ty::Unit,
@@ -3888,8 +3918,8 @@ mod tests {
                     }]
                     .into(),
                 }],
-                id: id::function(0),
-            });
+                id::function(0),
+            );
             assert_eq!(res, err(0, AddType));
         }
     }
