@@ -43,7 +43,7 @@ impl Val {
         }
     }
 
-    pub fn f64(&self) -> f64 {
+    fn f64(&self) -> f64 {
         match self {
             Val::F64(x) => x.get(),
             _ => unreachable!(),
