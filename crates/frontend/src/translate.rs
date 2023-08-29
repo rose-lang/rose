@@ -110,7 +110,7 @@ pub struct Typedef<'input> {
 #[derive(Debug)]
 pub struct Module<'input> {
     types: IndexMap<&'input str, Typedef<'input>>,
-    funcs: IndexMap<&'input str, rose::Function>,
+    funcs: IndexMap<&'input str, rose::Func>,
 }
 
 type Opaque = Infallible;
@@ -118,9 +118,9 @@ type Opaque = Infallible;
 impl<'input, 'a> rose::Refs<'a> for &'a Module<'input> {
     type Opaque = Opaque;
 
-    fn get(&self, id: id::Function) -> Option<ir::Node<'a, Opaque, Self>> {
+    fn get(&self, id: id::Func) -> Option<ir::Node<'a, Opaque, Self>> {
         self.funcs
-            .get_index(id.function())
+            .get_index(id.func())
             .map(|(_, def)| ir::Node::Transparent { refs: *self, def })
     }
 }
@@ -132,7 +132,7 @@ impl Module<'_> {
 
     pub fn get_func(&self, name: &str) -> Option<ir::Node<Opaque, &Module>> {
         let i = self.funcs.get_index_of(name)?;
-        ir::Refs::get(&self, id::function(i))
+        ir::Refs::get(&self, id::func(i))
     }
 }
 
@@ -183,7 +183,7 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
 
     fn unify(
         &mut self,
-        _f: &ir::Function,
+        _f: &ir::Func,
         _args: &[id::Ty],
     ) -> Result<(Vec<id::Ty>, id::Ty), TypeError> {
         todo!()
@@ -271,7 +271,7 @@ impl<'input, 'a> BlockCtx<'input, 'a> {
                     Ok(self.instr(
                         ret,
                         ir::Expr::Call {
-                            id: id::function(i),
+                            id: id::func(i),
                             generics: generics.into(),
                             args: vars,
                         },
@@ -425,7 +425,7 @@ impl<'input> Module<'input> {
                     ctx.bind(bind, id::var(i));
                 }
                 let retvar = ctx.typecheck(body)?; // TODO: ensure this matches `ret`
-                let f = ir::Function {
+                let f = ir::Func {
                     generics,
                     types: ctx.t.into_iter().collect(),
                     vars: ctx.v.into(),

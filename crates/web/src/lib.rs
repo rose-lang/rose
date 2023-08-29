@@ -34,7 +34,7 @@ pub fn layouts() -> Result<JsValue, serde_wasm_bindgen::Error> {
 
     to_js_value(&[
         ("Expr", layout::<rose::Expr>()),
-        ("Function", layout::<rose::Function>()),
+        ("Func", layout::<rose::Func>()),
         ("Instr", layout::<rose::Instr>()),
         ("Ty", layout::<rose::Ty>()),
     ])
@@ -88,7 +88,7 @@ impl rose_interp::Opaque for Opaque<'_> {
 enum Inner {
     Transparent {
         deps: Box<[Func]>,
-        def: rose::Function,
+        def: rose::Func,
     },
     Opaque {
         generics: Box<[EnumSet<rose::Constraint>]>,
@@ -107,18 +107,20 @@ struct Refs<'a> {
 impl<'a> rose::Refs<'a> for Refs<'a> {
     type Opaque = Opaque<'a>;
 
-    fn get(&self, id: id::Function) -> Option<rose::Node<'a, Opaque<'a>, Self>> {
-        self.deps.get(id.function()).map(|f| f.node())
+    fn get(&self, id: id::Func) -> Option<rose::Node<'a, Opaque<'a>, Self>> {
+        self.deps.get(id.func()).map(|f| f.node())
     }
 }
 
-type Stuff = (Inner, Box<[Option<Box<[usize]>>]>);
+// the second tuple element is indices for string keys on tuple types that represent structs; the
+// actual strings are stored in JavaScript
+type Pointee = (Inner, Box<[Option<Box<[usize]>>]>);
 
 /// A node in a reference-counted acyclic digraph of functions.
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct Func {
-    rc: Rc<Stuff>,
+    rc: Rc<Pointee>,
 }
 
 #[wasm_bindgen]
@@ -220,7 +222,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
 
     fn print_instr(
         mut s: &mut String,
-        def: &rose::Function,
+        def: &rose::Func,
         spaces: usize,
         instr: &rose::Instr,
     ) -> Result<(), JsError> {
@@ -282,7 +284,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                 writeln!(&mut s, "x{} ? x{} : x{}", cond.var(), then.var(), els.var())?
             }
             rose::Expr::Call { id, generics, args } => {
-                write!(&mut s, "f{}<", id.function())?;
+                write!(&mut s, "f{}<", id.func())?;
                 print_elems(s, 'T', generics.iter().map(|generic| generic.ty()))?;
                 write!(&mut s, ">(")?;
                 print_elems(s, 'x', args.iter().map(|arg| arg.var()))?;
@@ -347,7 +349,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
 
     fn print_block(
         mut s: &mut String,
-        def: &rose::Function,
+        def: &rose::Func,
         spaces: usize,
         body: &[rose::Instr],
         ret: id::Var,
@@ -463,7 +465,7 @@ enum Ty {
         keys: Box<[usize]>,
 
         /// Member types of the underlying tuple. Must be the same length as `keys`.
-        members: Vec<id::Ty>,
+        members: Box<[id::Ty]>,
     },
 }
 
@@ -556,7 +558,7 @@ impl FuncBuilder {
             rc: Rc::new((
                 Inner::Transparent {
                     deps: self.functions.into(),
-                    def: rose::Function {
+                    def: rose::Func {
                         generics: self.generics,
                         types: types.into(),
                         vars: self.vars.into_iter().map(|x| x.t).collect(),
@@ -1345,7 +1347,7 @@ impl Block {
         args: &[usize],
     ) -> usize {
         // add the function reference to the callee
-        let id = id::function(f.functions.len());
+        let id = id::func(f.functions.len());
         f.functions.push(g.clone());
 
         let expr = rose::Expr::Call {
