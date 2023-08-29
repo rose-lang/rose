@@ -40,6 +40,7 @@ pub fn layouts() -> Result<JsValue, serde_wasm_bindgen::Error> {
     ])
 }
 
+/// Clone `x` into JavaScript.
 fn val_to_js(x: &rose_interp::Val) -> JsValue {
     match x {
         rose_interp::Val::F64(x) => JsValue::from_f64(x.get()),
@@ -47,6 +48,7 @@ fn val_to_js(x: &rose_interp::Val) -> JsValue {
     }
 }
 
+/// Reference to an opaque function that just points to a JavaScript function as its implementation.
 struct Opaque<'a> {
     f: &'a js_sys::Function,
 }
@@ -59,6 +61,7 @@ impl rose_interp::Opaque for Opaque<'_> {
         args: &[rose_interp::Val],
     ) -> rose_interp::Val {
         let context = &JsValue::UNDEFINED;
+        // we only support functions with a small number of `F64` parameters that return `F64`
         rose_interp::val_f64(
             match args.len() {
                 0 => self.f.call0(context),
@@ -81,12 +84,10 @@ impl rose_interp::Opaque for Opaque<'_> {
     }
 }
 
+/// Essentially an owned version of `rose::Node`.
 enum Inner {
     Transparent {
-        /// The functions this one depends on; see `rose::FuncNode`.
         deps: Box<[Func]>,
-
-        /// The definition of this function.
         def: rose::Function,
     },
     Opaque {
@@ -98,6 +99,7 @@ enum Inner {
     },
 }
 
+/// Reference to a slice of function nodes, representing dependencies of a function.
 struct Refs<'a> {
     deps: &'a [Func],
 }
@@ -121,6 +123,7 @@ pub struct Func {
 
 #[wasm_bindgen]
 impl Func {
+    /// Return an opaque function taking `params` `F64` parameters and returning `F64`.
     #[wasm_bindgen(constructor)]
     pub fn new(params: usize, def: js_sys::Function) -> Self {
         Self {
@@ -137,6 +140,7 @@ impl Func {
         }
     }
 
+    /// Construct a function node from the data this `Func` points to.
     fn node(&self) -> rose::Node<Opaque, Refs> {
         let (inner, _) = self.rc.as_ref();
         match inner {
@@ -379,7 +383,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
     let (inner, _) = f.rc.as_ref();
     let def = match inner {
         Inner::Transparent { def, .. } => def,
-        Inner::Opaque { .. } => todo!(),
+        Inner::Opaque { .. } => return Err(JsError::new("opaque function")),
     };
 
     for (i, constraints) in def.generics.iter().enumerate() {
@@ -982,6 +986,7 @@ impl FuncBuilder {
         let def = match inner {
             Inner::Transparent { def, .. } => def,
             Inner::Opaque { params, .. } => {
+                // we currently only allow opaque functions of few `F64` parameters returning `F64`
                 let t = self.ty_f64();
                 return vec![t; params.len() + 1];
             }
