@@ -84,6 +84,7 @@ pub trait Refs<'a> {
         Self: Sized;
 }
 
+#[derive(Clone, Debug, Copy)]
 pub enum Node<'a, O, T: Refs<'a, Opaque = O>> {
     Transparent {
         refs: T,
