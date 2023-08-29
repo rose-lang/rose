@@ -1,5 +1,5 @@
 use indexmap::IndexSet;
-use rose::{id, Binop, Expr, Function, Node, Refs, Ty, Unop};
+use rose::{id, Binop, Expr, Func, Node, Refs, Ty, Unop};
 use std::{cell::Cell, convert::Infallible, rc::Rc};
 
 #[cfg(feature = "serde")]
@@ -145,18 +145,13 @@ impl Opaque for Infallible {
 struct Interpreter<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> {
     typemap: &'b mut IndexSet<Ty>,
     refs: T,
-    def: &'a Function,
+    def: &'a Func,
     types: Vec<id::Ty>,
     vars: Vec<Option<Val>>,
 }
 
 impl<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> Interpreter<'a, 'b, O, T> {
-    fn new(
-        typemap: &'b mut IndexSet<Ty>,
-        refs: T,
-        def: &'a Function,
-        generics: &'b [id::Ty],
-    ) -> Self {
+    fn new(typemap: &'b mut IndexSet<Ty>, refs: T, def: &'a Func, generics: &'b [id::Ty]) -> Self {
         let mut types = vec![];
         for ty in def.types.iter() {
             types.push(resolve(typemap, generics, &types, ty));
@@ -346,7 +341,7 @@ pub fn interp<'a, O: Opaque, T: Refs<'a, Opaque = O>>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rose::{Function, Instr};
+    use rose::{Func, Instr};
 
     type CustomRef<'a> = &'a dyn Fn(&IndexSet<Ty>, &[id::Ty], &[Val]) -> Val;
     type CustomBox = Box<dyn Fn(&IndexSet<Ty>, &[id::Ty], &[Val]) -> Val>;
@@ -363,15 +358,15 @@ mod tests {
 
     struct FuncInSlice<'a> {
         custom: &'a [CustomBox],
-        funcs: &'a [Function],
-        id: id::Function,
+        funcs: &'a [Func],
+        id: id::Func,
     }
 
     impl<'a> Refs<'a> for FuncInSlice<'a> {
         type Opaque = Custom<'a>;
 
-        fn get(&self, id: id::Function) -> Option<Node<'a, Custom<'a>, Self>> {
-            if id.function() < self.id.function() {
+        fn get(&self, id: id::Func) -> Option<Node<'a, Custom<'a>, Self>> {
+            if id.func() < self.id.func() {
                 node(self.custom, self.funcs, id)
             } else {
                 None
@@ -381,11 +376,11 @@ mod tests {
 
     fn node<'a>(
         custom: &'a [CustomBox],
-        funcs: &'a [Function],
-        id: id::Function,
+        funcs: &'a [Func],
+        id: id::Func,
     ) -> Option<Node<'a, Custom<'a>, FuncInSlice<'a>>> {
         let n = custom.len();
-        let i = id.function();
+        let i = id.func();
         if i < n {
             Some(Node::Opaque {
                 generics: &[],
@@ -404,7 +399,7 @@ mod tests {
 
     #[test]
     fn test_two_plus_two() {
-        let funcs = vec![Function {
+        let funcs = vec![Func {
             generics: vec![].into(),
             types: vec![Ty::F64].into(),
             vars: vec![id::ty(0), id::ty(0), id::ty(0)].into(),
@@ -421,7 +416,7 @@ mod tests {
             .into(),
         }];
         let answer = interp(
-            node(&[], &funcs, id::function(0)).unwrap(),
+            node(&[], &funcs, id::func(0)).unwrap(),
             IndexSet::new(),
             &[],
             [val_f64(2.), val_f64(2.)].into_iter(),
@@ -433,7 +428,7 @@ mod tests {
     #[test]
     fn test_nested_call() {
         let funcs = vec![
-            Function {
+            Func {
                 generics: vec![].into(),
                 types: vec![Ty::F64].into(),
                 vars: vec![id::ty(0)].into(),
@@ -445,7 +440,7 @@ mod tests {
                 }]
                 .into(),
             },
-            Function {
+            Func {
                 generics: vec![].into(),
                 types: vec![Ty::F64].into(),
                 vars: vec![id::ty(0), id::ty(0)].into(),
@@ -455,7 +450,7 @@ mod tests {
                     Instr {
                         var: id::var(0),
                         expr: Expr::Call {
-                            id: id::function(0),
+                            id: id::func(0),
                             generics: vec![].into(),
                             args: vec![].into(),
                         },
@@ -473,7 +468,7 @@ mod tests {
             },
         ];
         let answer = interp(
-            node(&[], &funcs, id::function(1)).unwrap(),
+            node(&[], &funcs, id::func(1)).unwrap(),
             IndexSet::new(),
             &[],
             [].into_iter(),
@@ -487,7 +482,7 @@ mod tests {
         let custom: [CustomBox; 1] = [Box::new(|_, _, args| {
             Val::F64(Cell::new(args[0].f64().powf(args[1].f64())))
         })];
-        let funcs = [Function {
+        let funcs = [Func {
             generics: [].into(),
             types: [Ty::F64].into(),
             vars: [id::ty(0), id::ty(0), id::ty(0)].into(),
@@ -496,7 +491,7 @@ mod tests {
             body: [Instr {
                 var: id::var(2),
                 expr: Expr::Call {
-                    id: id::function(0),
+                    id: id::func(0),
                     generics: [].into(),
                     args: [id::var(0), id::var(1)].into(),
                 },
@@ -504,7 +499,7 @@ mod tests {
             .into(),
         }];
         let answer = interp(
-            node(&custom, &funcs, id::function(1)).unwrap(),
+            node(&custom, &funcs, id::func(1)).unwrap(),
             IndexSet::new(),
             &[],
             [val_f64(std::f64::consts::E), val_f64(std::f64::consts::PI)].into_iter(),
