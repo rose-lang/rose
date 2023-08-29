@@ -6,6 +6,7 @@ export {
   abs,
   add,
   and,
+  custom,
   div,
   eq,
   fn,

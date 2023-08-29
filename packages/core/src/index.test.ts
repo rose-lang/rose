@@ -5,6 +5,7 @@ import {
   Real,
   Vec,
   add,
+  custom,
   div,
   fn,
   interp,
@@ -290,5 +291,19 @@ describe("valid", () => {
     });
     const g = interp(fn([], Vec(n, n), () => f([3, 5])));
     expect(g()).toEqual([0, 1]);
+  });
+
+  test("custom unary function", () => {
+    const log = custom([Real], Real, Math.log);
+    const f = fn([], Real, () => log(Math.PI));
+    const g = interp(f);
+    expect(g()).toBe(1.1447298858494002);
+  });
+
+  test("custom binary function", () => {
+    const pow = custom([Real, Real], Real, Math.pow);
+    const f = fn([], Real, () => pow(Math.E, Math.PI));
+    const g = interp(f);
+    expect(g()).toBe(23.140692632779263);
   });
 });

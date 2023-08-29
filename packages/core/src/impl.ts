@@ -403,7 +403,7 @@ type ValueParams<T> = {
   [K in keyof T]: ToValue<T[K]>;
 };
 
-/** Constructs an abstract function with the given `types` for parameters. */
+/** Construct an abstract function by abstractly interpreting `f` once. */
 export const fn = <const P extends readonly any[], const R>(
   params: P,
   ret: R,
@@ -451,6 +451,23 @@ export const fn = <const P extends readonly any[], const R>(
   funcs.register(g, func);
   g[inner] = func;
   g[strings] = strs;
+  return g;
+};
+
+/** Construct an opaque function whose implementation runs `f`. */
+export const custom = <const P extends readonly Reals[], const R extends Reals>(
+  params: P,
+  ret: R,
+  f: (...args: ToJs<SymbolicParams<P>>) => ToJs<ToValue<R>>,
+): Fn & ((...args: ValueParams<P>) => ToSymbolic<R>) => {
+  // TODO: support more complicated signatures for opaque functions
+  const func = new wasm.Func(params.length, f);
+  const g: any = (...args: SymbolicParams<P>): Real =>
+    // TODO: support generics
+    call(g, new Uint32Array(), args as unknown[]) as Real;
+  funcs.register(g, func);
+  g[inner] = func;
+  g[strings] = []; // TODO: support tuples in opaque functions
   return g;
 };
 

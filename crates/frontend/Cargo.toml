@@ -10,6 +10,7 @@ indexmap = "2"
 lalrpop-util = "0.19"
 logos = "0.13"
 rose = { path = "../core" }
+rose-interp = { path = "../interp" }
 thiserror = "1"
 
 [build-dependencies]

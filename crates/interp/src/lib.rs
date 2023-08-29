@@ -1,6 +1,6 @@
 use indexmap::IndexSet;
-use rose::{id, Binop, Expr, FuncNode, Ty, Unop};
-use std::{cell::Cell, rc::Rc};
+use rose::{id, Binop, Expr, Function, Node, Refs, Ty, Unop};
+use std::{cell::Cell, convert::Infallible, rc::Rc};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -129,24 +129,44 @@ fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty
     id::ty(i)
 }
 
-struct Interpreter<'a, F: FuncNode> {
-    typemap: &'a mut IndexSet<Ty>,
-    f: &'a F, // reference instead of value because otherwise borrow checker complains in `fn block`
+/// An opaque function that can be called by the interpreter.
+pub trait Opaque {
+    fn call(&self, types: &IndexSet<Ty>, generics: &[id::Ty], args: &[Val]) -> Val;
+}
+
+impl Opaque for Infallible {
+    fn call(&self, _: &IndexSet<Ty>, _: &[id::Ty], _: &[Val]) -> Val {
+        match *self {}
+    }
+}
+
+/// basically, the `'a` lifetime is for the graph of functions, and the `'b` lifetime is just for
+/// this particular instance of interpretation
+struct Interpreter<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> {
+    typemap: &'b mut IndexSet<Ty>,
+    refs: T,
+    def: &'a Function,
     types: Vec<id::Ty>,
     vars: Vec<Option<Val>>,
 }
 
-impl<'a, F: FuncNode> Interpreter<'a, F> {
-    fn new(typemap: &'a mut IndexSet<Ty>, f: &'a F, generics: &'a [id::Ty]) -> Self {
+impl<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> Interpreter<'a, 'b, O, T> {
+    fn new(
+        typemap: &'b mut IndexSet<Ty>,
+        refs: T,
+        def: &'a Function,
+        generics: &'b [id::Ty],
+    ) -> Self {
         let mut types = vec![];
-        for ty in f.def().types.iter() {
+        for ty in def.types.iter() {
             types.push(resolve(typemap, generics, &types, ty));
         }
         Self {
             typemap,
-            f,
+            refs,
+            def,
             types,
-            vars: vec![None; f.def().vars.len()],
+            vars: vec![None; def.vars.len()],
         }
     }
 
@@ -229,10 +249,10 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
             Expr::Call { id, generics, args } => {
                 let resolved: Vec<id::Ty> = generics.iter().map(|id| self.types[id.ty()]).collect();
                 let vals = args.iter().map(|id| self.vars[id.var()].clone().unwrap());
-                call(self.f.get(*id).unwrap(), self.typemap, &resolved, vals)
+                call(self.refs.get(*id).unwrap(), self.typemap, &resolved, vals)
             }
             Expr::For { arg, body, ret } => {
-                let n = match self.typemap[self.types[self.f.def().vars[arg.var()].ty()].ty()] {
+                let n = match self.typemap[self.types[self.def.vars[arg.var()].ty()].ty()] {
                     Ty::Fin { size } => size,
                     _ => unreachable!(),
                 };
@@ -279,30 +299,44 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
 }
 
 /// Assumes `generics` and `arg` are valid.
-fn call(
-    f: impl FuncNode,
-    types: &mut IndexSet<Ty>,
-    generics: &[id::Ty],
+fn call<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>>(
+    f: Node<'a, O, T>,
+    types: &'b mut IndexSet<Ty>,
+    generics: &'b [id::Ty],
     args: impl Iterator<Item = Val>,
 ) -> Val {
-    let mut interp = Interpreter::new(types, &f, generics);
-    for (var, arg) in f.def().params.iter().zip(args) {
-        interp.vars[var.var()] = Some(arg.clone());
+    match f {
+        Node::Transparent { refs, def } => {
+            let mut interp = Interpreter::new(types, refs, def, generics);
+            for (var, arg) in def.params.iter().zip(args) {
+                interp.vars[var.var()] = Some(arg.clone());
+            }
+            for instr in def.body.iter() {
+                interp.vars[instr.var.var()] = Some(interp.expr(&instr.expr));
+            }
+            interp.vars[def.ret.var()].as_ref().unwrap().clone()
+        }
+        Node::Opaque {
+            generics: _,
+            types: _,
+            params: _,
+            ret: _,
+            def,
+        } => {
+            let vals: Box<[Val]> = args.collect();
+            def.call(types, generics, &vals)
+        }
     }
-    for instr in f.def().body.iter() {
-        interp.vars[instr.var.var()] = Some(interp.expr(&instr.expr));
-    }
-    interp.vars[f.def().ret.var()].as_ref().unwrap().clone()
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {}
 
 /// Guaranteed not to panic if `f` is valid.
-pub fn interp(
-    f: impl FuncNode,
+pub fn interp<'a, O: Opaque, T: Refs<'a, Opaque = O>>(
+    f: Node<'a, O, T>,
     mut types: IndexSet<Ty>,
-    generics: &[id::Ty],
+    generics: &'a [id::Ty],
     args: impl Iterator<Item = Val>,
 ) -> Result<Val, Error> {
     // TODO: check that `generics` and `arg` are valid
@@ -314,21 +348,56 @@ mod tests {
     use super::*;
     use rose::{Function, Instr};
 
-    #[derive(Clone, Copy, Debug)]
+    type CustomRef<'a> = &'a dyn Fn(&IndexSet<Ty>, &[id::Ty], &[Val]) -> Val;
+    type CustomBox = Box<dyn Fn(&IndexSet<Ty>, &[id::Ty], &[Val]) -> Val>;
+
+    struct Custom<'a> {
+        f: CustomRef<'a>,
+    }
+
+    impl Opaque for Custom<'_> {
+        fn call(&self, types: &IndexSet<Ty>, generics: &[id::Ty], args: &[Val]) -> Val {
+            (self.f)(types, generics, args)
+        }
+    }
+
     struct FuncInSlice<'a> {
+        custom: &'a [CustomBox],
         funcs: &'a [Function],
         id: id::Function,
     }
 
-    impl FuncNode for FuncInSlice<'_> {
-        fn def(&self) -> &Function {
-            &self.funcs[self.id.function()]
-        }
+    impl<'a> Refs<'a> for FuncInSlice<'a> {
+        type Opaque = Custom<'a>;
 
-        fn get(&self, id: id::Function) -> Option<Self> {
-            Some(Self {
-                funcs: self.funcs,
-                id,
+        fn get(&self, id: id::Function) -> Option<Node<'a, Custom<'a>, Self>> {
+            if id.function() < self.id.function() {
+                node(self.custom, self.funcs, id)
+            } else {
+                None
+            }
+        }
+    }
+
+    fn node<'a>(
+        custom: &'a [CustomBox],
+        funcs: &'a [Function],
+        id: id::Function,
+    ) -> Option<Node<'a, Custom<'a>, FuncInSlice<'a>>> {
+        let n = custom.len();
+        let i = id.function();
+        if i < n {
+            Some(Node::Opaque {
+                generics: &[],
+                types: &[],
+                params: &[],
+                ret: id::ty(0),
+                def: Custom { f: &custom[i] },
+            })
+        } else {
+            funcs.get(i - n).map(|def| Node::Transparent {
+                refs: FuncInSlice { custom, funcs, id },
+                def,
             })
         }
     }
@@ -352,10 +421,7 @@ mod tests {
             .into(),
         }];
         let answer = interp(
-            FuncInSlice {
-                funcs: &funcs,
-                id: id::function(0),
-            },
+            node(&[], &funcs, id::function(0)).unwrap(),
             IndexSet::new(),
             &[],
             [val_f64(2.), val_f64(2.)].into_iter(),
@@ -407,15 +473,43 @@ mod tests {
             },
         ];
         let answer = interp(
-            FuncInSlice {
-                funcs: &funcs,
-                id: id::function(1),
-            },
+            node(&[], &funcs, id::function(1)).unwrap(),
             IndexSet::new(),
             &[],
             [].into_iter(),
         )
         .unwrap();
         assert_eq!(answer, val_f64(1764.));
+    }
+
+    #[test]
+    fn test_custom() {
+        let custom: [CustomBox; 1] = [Box::new(|_, _, args| {
+            Val::F64(Cell::new(args[0].f64().powf(args[1].f64())))
+        })];
+        let funcs = [Function {
+            generics: [].into(),
+            types: [Ty::F64].into(),
+            vars: [id::ty(0), id::ty(0), id::ty(0)].into(),
+            params: [id::var(0), id::var(1)].into(),
+            ret: id::var(2),
+            body: [Instr {
+                var: id::var(2),
+                expr: Expr::Call {
+                    id: id::function(0),
+                    generics: [].into(),
+                    args: [id::var(0), id::var(1)].into(),
+                },
+            }]
+            .into(),
+        }];
+        let answer = interp(
+            node(&custom, &funcs, id::function(1)).unwrap(),
+            IndexSet::new(),
+            &[],
+            [val_f64(std::f64::consts::E), val_f64(std::f64::consts::PI)].into_iter(),
+        )
+        .unwrap();
+        assert_eq!(answer, val_f64(23.140692632779263));
     }
 }
