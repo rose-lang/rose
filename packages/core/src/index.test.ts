@@ -294,14 +294,16 @@ describe("valid", () => {
   });
 
   test("custom unary function", () => {
-    const f = custom([Real], Real, (x) => Math.log(x));
-    const g = interp(fn([], Real, () => f(Math.PI)));
+    const log = custom([Real], Real, Math.log);
+    const f = fn([], Real, () => log(Math.PI));
+    const g = interp(f);
     expect(g()).toBe(1.1447298858494002);
   });
 
   test("custom binary function", () => {
-    const f = custom([Real, Real], Real, (x, y) => Math.pow(x, y));
-    const g = interp(fn([], Real, () => f(Math.E, Math.PI)));
+    const pow = custom([Real, Real], Real, Math.pow);
+    const f = fn([], Real, () => pow(Math.E, Math.PI));
+    const g = interp(f);
     expect(g()).toBe(23.140692632779263);
   });
 });
