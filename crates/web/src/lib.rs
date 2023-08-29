@@ -40,22 +40,73 @@ pub fn layouts() -> Result<JsValue, serde_wasm_bindgen::Error> {
     ])
 }
 
+#[derive(Debug)]
+struct Inner {
+    /// The functions this one depends on; see `rose::FuncNode`.
+    deps: Box<[Func]>,
+
+    /// The definition of this function.
+    def: rose::Function,
+
+    /// Indices for string keys on tuple types that represent structs.
+    ///
+    /// The actual strings are stored in JavaScript.
+    structs: Box<[Option<Box<[usize]>>]>,
+}
+
 /// A node in a reference-counted acyclic digraph of functions.
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
 pub struct Func {
-    rc: Rc<(Box<[Func]>, rose::Function)>,
+    rc: Rc<Inner>,
 }
 
 impl<'a> rose::FuncNode for &'a Func {
     fn def(&self) -> &rose::Function {
-        let (_, def) = self.rc.as_ref();
-        def
+        &self.rc.as_ref().def
     }
 
     fn get(&self, id: id::Function) -> Option<Self> {
-        let (funcs, _) = self.rc.as_ref();
-        funcs.get(id.function())
+        self.rc.as_ref().deps.get(id.function())
+    }
+}
+
+#[wasm_bindgen]
+impl Func {
+    /// Return the ID of this function's return type.
+    #[wasm_bindgen(js_name = "retType")]
+    pub fn ret_type(&self) -> usize {
+        let def = &self.rc.as_ref().def;
+        def.vars[def.ret.var()].ty()
+    }
+
+    /// Return the ID of the element type for the array type with ID `t`.
+    pub fn elem(&self, t: usize) -> usize {
+        match self.rc.as_ref().def.types[t] {
+            rose::Ty::Array { index: _, elem } => elem.ty(),
+            _ => panic!("not an array"),
+        }
+    }
+
+    /// Return the string ID for member `i` of the struct type with ID `t`.
+    pub fn key(&self, t: usize, i: usize) -> usize {
+        self.rc.as_ref().structs[t].as_ref().unwrap()[i]
+    }
+
+    /// Return the member type ID for member `i` of the struct type with ID `t`.
+    pub fn mem(&self, t: usize, i: usize) -> usize {
+        match &self.rc.as_ref().def.types[t] {
+            rose::Ty::Tuple { members } => members[i].ty(),
+            _ => panic!("not a struct"),
+        }
+    }
+
+    /// Interpret a function with no generics or parameters.
+    ///
+    /// The return value is Serde-converted from `rose_interp::Val`.
+    pub fn interp(&self) -> Result<JsValue, JsError> {
+        let ret = rose_interp::interp(self, IndexSet::new(), &[], [].into_iter())?;
+        Ok(to_js_value(&ret)?)
     }
 }
 
@@ -226,7 +277,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
     }
 
     let mut s = String::new();
-    let (_, def) = f.rc.as_ref();
+    let def = &f.rc.as_ref().def;
 
     for (i, constraints) in def.generics.iter().enumerate() {
         write!(&mut s, "G{i} = ")?;
@@ -281,6 +332,49 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
     Ok(s)
 }
 
+/// A type, with key name information in the case of tuples (which thus become structs).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum Ty {
+    Unit,
+    Bool,
+    F64,
+    Fin {
+        size: usize,
+    },
+    Ref {
+        scope: id::Ty,
+        inner: id::Ty,
+    },
+    Array {
+        index: id::Ty,
+        elem: id::Ty,
+    },
+
+    /// A tuple type, with additional information about key names that makes it into a struct.
+    Struct {
+        /// String IDs for key names, in order; the actual strings are stored in JavaScript.
+        keys: Box<[usize]>,
+
+        /// Member types of the underlying tuple. Must be the same length as `keys`.
+        members: Vec<id::Ty>,
+    },
+}
+
+impl Ty {
+    /// Split this augmented type into an actual `rose::Ty` and any additional struct information.
+    fn separate(self) -> (rose::Ty, Option<Box<[usize]>>) {
+        match self {
+            Ty::Unit => (rose::Ty::Unit, None),
+            Ty::Bool => (rose::Ty::Bool, None),
+            Ty::F64 => (rose::Ty::F64, None),
+            Ty::Fin { size } => (rose::Ty::Fin { size }, None),
+            Ty::Ref { scope, inner } => (rose::Ty::Ref { scope, inner }, None),
+            Ty::Array { index, elem } => (rose::Ty::Array { index, elem }, None),
+            Ty::Struct { keys, members } => (rose::Ty::Tuple { members }, Some(keys)),
+        }
+    }
+}
+
 /// Metadata about a variable while its containing function is still under construction.
 enum Extra {
     /// Does not depend on any of the function's parameters.
@@ -311,7 +405,7 @@ pub struct FuncBuilder {
     generics: Box<[EnumSet<rose::Constraint>]>,
 
     /// Index of types, with constraints tracked for validation (e.g. array index must be `Index`).
-    types: IndexMap<rose::Ty, EnumSet<rose::Constraint>>,
+    types: IndexMap<Ty, EnumSet<rose::Constraint>>,
 
     /// Variable types, scopes (expired or not?), and dependent definitions.
     vars: Vec<Var>,
@@ -349,18 +443,21 @@ impl FuncBuilder {
             self.extra(x, &mut code);
         }
         body.finish(&mut self, &mut code);
+        let (types, structs): (Vec<_>, Vec<_>) =
+            self.types.into_keys().map(|ty| ty.separate()).unzip();
         Func {
-            rc: Rc::new((
-                self.functions.into(),
-                rose::Function {
+            rc: Rc::new(Inner {
+                deps: self.functions.into(),
+                def: rose::Function {
                     generics: self.generics,
-                    types: self.types.into_keys().collect(),
+                    types: types.into(),
                     vars: self.vars.into_iter().map(|x| x.t).collect(),
                     params,
                     ret: id::var(out),
                     body: code.into(),
                 },
-            )),
+                structs: structs.into(),
+            }),
         }
     }
 
@@ -386,19 +483,27 @@ impl FuncBuilder {
     #[wasm_bindgen(js_name = "isSymbol")]
     pub fn is_symbol(&self, t: usize) -> bool {
         let (ty, _) = self.types.get_index(t).unwrap();
-        // Because the JS API only allows constructing generics that are index types, we don't need
-        // to check for `rose::Constraint::Index` here. If that changes, this code must change too.
-        matches!(ty, rose::Ty::Fin { .. } | rose::Ty::Generic { .. })
+        matches!(ty, Ty::Fin { .. })
     }
 
-    /// Should the type with ID `t` be represented as a JavaScript `Proxy`?
+    /// Is the type with ID `t` an array that should be represented as a JavaScript `Proxy`?
     ///
     /// Values of array types must be proxies so that we can use the standard JavaScript indexing
     /// notation (along with `Symbol`, see above) to generate array accessing code.
-    #[wasm_bindgen(js_name = "isProxy")]
-    pub fn is_proxy(&self, t: usize) -> bool {
+    #[wasm_bindgen(js_name = "isArray")]
+    pub fn is_array(&self, t: usize) -> bool {
         let (ty, _) = self.types.get_index(t).unwrap();
-        matches!(ty, rose::Ty::Array { .. }) // should check for `Tuple` too once we allow structs
+        matches!(ty, Ty::Array { .. })
+    }
+
+    /// Is the type with ID `t` a struct that should be represented as a JavaScript `Proxy`?
+    ///
+    /// Values of struct types must be proxies so that we can use the standard JavaScript property
+    /// access notation to generate member accessing code.
+    #[wasm_bindgen(js_name = "isStruct")]
+    pub fn is_struct(&self, t: usize) -> bool {
+        let (ty, _) = self.types.get_index(t).unwrap();
+        matches!(ty, Ty::Struct { .. })
     }
 
     /// Return a reference to the type with ID `t` if it exists, `Err` otherwise.
@@ -406,7 +511,7 @@ impl FuncBuilder {
     /// This returns a `Result` with `JsError` because it is a helper method meant to be used by
     /// `pub` methods exposed to JavaScript; don't prefer it for more Rusty stuff, because `JsError`
     /// doesn't implement `Debug` so you can't easily call `Result::unwrap` here.
-    fn ty(&self, t: usize) -> Result<&rose::Ty, JsError> {
+    fn ty(&self, t: usize) -> Result<&Ty, JsError> {
         match self.types.get_index(t) {
             None => Err(JsError::new("type does not exist")),
             Some((ty, _)) => Ok(ty),
@@ -418,7 +523,7 @@ impl FuncBuilder {
     /// `Err` if `t` is out of range or does not represent an array type.
     pub fn index(&self, t: usize) -> Result<usize, JsError> {
         match self.ty(t)? {
-            &rose::Ty::Array { index, elem: _ } => Ok(index.ty()),
+            &Ty::Array { index, elem: _ } => Ok(index.ty()),
             _ => Err(JsError::new("type is not an array")),
         }
     }
@@ -429,10 +534,10 @@ impl FuncBuilder {
     /// not a fixed size (e.g. if it is a generic type parameter of the function).
     pub fn size(&self, t: usize) -> Result<usize, JsError> {
         match self.ty(t)? {
-            &rose::Ty::Array { index, elem: _ } => {
+            &Ty::Array { index, elem: _ } => {
                 let (i, _) = self.types.get_index(index.ty()).unwrap();
                 match i {
-                    &rose::Ty::Fin { size } => Ok(size),
+                    &Ty::Fin { size } => Ok(size),
                     _ => Err(JsError::new("index type is not a fixed size")),
                 }
             }
@@ -445,8 +550,28 @@ impl FuncBuilder {
     /// `Err` if `t` is out of range or does not represent an array type.
     pub fn elem(&self, t: usize) -> Result<usize, JsError> {
         match self.ty(t)? {
-            &rose::Ty::Array { index: _, elem } => Ok(elem.ty()),
+            &Ty::Array { index: _, elem } => Ok(elem.ty()),
             _ => Err(JsError::new("type is not an array")),
+        }
+    }
+
+    /// Return the string IDs of the keys for the struct type with ID `t`.
+    ///
+    /// `Err` if `t` is out of range or does not represent a struct type.
+    pub fn keys(&self, t: usize) -> Result<Box<[usize]>, JsError> {
+        match self.ty(t)? {
+            Ty::Struct { keys, members: _ } => Ok(keys.clone()),
+            _ => Err(JsError::new("type is not a struct")),
+        }
+    }
+
+    /// Return the type IDs of the members for the struct type with ID `t`.
+    ///
+    /// `Err` if `t` is out of range or does not represent a struct type.
+    pub fn members(&self, t: usize) -> Result<Vec<usize>, JsError> {
+        match self.ty(t)? {
+            Ty::Struct { keys: _, members } => Ok(members.iter().map(|t| t.ty()).collect()),
+            _ => Err(JsError::new("type is not a struct")),
         }
     }
 
@@ -468,7 +593,7 @@ impl FuncBuilder {
     }
 
     /// Return the type ID for `ty`, creating if needed, and marking its constraints as `constrs`.
-    fn newtype(&mut self, ty: rose::Ty, constrs: EnumSet<rose::Constraint>) -> usize {
+    fn newtype(&mut self, ty: Ty, constrs: EnumSet<rose::Constraint>) -> usize {
         let (i, _) = self.types.insert_full(ty, constrs);
         i
     }
@@ -489,26 +614,26 @@ impl FuncBuilder {
     /// Return the ID for the unit type, creating if needed.
     #[wasm_bindgen(js_name = "tyUnit")]
     pub fn ty_unit(&mut self) -> usize {
-        self.newtype(rose::Ty::Unit, EnumSet::only(rose::Constraint::Value))
+        self.newtype(Ty::Unit, EnumSet::only(rose::Constraint::Value))
     }
 
     /// Return the ID for the boolean type, creating if needed.
     #[wasm_bindgen(js_name = "tyBool")]
     pub fn ty_bool(&mut self) -> usize {
-        self.newtype(rose::Ty::Bool, EnumSet::only(rose::Constraint::Value))
+        self.newtype(Ty::Bool, EnumSet::only(rose::Constraint::Value))
     }
 
     /// Return the ID for the 64-bit floating-point type, creating if needed.
     #[wasm_bindgen(js_name = "tyF64")]
     pub fn ty_f64(&mut self) -> usize {
-        self.newtype(rose::Ty::F64, EnumSet::only(rose::Constraint::Value))
+        self.newtype(Ty::F64, EnumSet::only(rose::Constraint::Value))
     }
 
     /// Return the ID for the type of nonnegative integers less than `size`, creating if needed.
     #[wasm_bindgen(js_name = "tyFin")]
     pub fn ty_fin(&mut self, size: usize) -> usize {
         self.newtype(
-            rose::Ty::Fin { size },
+            Ty::Fin { size },
             rose::Constraint::Value | rose::Constraint::Index,
         )
     }
@@ -522,7 +647,7 @@ impl FuncBuilder {
         // If we support non-`Value` types then we should also check that `elem` satisfies `Value`.
         if constrs.contains(rose::Constraint::Index) {
             Ok(self.newtype(
-                rose::Ty::Array {
+                Ty::Array {
                     index: id::ty(index),
                     elem: id::ty(elem),
                 },
@@ -531,6 +656,20 @@ impl FuncBuilder {
         } else {
             Err(JsError::new("index type cannot be used as an index"))
         }
+    }
+
+    /// Return the ID fr the type of structs with key string IDs `keys` and member type IDs `mems`.
+    ///
+    /// Assumes `keys` are valid string IDs and `mems` are valid type IDs.
+    #[wasm_bindgen(js_name = "tyStruct")]
+    pub fn ty_struct(&mut self, keys: &[usize], mems: &[usize]) -> usize {
+        self.newtype(
+            Ty::Struct {
+                keys: keys.into(),
+                members: mems.iter().map(|&t| id::ty(t)).collect(),
+            },
+            EnumSet::only(rose::Constraint::Value),
+        )
     }
 
     /// Return the ID of a new variable with type ID `t`.
@@ -587,8 +726,8 @@ impl FuncBuilder {
     /// integer type; or if `t` is an integer type which cannot represent the given value of `x`.
     pub fn num(&mut self, t: usize, x: f64) -> Result<usize, JsError> {
         match self.ty(t)? {
-            rose::Ty::F64 => Ok(self.constant(t, rose::Expr::F64 { val: x })),
-            &rose::Ty::Fin { size } => {
+            Ty::F64 => Ok(self.constant(t, rose::Expr::F64 { val: x })),
+            &Ty::Fin { size } => {
                 let y = x as usize;
                 if y as f64 != x {
                     Err(JsError::new("can't be represented by an unsigned integer"))
@@ -602,14 +741,12 @@ impl FuncBuilder {
         }
     }
 
-    /// Return the ID of a new array variable with type ID `t` and elements `xs`.
+    /// Return the ID of a new variable with type ID `t` and value `expr`, depending on `xs`.
     ///
-    /// Assumes that `t` is a valid type ID and `xs` are all valid variable IDs. If there are no
-    /// dependencies on parameters then the new array variable is a constant; otherwise, it is
-    /// attached to whichever parent variable reachable from `xs` has the highest ID.
-    pub fn array(&mut self, t: usize, xs: &[usize]) -> usize {
-        let elems = xs.iter().map(|&x| id::var(x)).collect();
-        let expr = rose::Expr::Array { elems };
+    /// Assumes that `t` is a valid type ID and `xs` are all valid variable IDs. If they all have
+    /// `Extra::Constant` then the new variable is a constant; otherwise, it is attached to
+    /// whichever parent variable reachable from `xs` has the highest ID.
+    fn attach(&mut self, t: usize, xs: &[usize], expr: rose::Expr) -> usize {
         match xs
             .iter()
             .filter_map(|&x| match self.vars[x].extra {
@@ -639,6 +776,28 @@ impl FuncBuilder {
         }
     }
 
+    /// Return the ID of a new array variable with type ID `t` and elements `xs`.
+    ///
+    /// Assumes that `t` is a valid type ID and `xs` are all valid variable IDs. If there are no
+    /// dependencies on parameters then the new array variable is a constant; otherwise, it is
+    /// attached to whichever parent variable reachable from `xs` has the highest ID.
+    pub fn array(&mut self, t: usize, xs: &[usize]) -> usize {
+        let elems = xs.iter().map(|&x| id::var(x)).collect();
+        let expr = rose::Expr::Array { elems };
+        self.attach(t, xs, expr)
+    }
+
+    /// Return the ID of a new struct variable with type ID `t` and elements `xs`.
+    ///
+    /// Assumes that `t` is a valid type ID and `xs` are all valid variable IDs. If there are no
+    /// dependencies on parameters then the new struct variable is a constant; otherwise, it is
+    /// attached to whichever parent variable reachable from `xs` has the highest ID.
+    pub fn obj(&mut self, t: usize, xs: &[usize]) -> usize {
+        let members = xs.iter().map(|&x| id::var(x)).collect();
+        let expr = rose::Expr::Tuple { members };
+        self.attach(t, xs, expr)
+    }
+
     /// Resolve `ty` via `generics` and `types`, then return its ID in `typemap`, inserting if need
     /// be.
     ///
@@ -654,7 +813,10 @@ impl FuncBuilder {
     fn resolve(
         &mut self,
         generics: &[usize],
+        strings: &[usize],
+        structs: &[Option<Box<[usize]>>],
         types: &[Option<id::Ty>],
+        t: usize,
         ty: &rose::Ty,
     ) -> Option<id::Ty> {
         let (deduped, constrs) = match ty {
@@ -662,33 +824,39 @@ impl FuncBuilder {
             rose::Ty::Scope { kind: _, id: _ } => return None,
             rose::Ty::Generic { id } => return Some(id::ty(generics[id.generic()])),
 
-            rose::Ty::Unit => (rose::Ty::Unit, EnumSet::only(rose::Constraint::Value)),
-            rose::Ty::Bool => (rose::Ty::Bool, EnumSet::only(rose::Constraint::Value)),
-            rose::Ty::F64 => (rose::Ty::F64, EnumSet::only(rose::Constraint::Value)),
+            rose::Ty::Unit => (Ty::Unit, EnumSet::only(rose::Constraint::Value)),
+            rose::Ty::Bool => (Ty::Bool, EnumSet::only(rose::Constraint::Value)),
+            rose::Ty::F64 => (Ty::F64, EnumSet::only(rose::Constraint::Value)),
             &rose::Ty::Fin { size } => (
-                rose::Ty::Fin { size },
+                Ty::Fin { size },
                 rose::Constraint::Value | rose::Constraint::Index,
             ),
 
             rose::Ty::Ref { scope, inner } => (
-                rose::Ty::Ref {
+                Ty::Ref {
                     scope: types[scope.ty()]?,
                     inner: types[inner.ty()]?,
                 },
                 EnumSet::empty(),
             ),
             rose::Ty::Array { index, elem } => (
-                rose::Ty::Array {
+                Ty::Array {
                     index: types[index.ty()]?,
                     elem: types[elem.ty()]?,
                 },
                 EnumSet::only(rose::Constraint::Value),
             ),
             rose::Ty::Tuple { members } => (
-                rose::Ty::Tuple {
+                Ty::Struct {
+                    keys: structs[t]
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .map(|&s| strings[s])
+                        .collect(),
                     members: members
                         .iter()
-                        .map(|&x| types[x.ty()])
+                        .map(|x| types[x.ty()])
                         .collect::<Option<_>>()?,
                 },
                 EnumSet::only(rose::Constraint::Value),
@@ -704,12 +872,13 @@ impl FuncBuilder {
     ///
     /// The returned `Vec` is always nonempty, since its last element is the return type; all the
     /// other elements are the parameter types.
-    pub fn ingest(&mut self, f: &Func, generics: &[usize]) -> Vec<usize> {
+    pub fn ingest(&mut self, f: &Func, strings: &[usize], generics: &[usize]) -> Vec<usize> {
         let mut types = vec![];
-        let (_, def) = f.rc.as_ref();
+        let inner = f.rc.as_ref();
+        let def = &inner.def;
         // push a corresponding type onto our own `types` for each type in the callee
-        for ty in def.types.iter() {
-            types.push(self.resolve(generics, &types, ty));
+        for (t, ty) in def.types.iter().enumerate() {
+            types.push(self.resolve(generics, strings, &inner.structs, &types, t, ty));
         }
 
         let mut sig: Vec<_> = def
@@ -719,17 +888,6 @@ impl FuncBuilder {
             .collect();
         sig.push(types[def.vars[def.ret.var()].ty()].unwrap().ty());
         sig
-    }
-
-    /// Return the type ID for the existing variable ID `x`.
-    fn var_ty_id(&self, x: id::Var) -> id::Ty {
-        self.vars[x.var()].t
-    }
-
-    /// Return the type for the existing variable ID `x`.
-    fn var_ty(&self, x: id::Var) -> &rose::Ty {
-        let (ty, _) = self.types.get_index(self.var_ty_id(x).ty()).unwrap();
-        ty
     }
 }
 
@@ -756,7 +914,7 @@ impl Block {
 
     /// Pour the contents of this block (including dependent variables) into `code`.
     ///
-    /// Must not use `self.params` or `f.constants`. Marks all variables defined in this block as
+    /// Must not use `f.params` or `f.constants`. Marks all variables defined in this block as
     /// expired.
     fn finish(self, f: &mut FuncBuilder, code: &mut Vec<rose::Instr>) {
         for instr in self.code.into_iter() {
@@ -781,16 +939,22 @@ impl Block {
 
     /// Add an instruction getting the element of `arr` at index `idx`, and return its variable ID.
     ///
-    /// Assumes `arr` and `idx` are valid variable IDs, and that `idx` matches up with `arr`'s
-    /// `index` type. `Err` if `arr` is not an array type.
-    pub fn index(&mut self, f: &mut FuncBuilder, arr: usize, idx: usize) -> Result<usize, JsError> {
+    /// Assumes `arr` and `idx` are valid variable IDs, that `idx` matches up with `arr`'s `index`
+    /// type, and that `arr`'s `elem` type is `t`.
+    pub fn index(&mut self, f: &mut FuncBuilder, t: usize, arr: usize, idx: usize) -> usize {
         let array = id::var(arr);
         let index = id::var(idx);
-        let t = match f.var_ty(array) {
-            &rose::Ty::Array { index: _, elem } => elem,
-            _ => return Err(JsError::new("not an array")),
-        };
-        Ok(self.instr(f, t, rose::Expr::Index { array, index }))
+        self.instr(f, id::ty(t), rose::Expr::Index { array, index })
+    }
+
+    /// Add an instruction getting member `mem` of `x`, and return its variable ID.
+    ///
+    /// Assumes `x` is a valid variable ID, that `mem` is a valid member ID for `x`'s struct type,
+    /// and that the type of that member is `t`.
+    pub fn member(&mut self, f: &mut FuncBuilder, t: usize, x: usize, mem: usize) -> usize {
+        let tuple = id::var(x);
+        let member = id::member(mem);
+        self.instr(f, id::ty(t), rose::Expr::Member { tuple, member })
     }
 
     // unary
@@ -1102,13 +1266,4 @@ impl Block {
         };
         self.instr(f, id::ty(t), expr)
     }
-}
-
-/// Interpret a function with no generics or parameters.
-///
-/// The return value is Serde-converted from `rose_interp::Val`.
-#[wasm_bindgen]
-pub fn interp(f: &Func) -> Result<JsValue, JsError> {
-    let ret = rose_interp::interp(f, IndexSet::new(), &[], [].into_iter())?;
-    Ok(to_js_value(&ret)?)
 }

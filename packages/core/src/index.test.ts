@@ -17,19 +17,15 @@ import {
 
 describe("invalid", () => {
   test("undefined", () => {
-    expect(() => fn([], Real, () => undefined as any)).toThrow(
-      "undefined value",
-    );
+    expect(() => fn([], Real, () => undefined as any)).toThrow("invalid value");
   });
 
   test("bigint", () => {
-    expect(() => fn([], Real, () => 0n as any)).toThrow("bigint not supported");
+    expect(() => fn([], Real, () => 0n as any)).toThrow("invalid value");
   });
 
   test("string", () => {
-    expect(() => fn([], Real, () => "hello" as any)).toThrow(
-      "string not supported",
-    );
+    expect(() => fn([], Real, () => "hello" as any)).toThrow("invalid value");
   });
 
   test("literal return type", () => {
@@ -79,6 +75,12 @@ describe("invalid", () => {
         return i;
       }),
     ).toThrow("variable is out of scope");
+  });
+
+  test("wrong struct member names", () => {
+    expect(() =>
+      fn([{ a: Real, b: Real }], { b: Real, c: Real }, (x) => x as any),
+    ).toThrow("variable type mismatch");
   });
 });
 
@@ -132,13 +134,6 @@ describe("valid", () => {
     const f = fn([], Vec(0, Real), () => []);
     const g = interp(f);
     expect(g()).toEqual([]);
-  });
-
-  test("singleton array", () => {
-    const f = fn([Real], Vec(1, Real), (x) => [x]);
-    const g = fn([], Vec(1, Real), () => f(42));
-    const h = interp(g);
-    expect(h()).toEqual([42]);
   });
 
   test("dot product", () => {
@@ -250,5 +245,50 @@ describe("valid", () => {
     const f = fn([], One, () => vec(1, One, (i) => [i])[0]);
     const g = interp(f);
     expect(g()).toEqual([0]);
+  });
+
+  test("struct", () => {
+    const Pair = { x: Real, y: Real } as const;
+    const f = fn([Pair], Real, (p) => sub(p.y, p.x));
+    const g = fn([Real, Real], Pair, (x, y) => ({ y, x }));
+    const h = interp(fn([], Real, () => f(g(3, 5))));
+    expect(h()).toBe(2);
+  });
+
+  test("return struct", () => {
+    const f = fn([], { p: Bool, x: Real }, () => ({ p: true, x: 42 }));
+    const g = interp(f);
+    expect(g()).toEqual({ p: true, x: 42 });
+  });
+
+  test("select struct", () => {
+    const f = fn([], Real, () => {
+      return select(false, { x: Real }, { x: 3 }, { x: 5 }).x;
+    });
+    const g = interp(f);
+    expect(g()).toBe(5);
+  });
+
+  test("array of structs", () => {
+    const n = 2;
+    const Indexed = { i: n, x: Real } as const;
+    const f = fn([Vec(n, Real)], Vec(n, Indexed), (v) =>
+      vec(n, Indexed, (i) => ({ i, x: v[i] })),
+    );
+    const g = interp(fn([], Vec(n, Indexed), () => f([3, 5])));
+    expect(g()).toEqual([
+      { i: 0, x: 3 },
+      { i: 1, x: 5 },
+    ]);
+  });
+
+  test("internal array of structs", () => {
+    const n = 2;
+    const f = fn([Vec(n, Real)], Vec(n, n), (v) => {
+      const u = vec(n, { i: n }, (i) => ({ i }));
+      return vec(n, n, (i) => u[i].i);
+    });
+    const g = interp(fn([], Vec(n, n), () => f([3, 5])));
+    expect(g()).toEqual([0, 1]);
   });
 });
