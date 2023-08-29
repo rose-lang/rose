@@ -76,25 +76,38 @@ pub struct Function {
     pub body: Box<[Instr]>,
 }
 
+/// Resolves `id::Function`s.
 pub trait Refs<'a> {
+    /// See `Node`.
     type Opaque;
 
+    /// Resolve `id` to a function node.
     fn get(&self, id: id::Function) -> Option<Node<'a, Self::Opaque, Self>>
     where
         Self: Sized;
 }
 
+/// A node in a graph of functions.
 #[derive(Clone, Debug, Copy)]
 pub enum Node<'a, O, T: Refs<'a, Opaque = O>> {
+    /// A function with an explicit body.
     Transparent {
+        /// To traverse the graph by resolving functions called by this one.
         refs: T,
+        /// The signature and definition of this function.
         def: &'a Function,
     },
+    /// A function with an opaque body.
     Opaque {
+        /// Generic type parameters.
         generics: &'a [EnumSet<Constraint>],
+        /// Types used in this function's signature.
         types: &'a [Ty],
+        /// Parameter types.
         params: &'a [id::Ty],
+        /// Return type.
         ret: id::Ty,
+        /// Definition of this function; semantics may vary.
         def: O,
     },
 }

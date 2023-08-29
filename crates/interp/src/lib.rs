@@ -1,6 +1,6 @@
 use indexmap::IndexSet;
 use rose::{id, Binop, Expr, Function, Node, Refs, Ty, Unop};
-use std::{cell::Cell, rc::Rc};
+use std::{cell::Cell, convert::Infallible, rc::Rc};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -129,10 +129,19 @@ fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty
     id::ty(i)
 }
 
+/// An opaque function that can be called by the interpreter.
 pub trait Opaque {
     fn call(&self, types: &IndexSet<Ty>, generics: &[id::Ty], args: &[Val]) -> Val;
 }
 
+impl Opaque for Infallible {
+    fn call(&self, _: &IndexSet<Ty>, _: &[id::Ty], _: &[Val]) -> Val {
+        match *self {}
+    }
+}
+
+/// basically, the `'a` lifetime is for the graph of functions, and the `'b` lifetime is just for
+/// this particular instance of interpretation
 struct Interpreter<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> {
     typemap: &'b mut IndexSet<Ty>,
     refs: T,

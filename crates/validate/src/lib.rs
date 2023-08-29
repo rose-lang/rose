@@ -568,7 +568,7 @@ impl<'a, O, T: Refs<'a, Opaque = O>> Validator<'a, O, T> {
                         } => Stuff {
                             gens: generics,
                             typs: types,
-                            params: params.into(),
+                            params: params.into(), // clone just to get the types to match up
                             ret,
                         },
                     };

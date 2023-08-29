@@ -2,7 +2,7 @@ use crate::{ast, tokens};
 use enumset::EnumSet;
 use indexmap::{IndexMap, IndexSet};
 use rose::{self as ir, id};
-use std::{collections::HashMap, ops::Range};
+use std::{collections::HashMap, convert::Infallible, ops::Range};
 
 #[derive(Debug, thiserror::Error)]
 pub enum TypeError {
@@ -113,18 +113,7 @@ pub struct Module<'input> {
     funcs: IndexMap<&'input str, rose::Function>,
 }
 
-pub enum Opaque {}
-
-impl rose_interp::Opaque for Opaque {
-    fn call(
-        &self,
-        _: &IndexSet<rose::Ty>,
-        _: &[id::Ty],
-        _: &[rose_interp::Val],
-    ) -> rose_interp::Val {
-        match *self {}
-    }
-}
+type Opaque = Infallible;
 
 impl<'input, 'a> rose::Refs<'a> for &'a Module<'input> {
     type Opaque = Opaque;
