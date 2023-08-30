@@ -1,18 +1,4 @@
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
-// remember to `serde(rename)` everything here to avoid ts-rs name conflicts with non-ID types
-
-#[cfg(test)]
-use ts_rs::TS;
-
 /// Index of a member in a tuple.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename = "MemberId")
-)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Member(usize);
 
@@ -27,32 +13,20 @@ impl Member {
 }
 
 /// Index of an uninstantiated function reference in a definition context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename = "FunctionId")
-)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Function(usize);
+pub struct Func(usize);
 
-pub fn function(id: usize) -> Function {
-    Function(id)
+pub fn func(id: usize) -> Func {
+    Func(id)
 }
 
-impl Function {
-    pub fn function(self) -> usize {
+impl Func {
+    pub fn func(self) -> usize {
         self.0
     }
 }
 
 /// Index of a generic type parameter in a definition context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename = "GenericId")
-)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Generic(usize);
 
@@ -67,12 +41,6 @@ impl Generic {
 }
 
 /// Index of a type in a definition context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename = "TyId")
-)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ty(usize);
 
@@ -87,12 +55,6 @@ impl Ty {
 }
 
 /// Index of a local variable in a function definition context.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(rename = "VarId")
-)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Var(usize);
 

@@ -264,7 +264,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19be8061a06ab6f3a6cf21106c873578bf01bd42ad15e0311a9c76161cb1c753"
 dependencies = [
  "enumset_derive",
- "serde",
 ]
 
 [[package]]
@@ -377,7 +376,6 @@ checksum = "d5477fe2230a79769d8dc68e0eabf5437907c0457a5614a9e8dddb67f65eb65d"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.0",
- "serde",
 ]
 
 [[package]]
@@ -630,9 +628,6 @@ name = "rose"
 version = "0.0.0"
 dependencies = [
  "enumset",
- "serde",
- "thiserror",
- "ts-rs",
 ]
 
 [[package]]
@@ -679,18 +674,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "rose-validate"
+version = "0.0.0"
+dependencies = [
+ "enumset",
+ "indexmap 2.0.0",
+ "rose",
+ "thiserror",
+]
+
+[[package]]
 name = "rose-web"
 version = "0.0.0"
 dependencies = [
  "console_error_panic_hook",
  "enumset",
  "indexmap 2.0.0",
+ "js-sys",
  "rose",
  "rose-autodiff",
  "rose-interp",
  "serde",
  "serde-wasm-bindgen",
- "ts-rs",
  "wasm-bindgen",
 ]
 

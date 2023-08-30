@@ -2,15 +2,7 @@ pub mod id;
 
 use enumset::{EnumSet, EnumSetType};
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
-#[cfg(test)]
-use ts_rs::TS;
-
 /// A type constraint.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[allow(clippy::derived_hash_with_manual_eq)] // `PartialEq` impl comes from enumset; should be fine
 #[derive(Debug, EnumSetType, Hash)]
 pub enum Constraint {
@@ -25,8 +17,6 @@ pub enum Constraint {
 }
 
 /// A type.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Ty {
     Unit,
@@ -55,13 +45,13 @@ pub enum Ty {
         elem: id::Ty,
     },
     Tuple {
-        members: Vec<id::Ty>, // TODO: change to `Box<[id::Ty]`
+        members: Box<[id::Ty]>,
     },
 }
 
 /// A function definition.
 #[derive(Clone, Debug)]
-pub struct Function {
+pub struct Func {
     /// Generic type parameters.
     pub generics: Box<[EnumSet<Constraint>]>,
     /// Types used in this function definition.
@@ -76,23 +66,48 @@ pub struct Function {
     pub body: Box<[Instr]>,
 }
 
-/// Wrapper for a `Function` that knows how to resolve its `id::Function`s.
-pub trait FuncNode {
-    fn def(&self) -> &Function;
+/// Resolves `id::Func`s.
+pub trait Refs<'a> {
+    /// See `Node`.
+    type Opaque;
 
-    fn get(&self, id: id::Function) -> Option<Self>
+    /// Resolve `id` to a function node.
+    fn get(&self, id: id::Func) -> Option<Node<'a, Self::Opaque, Self>>
     where
         Self: Sized;
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+/// A node in a graph of functions.
+#[derive(Clone, Debug, Copy)]
+pub enum Node<'a, O, T: Refs<'a, Opaque = O>> {
+    /// A function with an explicit body.
+    Transparent {
+        /// To traverse the graph by resolving functions called by this one.
+        refs: T,
+        /// The signature and definition of this function.
+        def: &'a Func,
+    },
+    /// A function with an opaque body.
+    Opaque {
+        /// Generic type parameters.
+        generics: &'a [EnumSet<Constraint>],
+        /// Types used in this function's signature.
+        types: &'a [Ty],
+        /// Parameter types.
+        params: &'a [id::Ty],
+        /// Return type.
+        ret: id::Ty,
+        /// Definition of this function; semantics may vary.
+        def: O,
+    },
+}
+
 #[derive(Clone, Debug)]
 pub struct Instr {
     pub var: id::Var,
     pub expr: Expr,
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum Expr {
     Unit,
@@ -150,7 +165,7 @@ pub enum Expr {
     },
 
     Call {
-        id: id::Function,
+        id: id::Func,
         generics: Box<[id::Ty]>,
         args: Box<[id::Var]>,
     },
@@ -196,8 +211,6 @@ pub enum Expr {
     },
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Unop {
     // `Bool` -> `Bool`
@@ -210,8 +223,6 @@ pub enum Unop {
     Sqrt,
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Binop {
     // `Bool` -> `Bool` -> `Bool`
@@ -234,4 +245,3 @@ pub enum Binop {
     Mul,
     Div,
 }
- 

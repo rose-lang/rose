@@ -1,17 +1,6 @@
 use enumset::EnumSet;
 use indexmap::IndexSet;
-use rose::{id, Binop, Constraint, Expr, FuncNode, Function, Instr, Ty, Unop};
-
-pub struct Derivative {
-    f: Function,
-}
-
-pub struct Linear;
-
-/// Guaranteed not to panic if `f` is valid.
-pub fn derivative(f: impl FuncNode) -> Derivative {
-    Derivative { f: f.def().clone() }
-}
+use rose::{id, Binop, Constraint, Expr, Func, Instr, Ty, Unop};
 
 struct Forward<'a> {
     generics: Vec<EnumSet<Constraint>>,
@@ -540,7 +529,7 @@ impl Forward<'_> {
             }
 
             // recursively call expr on the blocks in the for loop...this isn't working yet though because of Rust borrowing rules :(
-            &Expr::For { arg, body, ret } => {
+            Expr::For { arg, body, ret } => {
                 let processed_body: Vec<_> = body
                     .iter()
                     .map(|block| {
@@ -556,11 +545,12 @@ impl Forward<'_> {
                 let x = self.set(
                     code,
                     ty,
-                    Expr::For {
-                        arg,
-                        body: processed_body.into_boxed_slice(),
-                        ret,
-                    },
+                    todo!(),
+                    // Expr::For {
+                    //     arg,
+                    //     body: processed_body.into_boxed_slice(),
+                    //     ret,
+                    // },
                 );
                 x
             }
@@ -642,8 +632,7 @@ impl Forward<'_> {
     }
 }
 
-pub fn forward(f: Derivative) -> Function {
-    let Derivative { f } = f;
+pub fn jvp(f: &Func) -> Func {
     let mut g = Forward {
         generics: f.generics.to_vec(),
         types: IndexSet::new(),
@@ -702,7 +691,7 @@ pub fn forward(f: Derivative) -> Function {
         let t_arg = g.old_types[g.old_vars[var_idx].ty()].0;
         let tan_arg = g.old_types[g.old_vars[var_idx].ty()].1;
         let tup_arg = g.newtype(Ty::Tuple {
-            members: vec![t_arg, tan_arg],
+            members: [t_arg, tan_arg].into(),
         });
         let arg = g.newvar(tup_arg);
         let x_arg = g.set(
@@ -724,95 +713,12 @@ pub fn forward(f: Derivative) -> Function {
         g.mapping[var_idx] = Some((x_arg, dx_arg));
     }
 
-    Function {
+    Func {
         generics: g.generics.into(),
         types: g.types.into_iter().collect(),
         vars: g.vars.into(),
-        params: f.params.into(),
+        params: f.params.clone(),
         ret: f.ret,
         body: code.into(),
     }
 }
-
-pub fn unzip(f: Derivative) -> (Function, Linear) {
-    (f.f, Linear) // TODO
-}
-
-pub fn transpose(f: Linear) -> Linear {
-    f // TODO
-}
-
-// Some ideas for testing from ealier, not updated though!
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     #[derive(Clone, Debug)]
-//     struct TestFuncNode {
-//         f: Function,
-//     }
-
-//     impl rose::FuncNode for TestFuncNode {
-//         fn def(&self) -> &rose::Function {
-//             &self.f
-//         }
-
-//         fn get(&self, _id: id::Function) -> Option<Self> {
-//             None
-//         }
-//     }
-
-//     fn func1() -> Function {
-//         Function {
-//             generics: vec![].into(),
-//             types: vec![Ty::F64].into(),
-//             vars: vec![id::ty(0), id::ty(2)].into(),
-//             params: vec![].into(),
-//             ret: id::var(0),
-//             body: vec![
-//                 Instr {
-//                     var: id::var(0),
-//                     expr: Expr::F64 { val: 42. },
-//                 },
-//                 Instr {
-//                     var: id::var(2),
-//                     expr: Expr::Accum {
-//                         shape: id::var(0),
-//                         arg: id::var(1),
-//                         body: Box::new([]),
-//                         ret: id::var(2),
-//                     },
-//                 },
-//             ]
-//             .into(),
-//         }
-//     }
-
-//     #[test]
-//     fn test_scope_mapping() {
-//         // get funcs
-//         let og_func = TestFuncNode { f: func1() };
-//         let cloned_func = og_func.f.clone();
-//         let derivative = derivative(og_func);
-//         let new_func = forward(derivative);
-
-//         // extract types and vars
-//         let old_types = &cloned_func.types;
-//         let new_types = &new_func.types;
-//         let old_vars = &cloned_func.vars;
-//         let new_vars = &new_func.vars;
-
-//         // check if the variable indices of Scope types match up
-//         for (i, var) in old_vars.iter().enumerate() {
-//             if let Ty::Scope { id, .. } = old_types[i] {
-//                 let old_id = id.var();
-//                 if let Some(&new_id) = scope_mapping.get(&old_id) {
-//                     // check if the new var ID matches the new scope ID
-//                     assert_eq!(new_id.var(), var.ty());
-//                 }
-//             }
-//         }
-
-//         // check if the new block index is strictly greater than the number of scopes in the original function
-//     }
-// }
