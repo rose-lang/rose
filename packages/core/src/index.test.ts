@@ -86,10 +86,16 @@ describe("invalid", () => {
 });
 
 describe("valid", () => {
-  test("null", () => {
+  test("return null", () => {
     const f = fn([], Null, () => null);
     const g = interp(f);
     expect(g()).toBe(null);
+  });
+
+  test("interp with null", () => {
+    const f = fn([Null], Null, (x) => x);
+    const g = interp(f);
+    expect(g(null)).toBe(null);
   });
 
   test("2 + 2 = 4", () => {
@@ -169,6 +175,13 @@ describe("valid", () => {
     });
     const h = interp(g);
     expect(h()).toEqual([1, 2, 0]);
+  });
+
+  test("interp with index value", () => {
+    const n = 1;
+    const f = fn([n, Vec(n, Bool)], Bool, (i, v) => v[i]);
+    const g = interp(f);
+    expect(g(0, [true])).toBe(true);
   });
 
   test("matrix multiplication", () => {
@@ -284,6 +297,12 @@ describe("valid", () => {
     });
     const g = interp(f);
     expect(g([3, 5])).toEqual([0, 1]);
+  });
+
+  test("interp struct arg", () => {
+    const f = fn([{ x: Real }], Real, (p) => p.x);
+    const g = interp(f);
+    expect(g({ x: 42 })).toBe(42);
   });
 
   test("custom unary function", () => {
