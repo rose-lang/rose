@@ -166,6 +166,18 @@ impl Func {
         }
     }
 
+    /// Return the IDs of this function's parameter types.
+    #[wasm_bindgen(js_name = "paramTypes")]
+    pub fn param_types(&self) -> Box<[usize]> {
+        let (inner, _) = self.rc.as_ref();
+        match inner {
+            Inner::Transparent { def, .. } => {
+                def.params.iter().map(|p| def.vars[p.var()].ty()).collect()
+            }
+            Inner::Opaque { params, .. } => params.iter().map(|p| p.ty()).collect(),
+        }
+    }
+
     /// Return the ID of this function's return type.
     #[wasm_bindgen(js_name = "retType")]
     pub fn ret_type(&self) -> usize {
@@ -208,9 +220,11 @@ impl Func {
 
     /// Interpret a function with no generics or parameters.
     ///
-    /// The return value is Serde-converted from `rose_interp::Val`.
-    pub fn interp(&self) -> Result<JsValue, JsError> {
-        let ret = rose_interp::interp(self.node(), IndexSet::new(), &[], [].into_iter())?;
+    /// The `args` are Serde-converted to `Vec<rose_interp::Val>`, and the return value is
+    /// Serde-converted from `rose_interp::Val`.
+    pub fn interp(&self, args: JsValue) -> Result<JsValue, JsError> {
+        let vals: Vec<rose_interp::Val> = serde_wasm_bindgen::from_value(args)?;
+        let ret = rose_interp::interp(self.node(), IndexSet::new(), &[], vals.into_iter())?;
         Ok(to_js_value(&ret)?)
     }
 }
