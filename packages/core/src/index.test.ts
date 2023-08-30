@@ -94,8 +94,8 @@ describe("valid", () => {
 
   test("2 + 2 = 4", () => {
     const f = fn([Real, Real], Real, (x, y) => add(x, y));
-    const g = interp(fn([], Real, () => f(2, 2)));
-    expect(g()).toBe(4);
+    const g = interp(f);
+    expect(g(2, 2)).toBe(4);
   });
 
   test("basic arithmetic", () => {
@@ -106,10 +106,9 @@ describe("valid", () => {
 
   test("select", () => {
     const f = fn([Bool], Real, (x) => select(x, Real, 1, 2));
-    const g = interp(fn([], Real, () => f(false)));
-    const h = interp(fn([], Real, () => f(true)));
-    expect(g()).toBe(2);
-    expect(h()).toBe(1);
+    const g = interp(f);
+    expect(g(false)).toBe(2);
+    expect(g(true)).toBe(1);
   });
 
   test("call", () => {
@@ -117,12 +116,10 @@ describe("valid", () => {
       select(p, Real, x, y),
     );
     const f = fn([Real], Real, (x) => ifCond(lt(x, 0), 0, x));
-    const a = interp(fn([], Real, () => f(-1)));
-    const b = interp(fn([], Real, () => f(0)));
-    const c = interp(fn([], Real, () => f(1)));
-    expect(a()).toBe(0);
-    expect(b()).toBe(0);
-    expect(c()).toBe(1);
+    const relu = interp(f);
+    expect(relu(-1)).toBe(0);
+    expect(relu(0)).toBe(0);
+    expect(relu(1)).toBe(1);
   });
 
   test("empty boolean array", () => {
@@ -145,9 +142,8 @@ describe("valid", () => {
       const z = mul(u[2], v[2]);
       return add(add(x, y), z);
     });
-    const f = fn([], Real, () => dot([1, 3, -5], [4, -2, -1]));
-    const g = interp(f);
-    expect(g()).toBe(3);
+    const f = interp(dot);
+    expect(f([1, 3, -5], [4, -2, -1])).toBe(3);
   });
 
   test("cross product", () => {
@@ -158,9 +154,8 @@ describe("valid", () => {
       const z = sub(mul(u[0], v[1]), mul(u[1], v[0]));
       return [x, y, z];
     });
-    const f = fn([], R3, () => cross([3, -3, 1], [4, 9, 2]));
-    const g = interp(f);
-    expect(g()).toEqual([-15, -2, 39]);
+    const f = interp(cross);
+    expect(f([3, -3, 1], [4, 9, 2])).toEqual([-15, -2, 39]);
   });
 
   test("index array", () => {
@@ -211,8 +206,9 @@ describe("valid", () => {
       }),
     );
 
-    const f = fn([], Rmxp, () =>
-      mmul(
+    const f = interp(mmul);
+    expect(
+      f(
         [
           [-8, 5, 3, -1, 8, 0],
           [-3, -1, 7, -7, 8, 3],
@@ -229,10 +225,7 @@ describe("valid", () => {
           [-4, 0, -5, -9, 8, -9, -1],
         ],
       ),
-    );
-
-    const g = interp(f);
-    expect(g()).toEqual([
+    ).toEqual([
       [117, -28, 37, 73, 27, -67, -37],
       [0, 131, 4, 46, 50, -16, -49],
       [93, -16, 85, -47, 31, -127, -55],
@@ -252,8 +245,8 @@ describe("valid", () => {
     const Pair = { x: Real, y: Real } as const;
     const f = fn([Pair], Real, (p) => sub(p.y, p.x));
     const g = fn([Real, Real], Pair, (x, y) => ({ y, x }));
-    const h = interp(fn([], Real, () => f(g(3, 5))));
-    expect(h()).toBe(2);
+    const h = interp(fn([Real, Real], Real, (x, y) => f(g(x, y))));
+    expect(h(3, 5)).toBe(2);
   });
 
   test("return struct", () => {
@@ -276,8 +269,8 @@ describe("valid", () => {
     const f = fn([Vec(n, Real)], Vec(n, Indexed), (v) =>
       vec(n, Indexed, (i) => ({ i, x: v[i] })),
     );
-    const g = interp(fn([], Vec(n, Indexed), () => f([3, 5])));
-    expect(g()).toEqual([
+    const g = interp(f);
+    expect(g([3, 5])).toEqual([
       { i: 0, x: 3 },
       { i: 1, x: 5 },
     ]);
@@ -289,21 +282,19 @@ describe("valid", () => {
       const u = vec(n, { i: n }, (i) => ({ i }));
       return vec(n, n, (i) => u[i].i);
     });
-    const g = interp(fn([], Vec(n, n), () => f([3, 5])));
-    expect(g()).toEqual([0, 1]);
+    const g = interp(f);
+    expect(g([3, 5])).toEqual([0, 1]);
   });
 
   test("custom unary function", () => {
     const log = custom([Real], Real, Math.log);
-    const f = fn([], Real, () => log(Math.PI));
-    const g = interp(f);
-    expect(g()).toBe(1.1447298858494002);
+    const f = interp(log);
+    expect(f(Math.PI)).toBe(1.1447298858494002);
   });
 
   test("custom binary function", () => {
     const pow = custom([Real, Real], Real, Math.pow);
-    const f = fn([], Real, () => pow(Math.E, Math.PI));
-    const g = interp(f);
-    expect(g()).toBe(23.140692632779263);
+    const f = interp(pow);
+    expect(f(Math.E, Math.PI)).toBe(23.140692632779263);
   });
 });

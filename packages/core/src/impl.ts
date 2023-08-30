@@ -474,8 +474,25 @@ export const custom = <const P extends readonly Reals[], const R extends Reals>(
 /** A concrete value. */
 type Js = null | boolean | number | Js[] | { [K: string]: Js };
 
-/** Translate a concrete value from the raw format given by the interpreter. */
-const translate = (f: Fn, t: number, x: RawVal): Js => {
+/** Translate from the interpreteer's raw format to a concrete value. */
+const pack = (f: Fn, t: number, x: Js): RawVal => {
+  const func = f[inner];
+  if (x === null) return "Unit";
+  if (typeof x === "boolean") return { Bool: x };
+  if (typeof x === "number") return { F64: x };
+  if (Array.isArray(x))
+    return { Array: x.map((y) => pack(f, func.elem(t), y)) };
+  else
+    return {
+      Tuple: Object.entries(x).map(([k, y], i) => [
+        f[strings][func.key(t, i)],
+        pack(f, func.mem(t, i), y),
+      ]),
+    };
+};
+
+/** Translate a concrete value from the interpreter's raw format. */
+const unpack = (f: Fn, t: number, x: RawVal): Js => {
   const func = f[inner];
   if (x === "Unit") return null;
   if ("Bool" in x) return x.Bool;
@@ -483,12 +500,12 @@ const translate = (f: Fn, t: number, x: RawVal): Js => {
   if ("Fin" in x) return x.Fin;
   if ("Ref" in x) throw Error("Ref not supported");
   if ("Array" in x)
-    return x.Array.map((y: RawVal) => translate(f, func.elem(t), y));
+    return x.Array.map((y: RawVal) => unpack(f, func.elem(t), y));
   else
     return Object.fromEntries(
       x.Tuple.map((y: RawVal, i: number) => [
         f[strings][func.key(t, i)],
-        translate(f, func.mem(t, i), y),
+        unpack(f, func.mem(t, i), y),
       ]),
     );
 };
@@ -498,13 +515,22 @@ type ToJs<T> = T extends ArrayOrVec<infer V>
   ? ToJs<V>[]
   : Exclude<{ [K in keyof T]: ToJs<T[K]> }, Var | symbol>;
 
+/** Map from an abstract value type array to a concrete argument type array. */
+type JsArgs<T> = {
+  [K in keyof T]: ToJs<T[K]>;
+};
+
 /** Concretize the nullary abstract function `f` using the interpreter. */
 export const interp =
-  <R>(f: Fn & (() => R)): (() => ToJs<R>) =>
-  // TODO: support interpreting functions with parameters and generics
-  () => {
+  <const A extends readonly any[], const R>(
+    f: Fn & ((...args: A) => R),
+  ): ((...args: JsArgs<A>) => ToJs<R>) =>
+  // TODO: support interpreting functions with generics
+  (...args) => {
     const func = f[inner];
-    return translate(f, func.retType(), func.interp()) as ToJs<R>;
+    const params = func.paramTypes();
+    const vals = args.map((x, i) => pack(f, params[i], x));
+    return unpack(f, func.retType(), func.interp(vals)) as ToJs<R>;
   };
 
 /** Return the variable ID for the abstract boolean `x`. */
