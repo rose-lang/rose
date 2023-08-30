@@ -188,6 +188,17 @@ impl Func {
         }
     }
 
+    /// Return true iff `t` is the ID of a finite integer type.
+    #[wasm_bindgen(js_name = "isFin")]
+    pub fn is_fin(&mut self, t: usize) -> bool {
+        let (inner, _) = self.rc.as_ref();
+        let ty = match inner {
+            Inner::Transparent { def, .. } => def.types.get(t),
+            Inner::Opaque { types, .. } => types.get(t),
+        };
+        matches!(ty, Some(rose::Ty::Fin { .. }))
+    }
+
     /// Return the ID of the element type for the array type with ID `t`.
     pub fn elem(&self, t: usize) -> usize {
         let (inner, _) = self.rc.as_ref();
@@ -200,21 +211,23 @@ impl Func {
         }
     }
 
-    /// Return the string ID for member `i` of the struct type with ID `t`.
-    pub fn key(&self, t: usize, i: usize) -> usize {
+    /// Return the string IDs for the struct type with ID `t`.
+    pub fn keys(&self, t: usize) -> Box<[usize]> {
         let (_, structs) = self.rc.as_ref();
-        structs[t].as_ref().unwrap()[i]
+        structs[t].as_ref().unwrap().clone()
     }
 
-    /// Return the member type ID for member `i` of the struct type with ID `t`.
-    pub fn mem(&self, t: usize, i: usize) -> usize {
+    /// Return the member type IDs for the struct type with ID `t`.
+    pub fn mems(&self, t: usize) -> Box<[usize]> {
         let (inner, _) = self.rc.as_ref();
-        match inner {
-            Inner::Transparent { def, .. } => match &def.types[t] {
-                rose::Ty::Tuple { members } => members[i].ty(),
-                _ => panic!("not a struct"),
-            },
-            Inner::Opaque { .. } => panic!(),
+        let ty = match inner {
+            Inner::Transparent { def, .. } => def.types.get(t),
+            Inner::Opaque { types, .. } => types.get(t),
+        }
+        .unwrap();
+        match ty {
+            rose::Ty::Tuple { members } => members.iter().map(|m| m.ty()).collect(),
+            _ => panic!("not a struct"),
         }
     }
 

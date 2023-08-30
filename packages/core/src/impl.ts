@@ -368,9 +368,7 @@ type ToSymbolic<T> = T extends Nulls
   ? Nat
   : T extends Vecs<any, infer V>
   ? Vec<ToSymbolic<V>>
-  : {
-      [K in keyof T]: ToSymbolic<T[K]>;
-    };
+  : { [K in keyof T]: ToSymbolic<T[K]> };
 
 /**
  * Map from a type of a type to the type of the abstract values it represents.
@@ -389,9 +387,7 @@ type ToValue<T> = T extends Nulls
   ? Nat
   : T extends Vecs<any, infer V>
   ? Vec<ToValue<V>> | ToValue<V>[]
-  : {
-      [K in keyof T]: ToValue<T[K]>;
-    };
+  : { [K in keyof T]: ToValue<T[K]> };
 
 /** Map from a parameter type array to a symbolic parameter value type array. */
 type SymbolicParams<T> = {
@@ -458,7 +454,7 @@ export const fn = <const P extends readonly any[], const R>(
 export const custom = <const P extends readonly Reals[], const R extends Reals>(
   params: P,
   ret: R,
-  f: (...args: ToJs<SymbolicParams<P>>) => ToJs<ToValue<R>>,
+  f: (...args: JsArgs<SymbolicParams<P>>) => ToJs<ToValue<R>>,
 ): Fn & ((...args: ValueParams<P>) => ToSymbolic<R>) => {
   // TODO: support more complicated signatures for opaque functions
   const func = new wasm.Func(params.length, f);
@@ -475,20 +471,25 @@ export const custom = <const P extends readonly Reals[], const R extends Reals>(
 type Js = null | boolean | number | Js[] | { [K: string]: Js };
 
 /** Translate from the interpreteer's raw format to a concrete value. */
-const pack = (f: Fn, t: number, x: Js): RawVal => {
+const pack = (f: Fn, t: number, x: unknown): RawVal => {
   const func = f[inner];
-  if (x === null) return "Unit";
   if (typeof x === "boolean") return { Bool: x };
-  if (typeof x === "number") return { F64: x };
-  if (Array.isArray(x))
-    return { Array: x.map((y) => pack(f, func.elem(t), y)) };
-  else
-    return {
-      Tuple: Object.entries(x).map(([k, y], i) => [
-        f[strings][func.key(t, i)],
-        pack(f, func.mem(t, i), y),
-      ]),
-    };
+  else if (typeof x === "number")
+    return func.isFin(t) ? { Fin: x } : { F64: x };
+  else if (typeof x === "object") {
+    if (x === null) return "Unit";
+    else if (Array.isArray(x))
+      return { Array: x.map((y) => pack(f, func.elem(t), y)) };
+    else {
+      const keys = func.keys(t);
+      const mems = func.mems(t);
+      const vals: RawVal[] = [];
+      for (let i = 0; i < keys.length; ++i) {
+        vals.push(pack(f, mems[i], (x as any)[f[strings][keys[i]]]));
+      }
+      return { Tuple: vals };
+    }
+  } else throw Error("invalid value");
 };
 
 /** Translate a concrete value from the interpreter's raw format. */
@@ -501,19 +502,29 @@ const unpack = (f: Fn, t: number, x: RawVal): Js => {
   if ("Ref" in x) throw Error("Ref not supported");
   if ("Array" in x)
     return x.Array.map((y: RawVal) => unpack(f, func.elem(t), y));
-  else
+  else {
+    const keys = func.keys(t);
+    const mems = func.mems(t);
     return Object.fromEntries(
       x.Tuple.map((y: RawVal, i: number) => [
-        f[strings][func.key(t, i)],
-        unpack(f, func.mem(t, i), y),
+        f[strings][keys[i]],
+        unpack(f, mems[i], y),
       ]),
     );
+  }
 };
 
 /** Map from an abstract value type to its corresponding concrete value type. */
-type ToJs<T> = T extends ArrayOrVec<infer V>
-  ? ToJs<V>[]
-  : Exclude<{ [K in keyof T]: ToJs<T[K]> }, Var | symbol>;
+// https://www.typescriptlang.org/docs/handbook/2/conditional-types.html
+type ToJs<T> = [T] extends [Null]
+  ? null
+  : [T] extends [Bool]
+  ? boolean
+  : [T] extends [Real]
+  ? number
+  : [T] extends [Nat]
+  ? number
+  : { [K in keyof T]: ToJs<T[K]> };
 
 /** Map from an abstract value type array to a concrete argument type array. */
 type JsArgs<T> = {
