@@ -23,6 +23,7 @@ import {
   not,
   or,
   select,
+  sign,
   sqrt,
   sub,
   vec,
@@ -98,8 +99,9 @@ T0 = F64
       const a = not(true);
       const b = neg(x);
       const c = abs(b);
-      const d = sqrt(x);
-      return d;
+      const d = sign(x);
+      const e = sqrt(x);
+      return e;
     });
     const s = pprint(f);
     expect(s).toBe(
@@ -111,8 +113,9 @@ T1 = Bool
   x2: T1 = not x1
   x3: T0 = -x0
   x4: T0 = |x3|
-  x5: T0 = sqrt(x0)
-  x5
+  x5: T0 = sign(x0)
+  x6: T0 = sqrt(x0)
+  x6
 }
 `.trimStart(),
     );
