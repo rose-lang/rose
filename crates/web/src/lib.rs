@@ -1157,6 +1157,18 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new signum instruction on `arg`.
+    ///
+    /// Assumes `arg` is defined, in scope, and has 64-bit floating point type.
+    pub fn sign(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
+        let t = id::ty(f.ty_f64());
+        let expr = rose::Expr::Unary {
+            op: rose::Unop::Sign,
+            arg: id::var(arg),
+        };
+        self.instr(f, t, expr)
+    }
+
     /// Return the variable ID for a new square root instruction on `arg`.
     ///
     /// Assumes `arg` is defined, in scope, and has 64-bit floating point type.

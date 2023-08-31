@@ -637,6 +637,12 @@ export const abs = (x: Real): Real => {
   return newVar(ctx.block.abs(ctx.func, realId(ctx, x)));
 };
 
+/** Return the signum of the abstract number `x`. */
+export const sign = (x: Real): Real => {
+  const ctx = getCtx();
+  return newVar(ctx.block.sign(ctx.func, realId(ctx, x)));
+};
+
 /** Return the square root of the abstract number `x`. */
 export const sqrt = (x: Real): Real => {
   const ctx = getCtx();

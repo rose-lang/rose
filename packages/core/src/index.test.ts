@@ -8,11 +8,13 @@ import {
   custom,
   div,
   fn,
+  gt,
   interp,
   jvp,
-  lt,
   mul,
   select,
+  sign,
+  sqrt,
   sub,
   vec,
 } from "./index.js";
@@ -111,6 +113,21 @@ describe("valid", () => {
     expect(g()).toBe(6);
   });
 
+  test("signum", () => {
+    const f = fn([Real], Real, (x) => sign(x));
+    const g = interp(f);
+    expect(g(-2)).toBe(-1);
+    expect(g(-0)).toBe(-1);
+    expect(g(0)).toBe(1);
+    expect(g(2)).toBe(1);
+  });
+
+  test("square root", () => {
+    const f = fn([Real], Real, (x) => sqrt(x));
+    const g = interp(f);
+    expect(g(Math.PI)).toBe(1.7724538509055159);
+  });
+
   test("select", () => {
     const f = fn([Bool], Real, (x) => select(x, Real, 1, 2));
     const g = interp(f);
@@ -122,11 +139,12 @@ describe("valid", () => {
     const ifCond = fn([Bool, Real, Real], Real, (p, x, y) =>
       select(p, Real, x, y),
     );
-    const f = fn([Real], Real, (x) => ifCond(lt(x, 0), 0, x));
+    const f = fn([Real], Real, (x) => ifCond(gt(x, 0), x, 0));
     const relu = interp(f);
-    expect(relu(-1)).toBe(0);
+    expect(relu(-2)).toBe(0);
+    expect(relu(-0)).toBe(0);
     expect(relu(0)).toBe(0);
-    expect(relu(1)).toBe(1);
+    expect(relu(2)).toBe(2);
   });
 
   test("empty boolean array", () => {

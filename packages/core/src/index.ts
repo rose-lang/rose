@@ -23,6 +23,7 @@ export {
   not,
   or,
   select,
+  sign,
   sqrt,
   sub,
   vec,
