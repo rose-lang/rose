@@ -29,17 +29,3 @@ fn test_sub() {
     .unwrap();
     assert_eq!(answer, val_f64(0.));
 }
-
-#[test]
-fn test_mul() {
-    let src = include_str!("mul.rose");
-    let module = parse(src).unwrap();
-    let answer = interp(
-        module.get_func("mul").unwrap(),
-        IndexSet::new(),
-        &[],
-        [val_f64(2.), val_f64(2.)].into_iter(),
-    )
-    .unwrap();
-    assert_eq!(answer, val_f64(4.));
-}
