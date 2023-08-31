@@ -242,17 +242,29 @@ impl Func {
     }
 
     pub fn jvp(&self) -> Self {
-        let (inner, _) = self.rc.as_ref();
+        let (inner, structs) = self.rc.as_ref();
         match inner {
-            Inner::Transparent { deps: _, def } => Func {
-                rc: Rc::new((
-                    Inner::Transparent {
-                        deps: [].into(),
-                        def: rose_autodiff::jvp(def),
-                    },
-                    [].into(),
-                )),
-            },
+            Inner::Transparent { deps, def } => {
+                let mut structs_jvp = vec![None, None];
+                structs_jvp.extend(
+                    structs
+                        .iter()
+                        .enumerate()
+                        .map(|(i, s)| match &def.types[i] {
+                            rose::Ty::F64 => Some([1, 0].into()),
+                            _ => s.clone(),
+                        }),
+                );
+                Func {
+                    rc: Rc::new((
+                        Inner::Transparent {
+                            deps: deps.iter().map(|f| f.jvp()).collect(), // TODO: handle sharing
+                            def: rose_autodiff::jvp(def),
+                        },
+                        structs_jvp.into(),
+                    )),
+                }
+            }
             Inner::Opaque { .. } => todo!(),
         }
     }

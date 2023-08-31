@@ -1,558 +1,173 @@
-use enumset::EnumSet;
-use indexmap::IndexSet;
-use rose::{id, Binop, Constraint, Expr, Func, Instr, Ty, Unop};
+use rose::{id, Binop, Expr, Func, Instr, Ty, Unop};
 
-struct Forward<'a> {
-    generics: Vec<EnumSet<Constraint>>,
-    types: IndexSet<Ty>,
-    old_types: Vec<(id::Ty, id::Ty)>,
-    old_vars: &'a [id::Ty],
-    vars: Vec<id::Ty>,
-    mapping: Vec<Option<(id::Var, id::Var)>>,
-    var_mapping: Vec<Option<id::Var>>,
+const REAL: id::Ty = id::ty(0);
+const DUAL: id::Ty = id::ty(1);
+
+// alphabetical order
+const DU: id::Member = id::member(0);
+const RE: id::Member = id::member(1);
+
+fn map(t: id::Ty) -> id::Ty {
+    id::ty(t.ty() + 2)
 }
 
-impl Forward<'_> {
-    fn primal(&self, ty: id::Ty) -> id::Ty {
-        let (t, _) = self.old_types[ty.ty()];
-        t
-    }
+struct Autodiff<'a> {
+    vars: &'a mut Vec<id::Ty>,
+    code: Vec<Instr>,
+}
 
-    fn tangent(&self, ty: id::Ty) -> id::Ty {
-        let (_, t) = self.old_types[ty.ty()];
-        t
-    }
-
-    fn newtype(&mut self, ty: Ty) -> id::Ty {
-        let (i, _) = self.types.insert_full(ty);
-        id::ty(i)
-    }
-
-    fn newvar(&mut self, t: id::Ty) -> id::Var {
-        // check if this var has a mapping from the old function
-        let id = id::var(self.vars.len());
-
-        if let Some(new_var) = self.var_mapping[id.var()] {
-            self.vars.push(self.vars[new_var.var()]);
-        } else {
-            self.vars.push(t);
-            self.var_mapping[id.var()] = Some(id);
-        }
-        id
-    }
-
-    // F64s get differentiated as dual numbers
-    fn extract(
-        &mut self,
-        left: id::Var,
-        right: id::Var,
-        code: &mut Vec<Instr>,
-        ty: id::Ty,
-    ) -> (id::Var, id::Var, id::Var, id::Var) {
-        // extract the components of the left tuple
-        let left_x = self.set(
-            code,
-            ty,
-            Expr::Member {
-                tuple: left,
-                member: id::member(0),
-            },
-        );
-        let left_dx = self.set(
-            code,
-            ty,
-            Expr::Member {
-                tuple: left,
-                member: id::member(1),
-            },
-        );
-
-        // extract the components of the right tuple
-        let right_x = self.set(
-            code,
-            ty,
-            Expr::Member {
-                tuple: right,
-                member: id::member(0),
-            },
-        );
-        let right_dx = self.set(
-            code,
-            ty,
-            Expr::Member {
-                tuple: right,
-                member: id::member(1),
-            },
-        );
-
-        (left_x, left_dx, right_x, right_dx)
-    }
-
-    fn unitvar(&mut self) -> id::Var {
-        let ty = self.newtype(Ty::Unit);
-        self.newvar(ty)
-    }
-
-    fn map(&mut self, var: id::Var) -> (id::Var, id::Var) {
-        if let Some((x, dx)) = self.mapping[var.var()] {
-            (x, dx)
-        } else {
-            let ty = self.old_vars[var.var()];
-            let dx = self.newvar(self.tangent(ty));
-            let x = self.newvar(self.primal(ty));
-            (x, dx)
-        }
-    }
-
-    fn set(&mut self, code: &mut Vec<Instr>, ty: id::Ty, expr: Expr) -> id::Var {
-        let var = self.newvar(ty);
-        code.push(Instr { var, expr });
+impl Autodiff<'_> {
+    fn set(&mut self, t: id::Ty, expr: Expr) -> id::Var {
+        let var = id::var(self.vars.len());
+        self.vars.push(t);
+        self.code.push(Instr { var, expr });
         var
     }
 
-    fn expr(&mut self, code: &mut Vec<Instr>, ty: id::Ty, expr: &Expr) -> id::Var {
-        match expr {
-            Expr::Unit => {
-                let x = self.set(code, ty, Expr::Unit);
-                x
-            }
-            &Expr::Bool { val } => {
-                let x = self.set(code, ty, Expr::Bool { val });
-                x
-            }
-            &Expr::F64 { val } => {
-                // return a dual number of the form (x, dx)
-                let tuple: Box<[id::Var]> = vec![
-                    self.set(code, ty, Expr::F64 { val }),
-                    self.set(code, ty, Expr::F64 { val: 0. }),
-                ]
-                .into_boxed_slice();
-                let dual = self.set(code, ty, Expr::Tuple { members: tuple });
-                dual
-            }
-            &Expr::Fin { val } => {
-                let x = self.set(code, ty, Expr::Fin { val });
-                x
-            }
+    fn real(&mut self, expr: Expr) -> id::Var {
+        self.set(REAL, expr)
+    }
 
-            Expr::Array { elems } => {
-                let x = self.set(
-                    code,
-                    ty,
-                    Expr::Array {
-                        elems: elems.clone(),
-                    },
-                );
-                x
-            }
-            Expr::Tuple { members } => {
-                let x = self.set(
-                    code,
-                    ty,
-                    Expr::Tuple {
-                        members: members.clone(),
-                    },
-                );
-                x
-            }
-            &Expr::Index { array, index } => {
-                let x = self.set(code, ty, Expr::Index { array, index });
-                x
-            }
-            &Expr::Member { tuple, member } => {
-                let x = self.set(code, ty, Expr::Member { tuple, member });
-                x
-            }
+    fn dual(&mut self, expr: Expr) -> id::Var {
+        self.set(DUAL, expr)
+    }
 
-            Expr::Slice { array, index } => {
-                let x = self.set(
-                    code,
-                    ty,
-                    Expr::Slice {
-                        array: *array,
-                        index: *index,
-                    },
-                );
-                x
-            }
-            Expr::Field { tuple, member } => {
-                let x = self.set(
-                    code,
-                    ty,
-                    Expr::Field {
-                        tuple: *tuple,
-                        member: *member,
-                    },
-                );
-                x
-            }
+    fn re(&mut self, var: id::Var) -> id::Var {
+        self.real(Expr::Member {
+            tuple: var,
+            member: RE,
+        })
+    }
 
-            &Expr::Unary { op, arg } => match op {
-                Unop::Not | Unop::Neg => {
-                    let x = self.set(
-                        code,
-                        ty,
-                        Expr::Member {
-                            tuple: arg,
-                            member: id::member(0),
-                        },
-                    );
-                    let dx = self.set(
-                        code,
-                        ty,
-                        Expr::Member {
-                            tuple: arg,
-                            member: id::member(1),
-                        },
-                    );
+    fn du(&mut self, var: id::Var) -> id::Var {
+        self.real(Expr::Member {
+            tuple: var,
+            member: DU,
+        })
+    }
 
-                    let z_val = self.set(code, ty, Expr::Unary { op, arg: x });
-                    let z_dx = self.set(code, ty, Expr::Unary { op, arg: dx });
+    fn unpack(&mut self, var: id::Var) -> (id::Var, id::Var) {
+        let x = self.re(var);
+        let dx = self.du(var);
+        (x, dx)
+    }
 
-                    let dual: Box<[id::Var]> = vec![z_val, z_dx].into_boxed_slice();
-                    let z = self.set(code, ty, Expr::Tuple { members: dual });
-                    z
-                }
-                Unop::Abs => {
-                    // Unpack F64 Tuple
-                    let x = self.set(
-                        code,
-                        ty,
-                        Expr::Member {
-                            tuple: arg,
-                            member: id::member(0),
-                        },
-                    );
-                    let dx = self.set(
-                        code,
-                        ty,
-                        Expr::Member {
-                            tuple: arg,
-                            member: id::member(1),
-                        },
-                    );
-
-                    // Compute the absolute value of the primal and tangent components
-                    let x_abs = self.set(
-                        code,
-                        ty,
-                        Expr::Unary {
-                            op: Unop::Abs,
-                            arg: x,
-                        },
-                    );
-
-                    let sign = self.set(
-                        code,
-                        ty,
-                        Expr::Unary {
-                            op: Unop::Sign,
-                            arg: x,
-                        },
-                    );
-
-                    let dx_abs = self.set(
-                        code,
-                        ty,
-                        Expr::Binary {
-                            op: Binop::Mul,
-                            left: dx,
-                            right: sign,
-                        },
-                    );
-                    let dual: Box<[id::Var]> = vec![x_abs, dx_abs].into_boxed_slice();
-                    let z = self.set(code, ty, Expr::Tuple { members: dual });
-                    z
-                }
-                Unop::Sign => {
-                    // Extract the components of the tuple
-                    let x = self.set(
-                        code,
-                        ty,
-                        Expr::Member {
-                            tuple: arg,
-                            member: id::member(0),
-                        },
-                    );
-                    let dx = self.set(
-                        code,
-                        ty,
-                        Expr::Member {
-                            tuple: arg,
-                            member: id::member(1),
-                        },
-                    );
-                    let z = self.set(
-                        code,
-                        ty,
-                        Expr::Unary {
-                            op: Unop::Sign,
-                            arg: x,
-                        },
-                    );
-
-                    let z_dx = self.set(code, ty, Expr::F64 { val: 0. });
-                    let dual: Box<[id::Var]> = vec![z, z_dx].into_boxed_slice();
-                    let z = self.set(code, ty, Expr::Tuple { members: dual });
-                    z
-                }
-                Unop::Sqrt => {
-                    let x = self.set(
-                        code,
-                        ty,
-                        Expr::Member {
-                            tuple: arg,
-                            member: id::member(0),
-                        },
-                    );
-                    let dx = self.set(
-                        code,
-                        ty,
-                        Expr::Member {
-                            tuple: x,
-                            member: id::member(1),
-                        },
-                    );
-
-                    let z = self.set(
-                        code,
-                        ty,
-                        Expr::Unary {
-                            op: Unop::Sqrt,
-                            arg: x,
-                        },
-                    );
-
-                    // Calculate 2 * z for later use
-                    let two = self.set(code, ty, Expr::F64 { val: 2. });
-                    let z_two = self.set(
-                        code,
-                        ty,
-                        Expr::Binary {
-                            op: Binop::Mul,
-                            left: two,
-                            right: z,
-                        },
-                    );
-
-                    // dx = dy / (2 * sqrt(x))
-                    let z_dx = self.set(
-                        code,
-                        ty,
-                        Expr::Binary {
-                            op: Binop::Div,
-                            left: dx,
-                            right: z_two,
-                        },
-                    );
-                    let dual: Box<[id::Var]> = vec![z, z_dx].into_boxed_slice();
-                    let z = self.set(code, ty, Expr::Tuple { members: dual });
-                    z
-                }
+    fn pack(&mut self, var: id::Var, x: id::Var, dx: id::Var) {
+        self.code.push(Instr {
+            var,
+            expr: Expr::Tuple {
+                members: [dx, x].into(), // alphabetical order
             },
-            &Expr::Binary { op, left, right } => {
-                match op {
-                    Binop::And
-                    | Binop::Or
-                    | Binop::Iff
-                    | Binop::Xor
-                    | Binop::Neq
-                    | Binop::Lt
-                    | Binop::Leq
-                    | Binop::Eq
-                    | Binop::Gt
-                    | Binop::Geq => {
-                        let z = self.set(code, ty, Expr::Binary { op, left, right });
-                        z
-                    }
+        })
+    }
 
-                    Binop::Add | Binop::Sub => {
-                        let (left_x, left_dx, right_x, right_dx) =
-                            self.extract(left, right, code, ty);
+    fn child(&mut self, orig: &[Instr]) -> Box<[Instr]> {
+        Autodiff {
+            vars: self.vars,
+            code: vec![],
+        }
+        .block(orig)
+    }
 
-                        // add/subtract the components
-                        let z_x = self.set(
-                            code,
-                            ty,
-                            Expr::Binary {
-                                op,
-                                left: left_x,
-                                right: right_x,
-                            },
-                        );
-                        let z_dx = self.set(
-                            code,
-                            ty,
-                            Expr::Binary {
-                                op,
-                                left: left_dx,
-                                right: right_dx,
-                            },
-                        );
+    fn block(mut self, orig: &[Instr]) -> Box<[Instr]> {
+        for Instr { var, expr } in orig {
+            self.instr(*var, expr);
+        }
+        self.code.into()
+    }
 
-                        // create a new tuple containing the sum of the tuples
-                        let dual: Box<[id::Var]> = vec![z_x, z_dx].into_boxed_slice();
-                        let z = self.set(code, ty, Expr::Tuple { members: dual });
-                        z
-                    }
-                    Binop::Mul => {
-                        let (left_x, left_dx, right_x, right_dx) =
-                            self.extract(left, right, code, ty);
+    fn instr(&mut self, var: id::Var, expr: &Expr) {
+        match expr {
+            // boring cases
+            Expr::Unit => self.code.push(Instr {
+                var,
+                expr: Expr::Unit,
+            }),
+            &Expr::Bool { val } => self.code.push(Instr {
+                var,
+                expr: Expr::Bool { val },
+            }),
+            &Expr::Fin { val } => self.code.push(Instr {
+                var,
+                expr: Expr::Fin { val },
+            }),
+            Expr::Array { elems } => self.code.push(Instr {
+                var,
+                expr: Expr::Array {
+                    elems: elems.clone(),
+                },
+            }),
+            Expr::Tuple { members } => self.code.push(Instr {
+                var,
+                expr: Expr::Tuple {
+                    members: members.clone(),
+                },
+            }),
+            &Expr::Index { array, index } => self.code.push(Instr {
+                var,
+                expr: Expr::Index { array, index },
+            }),
+            &Expr::Member { tuple, member } => self.code.push(Instr {
+                var,
+                expr: Expr::Member { tuple, member },
+            }),
+            &Expr::Slice { array, index } => self.code.push(Instr {
+                var,
+                expr: Expr::Slice { array, index },
+            }),
+            &Expr::Field { tuple, member } => self.code.push(Instr {
+                var,
+                expr: Expr::Field { tuple, member },
+            }),
+            &Expr::Select { cond, then, els } => self.code.push(Instr {
+                var,
+                expr: Expr::Select { cond, then, els },
+            }),
+            &Expr::Ask { var } => self.code.push(Instr {
+                var,
+                expr: Expr::Ask { var },
+            }),
+            &Expr::Add { accum, addend } => self.code.push(Instr {
+                var,
+                expr: Expr::Add { accum, addend },
+            }),
 
-                        let z_x = self.set(
-                            code,
-                            ty,
-                            Expr::Binary {
-                                op,
-                                left: left_x,
-                                right: right_x,
-                            },
-                        );
-                        let a = self.set(
-                            code,
-                            ty,
-                            Expr::Binary {
-                                op: Binop::Mul,
-                                left: left_dx,
-                                right: right_x,
-                            },
-                        );
-                        let b = self.set(
-                            code,
-                            ty,
-                            Expr::Binary {
-                                op: Binop::Mul,
-                                left: right_dx,
-                                right: left_x,
-                            },
-                        );
-
-                        // sum the tangent components
-                        let z_dx = self.set(
-                            code,
-                            ty,
-                            Expr::Binary {
-                                op: Binop::Add,
-                                left: a,
-                                right: b,
-                            },
-                        );
-
-                        let dual: Box<[id::Var]> = vec![z_x, z_dx].into_boxed_slice();
-                        let z = self.set(code, ty, Expr::Tuple { members: dual });
-                        z
-                    }
-                    Binop::Div => {
-                        let (left_x, left_dx, right_x, right_dx) =
-                            self.extract(left, right, code, ty);
-
-                        let z_x = self.set(
-                            code,
-                            ty,
-                            Expr::Binary {
-                                op,
-                                left: left_x,
-                                right: right_x,
-                            },
-                        );
-                        let a = self.set(
-                            code,
-                            ty,
-                            Expr::Binary {
-                                op: Binop::Mul,
-                                left: left_dx,
-                                right: right_x,
-                            },
-                        );
-                        let b = self.set(
-                            code,
-                            ty,
-                            Expr::Binary {
-                                op: Binop::Mul,
-                                left: right_dx,
-                                right: left_x,
-                            },
-                        );
-                        let c = self.set(
-                            code,
-                            ty,
-                            Expr::Binary {
-                                op: Binop::Mul,
-                                left: right_x,
-                                right: right_x,
-                            },
-                        );
-
-                        // calculate intermediate values to avoid borrowing issues
-                        let diff_result = self.set(
-                            code,
-                            ty,
-                            Expr::Binary {
-                                op: Binop::Sub,
-                                left: a,
-                                right: b,
-                            },
-                        );
-
-                        let z_dx = self.set(
-                            code,
-                            ty,
-                            Expr::Binary {
-                                op: Binop::Div,
-                                left: diff_result,
-                                right: c,
-                            },
-                        );
-
-                        let dual: Box<[id::Var]> = vec![z_x, z_dx].into_boxed_slice();
-                        let z = self.set(code, ty, Expr::Tuple { members: dual });
-                        z
-                    }
-                }
-            }
-
-            Expr::Call { id, generics, args } => {
-                let x = self.set(
-                    code,
-                    ty,
-                    Expr::Call {
-                        id: *id,
-                        generics: generics.clone(),
-                        args: args.clone(),
-                    },
-                );
-                x
-            }
-            &Expr::Select { cond, then, els } => {
-                let x = self.set(code, ty, Expr::Select { cond, then, els });
-                x
-            }
-
-            // recursively call expr on the blocks in the for loop...this isn't working yet though because of Rust borrowing rules :(
+            // less boring cases
+            Expr::Call { id, generics, args } => self.code.push(Instr {
+                var,
+                expr: Expr::Call {
+                    id: *id,
+                    generics: generics.iter().copied().map(map).collect(),
+                    args: args.clone(),
+                },
+            }),
             Expr::For { arg, body, ret } => {
-                let processed_body: Vec<_> = body
-                    .iter()
-                    .map(|block| {
-                        let processed_var = self.expr(code, ty, &block.expr);
-                        Instr {
-                            var: processed_var,
-                            expr: block.expr.clone(),
-                        }
-                    })
-                    .collect();
-
-                // create a new For expression with the processed instructions
-                let x = self.set(
-                    code,
-                    ty,
-                    todo!(),
-                    // Expr::For {
-                    //     arg,
-                    //     body: processed_body.into_boxed_slice(),
-                    //     ret,
-                    // },
-                );
-                x
+                let body = self.child(body);
+                self.code.push(Instr {
+                    var,
+                    expr: Expr::For {
+                        arg: *arg,
+                        body,
+                        ret: *ret,
+                    },
+                })
+            }
+            Expr::Read {
+                var: orig,
+                arg,
+                body,
+                ret,
+            } => {
+                let body = self.child(body);
+                self.code.push(Instr {
+                    var,
+                    expr: Expr::Read {
+                        var: *orig,
+                        arg: *arg,
+                        body,
+                        ret: *ret,
+                    },
+                })
             }
             Expr::Accum {
                 shape,
@@ -560,165 +175,241 @@ impl Forward<'_> {
                 body,
                 ret,
             } => {
-                let processed_body: Vec<_> = body
-                    .iter()
-                    .map(|block| {
-                        let processed_var = self.expr(code, ty, &block.expr);
-                        Instr {
-                            var: processed_var,
-                            expr: block.expr.clone(),
-                        }
-                    })
-                    .collect();
-
-                let x = self.set(
-                    code,
-                    ty,
-                    Expr::Accum {
+                let body = self.child(body);
+                self.code.push(Instr {
+                    var,
+                    expr: Expr::Accum {
                         shape: *shape,
                         arg: *arg,
-                        body: processed_body.into_boxed_slice(),
+                        body,
                         ret: *ret,
                     },
-                );
-                x
+                })
             }
 
-            Expr::Add { accum, addend } => {
-                let x = self.set(
-                    code,
-                    ty,
-                    Expr::Add {
-                        accum: *accum,
-                        addend: *addend,
-                    },
-                );
-                x
+            // interesting cases
+            &Expr::F64 { val } => {
+                let x = self.real(Expr::F64 { val });
+                let dx = self.dual(Expr::F64 { val: 0. });
+                self.pack(var, x, dx)
             }
-            Expr::Read {
-                var,
-                arg,
-                body,
-                ret,
-            } => {
-                let processed_body: Vec<_> = body
-                    .iter()
-                    .map(|block| {
-                        let processed_var = self.expr(code, ty, &block.expr);
-                        Instr {
-                            var: processed_var,
-                            expr: block.expr.clone(),
-                        }
+            &Expr::Unary { op, arg } => match op {
+                // boring case
+                Unop::Not => self.code.push(Instr {
+                    var,
+                    expr: Expr::Unary { op: Unop::Not, arg },
+                }),
+
+                // interesting cases
+                Unop::Neg => {
+                    let (x, dx) = self.unpack(arg);
+                    let y = self.real(Expr::Unary {
+                        op: Unop::Neg,
+                        arg: x,
+                    });
+                    let dy = self.dual(Expr::Unary {
+                        op: Unop::Neg,
+                        arg: dx,
+                    });
+                    self.pack(var, y, dy)
+                }
+                Unop::Abs => {
+                    let (x, dx) = self.unpack(arg);
+                    let y = self.real(Expr::Unary {
+                        op: Unop::Abs,
+                        arg: x,
+                    });
+                    let sign = self.real(Expr::Unary {
+                        op: Unop::Sign,
+                        arg: x,
+                    });
+                    let dy = self.dual(Expr::Binary {
+                        op: Binop::Mul,
+                        left: dx,
+                        right: sign,
+                    });
+                    self.pack(var, y, dy)
+                }
+                Unop::Sign => {
+                    let x = self.re(arg);
+                    let y = self.real(Expr::Unary {
+                        op: Unop::Sign,
+                        arg: x,
+                    });
+                    let dy = self.dual(Expr::F64 { val: 0. });
+                    self.pack(var, y, dy)
+                }
+                Unop::Sqrt => {
+                    let (x, dx) = self.unpack(arg);
+                    let y = self.real(Expr::Unary {
+                        op: Unop::Sqrt,
+                        arg: x,
+                    });
+                    let z = self.real(Expr::Binary {
+                        op: Binop::Add,
+                        left: y,
+                        right: y,
+                    });
+                    let dy = self.dual(Expr::Binary {
+                        op: Binop::Div,
+                        left: dx,
+                        right: z,
+                    });
+                    self.pack(var, y, dy)
+                }
+            },
+            &Expr::Binary { op, left, right } => match op {
+                // boring cases
+                Binop::And | Binop::Or | Binop::Iff | Binop::Xor => self.code.push(Instr {
+                    var,
+                    expr: Expr::Binary { op, left, right },
+                }),
+
+                // less boring cases
+                Binop::Neq | Binop::Lt | Binop::Leq | Binop::Eq | Binop::Gt | Binop::Geq => {
+                    let x = self.re(left);
+                    let y = self.re(right);
+                    self.code.push(Instr {
+                        var,
+                        expr: Expr::Binary {
+                            op,
+                            left: x,
+                            right: y,
+                        },
                     })
-                    .collect();
+                }
 
-                let x = self.set(
-                    code,
-                    ty,
-                    Expr::Read {
-                        var: *var,
-                        arg: *arg,
-                        body: processed_body.into_boxed_slice(),
-                        ret: *ret,
-                    },
-                );
-                x
-            }
-            Expr::Ask { var } => {
-                let x = self.set(code, ty, Expr::Ask { var: *var });
-                x
-            }
+                // interesting cases
+                Binop::Add => {
+                    let (x, dx) = self.unpack(left);
+                    let (y, dy) = self.unpack(right);
+                    let z = self.real(Expr::Binary {
+                        op: Binop::Add,
+                        left: x,
+                        right: y,
+                    });
+                    let dz = self.dual(Expr::Binary {
+                        op: Binop::Add,
+                        left: dx,
+                        right: dy,
+                    });
+                    self.pack(var, z, dz)
+                }
+                Binop::Sub => {
+                    let (x, dx) = self.unpack(left);
+                    let (y, dy) = self.unpack(right);
+                    let z = self.real(Expr::Binary {
+                        op: Binop::Sub,
+                        left: x,
+                        right: y,
+                    });
+                    let dz = self.dual(Expr::Binary {
+                        op: Binop::Sub,
+                        left: dx,
+                        right: dy,
+                    });
+                    self.pack(var, z, dz)
+                }
+                Binop::Mul => {
+                    let (x, dx) = self.unpack(left);
+                    let (y, dy) = self.unpack(right);
+                    let z = self.real(Expr::Binary {
+                        op: Binop::Mul,
+                        left: x,
+                        right: y,
+                    });
+                    let a = self.dual(Expr::Binary {
+                        op: Binop::Mul,
+                        left: dx,
+                        right: y,
+                    });
+                    let b = self.dual(Expr::Binary {
+                        op: Binop::Mul,
+                        left: dy,
+                        right: x,
+                    });
+                    let dz = self.dual(Expr::Binary {
+                        op: Binop::Add,
+                        left: a,
+                        right: b,
+                    });
+                    self.pack(var, z, dz)
+                }
+                Binop::Div => {
+                    let (x, dx) = self.unpack(left);
+                    let (y, dy) = self.unpack(right);
+                    let z = self.real(Expr::Binary {
+                        op: Binop::Div,
+                        left: x,
+                        right: y,
+                    });
+                    let a = self.real(Expr::Binary {
+                        op: Binop::Div,
+                        left: z,
+                        right: y,
+                    });
+                    let b = self.dual(Expr::Binary {
+                        op: Binop::Div,
+                        left: dx,
+                        right: y,
+                    });
+                    let c = self.dual(Expr::Binary {
+                        op: Binop::Mul,
+                        left: dy,
+                        right: a,
+                    });
+                    let dz = self.dual(Expr::Binary {
+                        op: Binop::Sub,
+                        left: b,
+                        right: c,
+                    });
+                    self.pack(var, z, dz)
+                }
+            },
         }
     }
 }
 
 pub fn jvp(f: &Func) -> Func {
-    let mut g = Forward {
-        generics: f.generics.to_vec(),
-        types: IndexSet::new(),
-        old_types: vec![],
-        old_vars: &f.vars,
-        vars: vec![],
-        mapping: vec![None; f.vars.len()],
-        var_mapping: vec![None; f.vars.len()],
-    };
+    let mut types = vec![Ty::F64, Ty::F64];
+    types.extend(f.types.iter().map(|ty| match ty {
+        // boring cases
+        Ty::Unit => Ty::Unit,
+        Ty::Bool => Ty::Bool,
+        &Ty::Fin { size } => Ty::Fin { size },
+        &Ty::Generic { id } => Ty::Generic { id },
+        &Ty::Scope { kind, id } => Ty::Scope { kind, id },
 
-    // create a mapping from the old scope IDs to the new scope IDs
-    for (var_idx, _) in f.vars.iter().enumerate() {
-        g.var_mapping.push(Some(id::var(var_idx)));
+        // less boring cases
+        &Ty::Ref { scope, inner } => Ty::Ref {
+            scope: map(scope),
+            inner: map(inner),
+        },
+        &Ty::Array { index, elem } => Ty::Array {
+            index: map(index),
+            elem: map(elem),
+        },
+        Ty::Tuple { members } => Ty::Tuple {
+            members: members.iter().copied().map(map).collect(),
+        },
+
+        // interesting case
+        Ty::F64 => Ty::Tuple {
+            members: [DUAL, REAL].into(), // alphabetical order
+        },
+    }));
+    let mut vars = f.vars.iter().copied().map(map).collect();
+    let body = Autodiff {
+        vars: &mut vars,
+        code: vec![],
     }
-
-    for ty in &f.types.to_vec() {
-        let primal = match ty {
-            Ty::Unit => Ty::Unit,
-            Ty::Bool => Ty::Bool,
-            Ty::F64 => Ty::F64,
-            &Ty::Fin { size } => Ty::Fin { size },
-            &Ty::Generic { id } => Ty::Generic { id },
-            &Ty::Scope { kind, id } => Ty::Scope { kind, id },
-            &Ty::Ref { scope: _, inner: _ } => todo!(),
-            &Ty::Array { index, elem } => Ty::Array {
-                index: g.primal(index),
-                elem: g.primal(elem),
-            },
-            Ty::Tuple { members } => Ty::Tuple {
-                members: members.iter().map(|&member| g.primal(member)).collect(),
-            },
-        };
-        let tangent = match ty {
-            Ty::Unit | Ty::Bool | Ty::Fin { .. } | Ty::Scope { .. } => Ty::Unit,
-            Ty::F64 => Ty::F64,
-            Ty::Generic { id: _ } => todo!(),
-            Ty::Ref { scope: _, inner: _ } => todo!(),
-            &Ty::Array { index, elem } => Ty::Array {
-                index: g.primal(index),
-                elem: g.tangent(elem),
-            },
-            Ty::Tuple { members } => Ty::Tuple {
-                members: members.iter().map(|&member| g.tangent(member)).collect(),
-            },
-        };
-        let (p, _) = g.types.insert_full(primal);
-        let (t, _) = g.types.insert_full(tangent);
-        g.old_types.push((id::ty(p), id::ty(t)));
-    }
-
-    let mut code = vec![];
-
-    // loop over each parameter in the function and handle them
-    for param in &f.params.to_vec() {
-        let var_idx = param.var();
-        let t_arg = g.old_types[g.old_vars[var_idx].ty()].0;
-        let tan_arg = g.old_types[g.old_vars[var_idx].ty()].1;
-        let tup_arg = g.newtype(Ty::Tuple {
-            members: [t_arg, tan_arg].into(),
-        });
-        let arg = g.newvar(tup_arg);
-        let x_arg = g.set(
-            &mut code,
-            t_arg,
-            Expr::Member {
-                tuple: arg,
-                member: id::member(0),
-            },
-        );
-        let dx_arg = g.set(
-            &mut code,
-            tan_arg,
-            Expr::Member {
-                tuple: arg,
-                member: id::member(1),
-            },
-        );
-        g.mapping[var_idx] = Some((x_arg, dx_arg));
-    }
-
+    .block(&f.body);
     Func {
-        generics: g.generics.into(),
-        types: g.types.into_iter().collect(),
-        vars: g.vars.into(),
+        generics: f.generics.clone(),
+        types: types.into(),
+        vars: vars.into(),
         params: f.params.clone(),
         ret: f.ret,
-        body: code.into(),
+        body,
     }
 }

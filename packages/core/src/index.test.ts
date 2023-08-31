@@ -340,6 +340,6 @@ describe("valid", () => {
     const f = fn([Real], Real, (x) => mul(x, x));
     const g = jvp(f);
     const h = interp(g);
-    expect(h({ re: 3, du: 1 })).toBe({ re: 9, du: 6 });
+    expect(h({ re: 3, du: 1 })).toEqual({ re: 9, du: 6 });
   });
 });

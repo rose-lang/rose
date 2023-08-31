@@ -409,7 +409,7 @@ export const fn = <const P extends readonly any[], const R>(
   if (context !== undefined)
     throw Error("can't define a function while defining another function");
   let out: number | undefined = undefined; // function return variable ID
-  let strs: string[] = [];
+  let strs: string[] = ["re", "du"];
   const builder = new wasm.FuncBuilder(0); // TODO: support generics
   const body = new wasm.Block();
   try {
@@ -562,13 +562,14 @@ type JvpArgs<T> = {
 export const jvp = <const A extends readonly any[], const R>(
   f: Fn & ((...args: A) => R),
 ): Fn & ((...args: JvpArgs<A>) => ToJvp<R>) => {
+  const strs = [...f[strings]];
   const func = f[inner].jvp();
   const g: any = (...args: any): any =>
     // TODO: support generics
     call(g, new Uint32Array(), args);
   funcs.register(g, func);
   g[inner] = func;
-  g[strings] = f[strings];
+  g[strings] = strs;
   return g;
 };
 

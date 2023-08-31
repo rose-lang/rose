@@ -634,8 +634,6 @@ dependencies = [
 name = "rose-autodiff"
 version = "0.0.0"
 dependencies = [
- "enumset",
- "indexmap 2.0.0",
  "rose",
 ]
 

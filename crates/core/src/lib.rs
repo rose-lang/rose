@@ -50,7 +50,7 @@ pub enum Ty {
 }
 
 /// A function definition.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Func {
     /// Generic type parameters.
     pub generics: Box<[EnumSet<Constraint>]>,
@@ -102,13 +102,13 @@ pub enum Node<'a, O, T: Refs<'a, Opaque = O>> {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Instr {
     pub var: id::Var,
     pub expr: Expr,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum Expr {
     Unit,
     Bool {
