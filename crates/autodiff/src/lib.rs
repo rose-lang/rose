@@ -12,14 +12,18 @@ fn map(t: id::Ty) -> id::Ty {
 }
 
 struct Autodiff<'a> {
-    vars: &'a mut Vec<id::Ty>,
+    old_types: &'a [Ty],
+    old_vars: &'a [id::Ty],
+    new_vars: &'a mut Vec<id::Ty>,
+    unpacked: &'a mut [Option<(id::Var, id::Var)>],
+    dual_zero: id::Var,
     code: Vec<Instr>,
 }
 
 impl Autodiff<'_> {
     fn set(&mut self, t: id::Ty, expr: Expr) -> id::Var {
-        let var = id::var(self.vars.len());
-        self.vars.push(t);
+        let var = id::var(self.new_vars.len());
+        self.new_vars.push(t);
         self.code.push(Instr { var, expr });
         var
     }
@@ -32,27 +36,33 @@ impl Autodiff<'_> {
         self.set(DUAL, expr)
     }
 
-    fn re(&mut self, var: id::Var) -> id::Var {
-        self.real(Expr::Member {
-            tuple: var,
-            member: RE,
-        })
+    fn unpack(&mut self, var: id::Var) {
+        let i = var.var();
+        if let Ty::F64 = self.old_types[self.old_vars[i].ty()] {
+            let x = self.real(Expr::Member {
+                tuple: var,
+                member: RE,
+            });
+            let dx = self.dual(Expr::Member {
+                tuple: var,
+                member: DU,
+            });
+            self.unpacked[i] = Some((x, dx))
+        }
     }
 
-    fn du(&mut self, var: id::Var) -> id::Var {
-        self.real(Expr::Member {
-            tuple: var,
-            member: DU,
-        })
+    fn maybe_unpack(&mut self, var: id::Var) {
+        if self.unpacked[var.var()].is_none() {
+            self.unpack(var);
+        }
     }
 
-    fn unpack(&mut self, var: id::Var) -> (id::Var, id::Var) {
-        let x = self.re(var);
-        let dx = self.du(var);
-        (x, dx)
+    fn get(&self, var: id::Var) -> (id::Var, id::Var) {
+        self.unpacked[var.var()].unwrap()
     }
 
     fn pack(&mut self, var: id::Var, x: id::Var, dx: id::Var) {
+        self.unpacked[var.var()] = Some((x, dx));
         self.code.push(Instr {
             var,
             expr: Expr::Tuple {
@@ -63,7 +73,11 @@ impl Autodiff<'_> {
 
     fn child(&mut self, orig: &[Instr]) -> Box<[Instr]> {
         Autodiff {
-            vars: self.vars,
+            old_types: self.old_types,
+            old_vars: self.old_vars,
+            new_vars: self.new_vars,
+            unpacked: self.unpacked,
+            dual_zero: self.dual_zero,
             code: vec![],
         }
         .block(orig)
@@ -72,6 +86,7 @@ impl Autodiff<'_> {
     fn block(mut self, orig: &[Instr]) -> Box<[Instr]> {
         for Instr { var, expr } in orig {
             self.instr(*var, expr);
+            self.maybe_unpack(*var);
         }
         self.code.into()
     }
@@ -167,7 +182,8 @@ impl Autodiff<'_> {
                         body,
                         ret: *ret,
                     },
-                })
+                });
+                self.unpack(*ret); // not `maybe_unpack`, because those vars might be scoped wrong
             }
             Expr::Accum {
                 shape,
@@ -184,13 +200,14 @@ impl Autodiff<'_> {
                         body,
                         ret: *ret,
                     },
-                })
+                });
+                self.unpack(*ret); // not `maybe_unpack`, because those vars might be scoped wrong
             }
 
             // interesting cases
             &Expr::F64 { val } => {
                 let x = self.real(Expr::F64 { val });
-                let dx = self.dual(Expr::F64 { val: 0. });
+                let dx = self.dual_zero;
                 self.pack(var, x, dx)
             }
             &Expr::Unary { op, arg } => match op {
@@ -202,7 +219,7 @@ impl Autodiff<'_> {
 
                 // interesting cases
                 Unop::Neg => {
-                    let (x, dx) = self.unpack(arg);
+                    let (x, dx) = self.get(arg);
                     let y = self.real(Expr::Unary {
                         op: Unop::Neg,
                         arg: x,
@@ -214,7 +231,7 @@ impl Autodiff<'_> {
                     self.pack(var, y, dy)
                 }
                 Unop::Abs => {
-                    let (x, dx) = self.unpack(arg);
+                    let (x, dx) = self.get(arg);
                     let y = self.real(Expr::Unary {
                         op: Unop::Abs,
                         arg: x,
@@ -231,16 +248,16 @@ impl Autodiff<'_> {
                     self.pack(var, y, dy)
                 }
                 Unop::Sign => {
-                    let x = self.re(arg);
+                    let (x, _) = self.get(arg);
                     let y = self.real(Expr::Unary {
                         op: Unop::Sign,
                         arg: x,
                     });
-                    let dy = self.dual(Expr::F64 { val: 0. });
+                    let dy = self.dual_zero;
                     self.pack(var, y, dy)
                 }
                 Unop::Sqrt => {
-                    let (x, dx) = self.unpack(arg);
+                    let (x, dx) = self.get(arg);
                     let y = self.real(Expr::Unary {
                         op: Unop::Sqrt,
                         arg: x,
@@ -267,8 +284,8 @@ impl Autodiff<'_> {
 
                 // less boring cases
                 Binop::Neq | Binop::Lt | Binop::Leq | Binop::Eq | Binop::Gt | Binop::Geq => {
-                    let x = self.re(left);
-                    let y = self.re(right);
+                    let (x, _) = self.get(left);
+                    let (y, _) = self.get(right);
                     self.code.push(Instr {
                         var,
                         expr: Expr::Binary {
@@ -281,8 +298,8 @@ impl Autodiff<'_> {
 
                 // interesting cases
                 Binop::Add => {
-                    let (x, dx) = self.unpack(left);
-                    let (y, dy) = self.unpack(right);
+                    let (x, dx) = self.get(left);
+                    let (y, dy) = self.get(right);
                     let z = self.real(Expr::Binary {
                         op: Binop::Add,
                         left: x,
@@ -296,8 +313,8 @@ impl Autodiff<'_> {
                     self.pack(var, z, dz)
                 }
                 Binop::Sub => {
-                    let (x, dx) = self.unpack(left);
-                    let (y, dy) = self.unpack(right);
+                    let (x, dx) = self.get(left);
+                    let (y, dy) = self.get(right);
                     let z = self.real(Expr::Binary {
                         op: Binop::Sub,
                         left: x,
@@ -311,8 +328,8 @@ impl Autodiff<'_> {
                     self.pack(var, z, dz)
                 }
                 Binop::Mul => {
-                    let (x, dx) = self.unpack(left);
-                    let (y, dy) = self.unpack(right);
+                    let (x, dx) = self.get(left);
+                    let (y, dy) = self.get(right);
                     let z = self.real(Expr::Binary {
                         op: Binop::Mul,
                         left: x,
@@ -336,8 +353,8 @@ impl Autodiff<'_> {
                     self.pack(var, z, dz)
                 }
                 Binop::Div => {
-                    let (x, dx) = self.unpack(left);
-                    let (y, dy) = self.unpack(right);
+                    let (x, dx) = self.get(left);
+                    let (y, dy) = self.get(right);
                     let z = self.real(Expr::Binary {
                         op: Binop::Div,
                         left: x,
@@ -398,12 +415,24 @@ pub fn jvp(f: &Func) -> Func {
             members: [DUAL, REAL].into(), // alphabetical order
         },
     }));
-    let mut vars = f.vars.iter().copied().map(map).collect();
-    let body = Autodiff {
-        vars: &mut vars,
-        code: vec![],
+    let mut vars: Vec<_> = f.vars.iter().copied().map(map).collect();
+    let dual_zero = id::var(vars.len());
+    vars.push(DUAL);
+    let mut ad = Autodiff {
+        old_types: &f.types,
+        old_vars: &f.vars,
+        new_vars: &mut vars,
+        unpacked: &mut vec![None; f.vars.len()],
+        dual_zero,
+        code: vec![Instr {
+            var: dual_zero,
+            expr: Expr::F64 { val: 0. },
+        }],
+    };
+    for &param in f.params.iter() {
+        ad.maybe_unpack(param);
     }
-    .block(&f.body);
+    let body = ad.block(&f.body);
     Func {
         generics: f.generics.clone(),
         types: types.into(),
