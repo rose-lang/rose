@@ -342,4 +342,13 @@ describe("valid", () => {
     const h = interp(g);
     expect(h({ re: 3, du: 1 })).toEqual({ re: 9, du: 6 });
   });
+
+  test("JVP with sharing in call graph", () => {
+    let f = fn([Real], Real, (x) => x);
+    for (let i = 0; i < 20; i++) {
+      f = fn([Real], Real, (x) => add(f(x), f(x)));
+    }
+    const g = interp(jvp(f));
+    expect(g({ re: 2, du: 3 })).toEqual({ re: 2097152, du: 3145728 });
+  });
 });
