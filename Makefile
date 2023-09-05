@@ -48,7 +48,7 @@ prettier: npm
 	npx prettier --check .
 
 # build `packages/`
-packages: core site vscode wasm
+packages: core site wasm
 
 # run JavaScript tests
 test-js: test-core
@@ -69,20 +69,6 @@ site-deps: npm core
 
 site: site-deps
 	npm run --workspace=@rose-lang/site build
-
-## `packages/vscode`
-
-# fetch encircled icon
-packages/vscode/encircled-rose.png:
-	node fetch.js https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/encircled-rose.png $@
-
-# fetch plain icon
-packages/vscode/plain-rose.png:
-	node fetch.js https://github.com/rose-lang/rose-icons/raw/efcc218832d65970a47bed597ee11cecd3d1cc3c/png/plain-rose.png $@
-
-# build
-vscode: npm packages/vscode/encircled-rose.png packages/vscode/plain-rose.png
-	npm run --workspace=rose-vscode build
 
 ## `packages/wasm`
 
