@@ -512,7 +512,9 @@ impl<'a, O, T: Refs<'a, Opaque = O>> Validator<'a, O, T> {
                 let x = self.get_ty_id(arg).ok_or(UnaryInvalidArg)?;
                 let p = match op {
                     Unop::Not => *self.ty(t) == Ty::Bool && x == t,
-                    Unop::Neg | Unop::Abs | Unop::Sqrt => *self.ty(t) == Ty::F64 && x == t,
+                    Unop::Neg | Unop::Abs | Unop::Sign | Unop::Sqrt => {
+                        *self.ty(t) == Ty::F64 && x == t
+                    }
                 };
                 check(p, UnaryType)
             }

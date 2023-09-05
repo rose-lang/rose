@@ -631,6 +631,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rose-autodiff"
+version = "0.0.0"
+dependencies = [
+ "rose",
+]
+
+[[package]]
 name = "rose-cli"
 version = "0.0.0"
 dependencies = [
@@ -683,6 +690,7 @@ dependencies = [
  "indexmap 2.0.0",
  "js-sys",
  "rose",
+ "rose-autodiff",
  "rose-interp",
  "serde",
  "serde-wasm-bindgen",

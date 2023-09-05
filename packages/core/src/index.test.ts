@@ -8,10 +8,13 @@ import {
   custom,
   div,
   fn,
+  gt,
   interp,
-  lt,
+  jvp,
   mul,
   select,
+  sign,
+  sqrt,
   sub,
   vec,
 } from "./index.js";
@@ -110,6 +113,21 @@ describe("valid", () => {
     expect(g()).toBe(6);
   });
 
+  test("signum", () => {
+    const f = fn([Real], Real, (x) => sign(x));
+    const g = interp(f);
+    expect(g(-2)).toBe(-1);
+    expect(g(-0)).toBe(-1);
+    expect(g(0)).toBe(1);
+    expect(g(2)).toBe(1);
+  });
+
+  test("square root", () => {
+    const f = fn([Real], Real, (x) => sqrt(x));
+    const g = interp(f);
+    expect(g(Math.PI)).toBe(1.7724538509055159);
+  });
+
   test("select", () => {
     const f = fn([Bool], Real, (x) => select(x, Real, 1, 2));
     const g = interp(f);
@@ -121,11 +139,12 @@ describe("valid", () => {
     const ifCond = fn([Bool, Real, Real], Real, (p, x, y) =>
       select(p, Real, x, y),
     );
-    const f = fn([Real], Real, (x) => ifCond(lt(x, 0), 0, x));
+    const f = fn([Real], Real, (x) => ifCond(gt(x, 0), x, 0));
     const relu = interp(f);
-    expect(relu(-1)).toBe(0);
+    expect(relu(-2)).toBe(0);
+    expect(relu(-0)).toBe(0);
     expect(relu(0)).toBe(0);
-    expect(relu(1)).toBe(1);
+    expect(relu(2)).toBe(2);
   });
 
   test("empty boolean array", () => {
@@ -315,5 +334,21 @@ describe("valid", () => {
     const pow = custom([Real, Real], Real, Math.pow);
     const f = interp(pow);
     expect(f(Math.E, Math.PI)).toBe(23.140692632779263);
+  });
+
+  test("JVP", () => {
+    const f = fn([Real], Real, (x) => mul(x, x));
+    const g = jvp(f);
+    const h = interp(g);
+    expect(h({ re: 3, du: 1 })).toEqual({ re: 9, du: 6 });
+  });
+
+  test("JVP with sharing in call graph", () => {
+    let f = fn([Real], Real, (x) => x);
+    for (let i = 0; i < 20; i++) {
+      f = fn([Real], Real, (x) => add(f(x), f(x)));
+    }
+    const g = interp(jvp(f));
+    expect(g({ re: 2, du: 3 })).toEqual({ re: 2097152, du: 3145728 });
   });
 });

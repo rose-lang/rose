@@ -2,12 +2,12 @@
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Member(usize);
 
-pub fn member(id: usize) -> Member {
+pub const fn member(id: usize) -> Member {
     Member(id)
 }
 
 impl Member {
-    pub fn member(self) -> usize {
+    pub const fn member(self) -> usize {
         self.0
     }
 }
@@ -16,12 +16,12 @@ impl Member {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Func(usize);
 
-pub fn func(id: usize) -> Func {
+pub const fn func(id: usize) -> Func {
     Func(id)
 }
 
 impl Func {
-    pub fn func(self) -> usize {
+    pub const fn func(self) -> usize {
         self.0
     }
 }
@@ -30,12 +30,12 @@ impl Func {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Generic(usize);
 
-pub fn generic(id: usize) -> Generic {
+pub const fn generic(id: usize) -> Generic {
     Generic(id)
 }
 
 impl Generic {
-    pub fn generic(self) -> usize {
+    pub const fn generic(self) -> usize {
         self.0
     }
 }
@@ -44,12 +44,12 @@ impl Generic {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ty(usize);
 
-pub fn ty(id: usize) -> Ty {
+pub const fn ty(id: usize) -> Ty {
     Ty(id)
 }
 
 impl Ty {
-    pub fn ty(self) -> usize {
+    pub const fn ty(self) -> usize {
         self.0
     }
 }
@@ -58,12 +58,12 @@ impl Ty {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Var(usize);
 
-pub fn var(id: usize) -> Var {
+pub const fn var(id: usize) -> Var {
     Var(id)
 }
 
 impl Var {
-    pub fn var(self) -> usize {
+    pub const fn var(self) -> usize {
         self.0
     }
 }

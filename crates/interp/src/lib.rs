@@ -208,6 +208,7 @@ impl<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> Interpreter<'a, 'b, O, T> {
 
                     Unop::Neg => val_f64(-x.f64()),
                     Unop::Abs => val_f64(x.f64().abs()),
+                    Unop::Sign => val_f64(x.f64().signum()),
                     Unop::Sqrt => val_f64(x.f64().sqrt()),
                 }
             }

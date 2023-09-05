@@ -219,6 +219,7 @@ pub enum Unop {
     // `F64` -> `F64`
     Neg,
     Abs,
+    Sign,
     Sqrt,
 }
 

@@ -2,7 +2,10 @@ use enumset::EnumSet;
 use indexmap::{IndexMap, IndexSet};
 use rose::id;
 use serde::Serialize;
-use std::rc::Rc;
+use std::{
+    cell::RefCell,
+    rc::{Rc, Weak},
+};
 use wasm_bindgen::prelude::{wasm_bindgen, JsError, JsValue};
 
 #[cfg(feature = "debug")]
@@ -112,9 +115,16 @@ impl<'a> rose::Refs<'a> for Refs<'a> {
     }
 }
 
-// the second tuple element is indices for string keys on tuple types that represent structs; the
-// actual strings are stored in JavaScript
-type Pointee = (Inner, Box<[Option<Box<[usize]>>]>);
+struct Pointee {
+    inner: Inner,
+
+    /// Indices for string keys on tuple types that represent structs.
+    ///
+    /// The actual strings are stored in JavaScript.
+    structs: Box<[Option<Box<[usize]>>]>,
+
+    jvp: RefCell<Option<Weak<Pointee>>>,
+}
 
 /// A node in a reference-counted acyclic digraph of functions.
 #[wasm_bindgen]
@@ -129,22 +139,23 @@ impl Func {
     #[wasm_bindgen(constructor)]
     pub fn new(params: usize, def: js_sys::Function) -> Self {
         Self {
-            rc: Rc::new((
-                Inner::Opaque {
+            rc: Rc::new(Pointee {
+                inner: Inner::Opaque {
                     generics: [].into(),
                     types: [rose::Ty::F64].into(),
                     params: vec![id::ty(0); params].into(),
                     ret: id::ty(0),
                     def,
                 },
-                [].into(),
-            )),
+                structs: [].into(),
+                jvp: RefCell::new(None),
+            }),
         }
     }
 
     /// Construct a function node from the data this `Func` points to.
     fn node(&self) -> rose::Node<Opaque, Refs> {
-        let (inner, _) = self.rc.as_ref();
+        let Pointee { inner, .. } = self.rc.as_ref();
         match inner {
             Inner::Transparent { deps, def } => rose::Node::Transparent {
                 refs: Refs { deps },
@@ -169,7 +180,7 @@ impl Func {
     /// Return the IDs of this function's parameter types.
     #[wasm_bindgen(js_name = "paramTypes")]
     pub fn param_types(&self) -> Box<[usize]> {
-        let (inner, _) = self.rc.as_ref();
+        let Pointee { inner, .. } = self.rc.as_ref();
         match inner {
             Inner::Transparent { def, .. } => {
                 def.params.iter().map(|p| def.vars[p.var()].ty()).collect()
@@ -181,7 +192,7 @@ impl Func {
     /// Return the ID of this function's return type.
     #[wasm_bindgen(js_name = "retType")]
     pub fn ret_type(&self) -> usize {
-        let (inner, _) = self.rc.as_ref();
+        let Pointee { inner, .. } = self.rc.as_ref();
         match inner {
             Inner::Transparent { def, .. } => def.vars[def.ret.var()].ty(),
             Inner::Opaque { ret, .. } => ret.ty(),
@@ -191,7 +202,7 @@ impl Func {
     /// Return true iff `t` is the ID of a finite integer type.
     #[wasm_bindgen(js_name = "isFin")]
     pub fn is_fin(&mut self, t: usize) -> bool {
-        let (inner, _) = self.rc.as_ref();
+        let Pointee { inner, .. } = self.rc.as_ref();
         let ty = match inner {
             Inner::Transparent { def, .. } => def.types.get(t),
             Inner::Opaque { types, .. } => types.get(t),
@@ -201,7 +212,7 @@ impl Func {
 
     /// Return the ID of the element type for the array type with ID `t`.
     pub fn elem(&self, t: usize) -> usize {
-        let (inner, _) = self.rc.as_ref();
+        let Pointee { inner, .. } = self.rc.as_ref();
         match inner {
             Inner::Transparent { def, .. } => match def.types[t] {
                 rose::Ty::Array { index: _, elem } => elem.ty(),
@@ -213,13 +224,13 @@ impl Func {
 
     /// Return the string IDs for the struct type with ID `t`.
     pub fn keys(&self, t: usize) -> Box<[usize]> {
-        let (_, structs) = self.rc.as_ref();
+        let Pointee { structs, .. } = self.rc.as_ref();
         structs[t].as_ref().unwrap().clone()
     }
 
     /// Return the member type IDs for the struct type with ID `t`.
     pub fn mems(&self, t: usize) -> Box<[usize]> {
-        let (inner, _) = self.rc.as_ref();
+        let Pointee { inner, .. } = self.rc.as_ref();
         let ty = match inner {
             Inner::Transparent { def, .. } => def.types.get(t),
             Inner::Opaque { types, .. } => types.get(t),
@@ -239,6 +250,48 @@ impl Func {
         let vals: Vec<rose_interp::Val> = serde_wasm_bindgen::from_value(args)?;
         let ret = rose_interp::interp(self.node(), IndexSet::new(), &[], vals.into_iter())?;
         Ok(to_js_value(&ret)?)
+    }
+
+    /// Return a function that computes the Jacobian-vector product of this function.
+    ///
+    /// `re` must be the string ID for the string `"re"` not just in this function, but in every
+    /// function that this function calls, and so on, transitively. Same for `du` and `"du"`.
+    pub fn jvp(&self, re: usize, du: usize) -> Self {
+        let Pointee {
+            inner,
+            structs,
+            jvp,
+        } = self.rc.as_ref();
+        let mut cache = jvp.borrow_mut();
+        if let Some(rc) = cache.as_ref().and_then(|weak| weak.upgrade()) {
+            return Self { rc };
+        }
+        let rc =
+            match inner {
+                Inner::Transparent { deps, def } => {
+                    let mut structs_jvp = vec![None, None];
+                    // the first two types are the two new versions of `F64`; all the other types
+                    // are just mapped one-to-one, except that previous versions of `F64` become
+                    // tuples, so for those we use the string IDs we have been given
+                    structs_jvp.extend(structs.iter().enumerate().map(|(i, s)| {
+                        match &def.types[i] {
+                            rose::Ty::F64 => Some([du, re].into()),
+                            _ => s.clone(),
+                        }
+                    }));
+                    Rc::new(Pointee {
+                        inner: Inner::Transparent {
+                            deps: deps.iter().map(|f| f.jvp(re, du)).collect(),
+                            def: rose_autodiff::jvp(def),
+                        },
+                        structs: structs_jvp.into(),
+                        jvp: RefCell::new(None),
+                    })
+                }
+                Inner::Opaque { .. } => todo!(),
+            };
+        *cache = Some(Rc::downgrade(&rc));
+        Self { rc }
     }
 }
 
@@ -289,6 +342,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                 rose::Unop::Not => writeln!(&mut s, "not x{}", arg.var())?,
                 rose::Unop::Neg => writeln!(&mut s, "-x{}", arg.var())?,
                 rose::Unop::Abs => writeln!(&mut s, "|x{}|", arg.var())?,
+                rose::Unop::Sign => writeln!(&mut s, "sign(x{})", arg.var())?,
                 rose::Unop::Sqrt => writeln!(&mut s, "sqrt(x{})", arg.var())?,
             },
             rose::Expr::Binary { op, left, right } => match op {
@@ -409,7 +463,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
     }
 
     let mut s = String::new();
-    let (inner, _) = f.rc.as_ref();
+    let Pointee { inner, .. } = f.rc.as_ref();
     let def = match inner {
         Inner::Transparent { def, .. } => def,
         Inner::Opaque { .. } => return Err(JsError::new("opaque function")),
@@ -582,8 +636,8 @@ impl FuncBuilder {
         let (types, structs): (Vec<_>, Vec<_>) =
             self.types.into_keys().map(|ty| ty.separate()).unzip();
         Func {
-            rc: Rc::new((
-                Inner::Transparent {
+            rc: Rc::new(Pointee {
+                inner: Inner::Transparent {
                     deps: self.functions.into(),
                     def: rose::Func {
                         generics: self.generics,
@@ -594,8 +648,9 @@ impl FuncBuilder {
                         body: code.into(),
                     },
                 },
-                structs.into(),
-            )),
+                structs: structs.into(),
+                jvp: RefCell::new(None),
+            }),
         }
     }
 
@@ -1011,7 +1066,7 @@ impl FuncBuilder {
     /// The returned `Vec` is always nonempty, since its last element is the return type; all the
     /// other elements are the parameter types.
     pub fn ingest(&mut self, f: &Func, strings: &[usize], generics: &[usize]) -> Vec<usize> {
-        let (inner, structs) = f.rc.as_ref();
+        let Pointee { inner, structs, .. } = f.rc.as_ref();
         let def = match inner {
             Inner::Transparent { def, .. } => def,
             Inner::Opaque { params, .. } => {
@@ -1135,6 +1190,18 @@ impl Block {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Unary {
             op: rose::Unop::Abs,
+            arg: id::var(arg),
+        };
+        self.instr(f, t, expr)
+    }
+
+    /// Return the variable ID for a new signum instruction on `arg`.
+    ///
+    /// Assumes `arg` is defined, in scope, and has 64-bit floating point type.
+    pub fn sign(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
+        let t = id::ty(f.ty_f64());
+        let expr = rose::Expr::Unary {
+            op: rose::Unop::Sign,
             arg: id::var(arg),
         };
         self.instr(f, t, expr)

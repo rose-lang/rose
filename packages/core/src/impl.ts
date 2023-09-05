@@ -73,9 +73,6 @@ export interface Vec<T> {
   [K: Nat]: T;
 }
 
-/** A concrete or abstract vector. */
-type ArrayOrVec<T> = T[] | Vec<T>;
-
 /** The context for an abstract function under construction. */
 interface Context {
   /** Handle to Rust-side information about the function itself. */
@@ -100,6 +97,30 @@ interface Context {
   /** Reverse lookup from strings to IDs; also used for deduplication. */
   stringIds: Map<string, number>;
 }
+
+/** Struct field name for the nonlinear part of a dual number. */
+const re = "re";
+
+/** Struct field name for the linear part of a dual number. */
+const du = "du";
+
+/** String ID for `"re"`. */
+const reId = 0;
+
+/** String ID for `"du"`. */
+const duId = 1;
+
+/** Return a fresh initial string cache for constructing a new function. */
+const initStrings = (): {
+  strings: string[];
+  stringIds: Map<string, number>;
+} => ({
+  strings: [re, du], // order matches `reId` and `duId`
+  stringIds: new Map([
+    [re, reId],
+    [du, duId],
+  ]),
+});
 
 /** Return the variable ID map for type ID `t`, creating it if necessary. */
 const typeMap = (ctx: Context, t: number): Map<unknown, number> => {
@@ -409,7 +430,7 @@ export const fn = <const P extends readonly any[], const R>(
   if (context !== undefined)
     throw Error("can't define a function while defining another function");
   let out: number | undefined = undefined; // function return variable ID
-  let strs: string[] = [];
+  let { strings: strs, stringIds } = initStrings();
   const builder = new wasm.FuncBuilder(0); // TODO: support generics
   const body = new wasm.Block();
   try {
@@ -418,7 +439,7 @@ export const fn = <const P extends readonly any[], const R>(
       block: body,
       variables: new Map(),
       strings: strs,
-      stringIds: new Map(),
+      stringIds,
     };
     context = ctx;
     const args = params.map((ty) => {
@@ -441,9 +462,9 @@ export const fn = <const P extends readonly any[], const R>(
     }
   }
   const func = builder.finish(out, body);
-  const g: any = (...args: SymbolicParams<P>): ToSymbolic<R> =>
+  const g: any = (...args: any): any =>
     // TODO: support generics
-    call(g, new Uint32Array(), args as unknown[]) as ToSymbolic<R>;
+    call(g, new Uint32Array(), args);
   funcs.register(g, func);
   g[inner] = func;
   g[strings] = strs;
@@ -458,9 +479,9 @@ export const custom = <const P extends readonly Reals[], const R extends Reals>(
 ): Fn & ((...args: ValueParams<P>) => ToSymbolic<R>) => {
   // TODO: support more complicated signatures for opaque functions
   const func = new wasm.Func(params.length, f);
-  const g: any = (...args: SymbolicParams<P>): Real =>
+  const g: any = (...args: any): any =>
     // TODO: support generics
-    call(g, new Uint32Array(), args as unknown[]) as Real;
+    call(g, new Uint32Array(), args);
   funcs.register(g, func);
   g[inner] = func;
   g[strings] = []; // TODO: support tuples in opaque functions
@@ -544,6 +565,36 @@ export const interp =
     return unpack(f, func.retType(), func.interp(vals)) as ToJs<R>;
   };
 
+// https://www.typescriptlang.org/docs/handbook/2/conditional-types.html
+type ToJvp<T> = [T] extends [Null]
+  ? Null
+  : [T] extends [Bool]
+  ? Bool
+  : [T] extends [Real]
+  ? { re: Real; du: Real }
+  : [T] extends [Nat]
+  ? Nat
+  : { [K in keyof T]: ToJvp<T[K]> };
+
+type JvpArgs<T> = {
+  [K in keyof T]: ToJvp<T[K]>;
+};
+
+/** Construct a function that computes the Jacobian-vector product of `f`. */
+export const jvp = <const A extends readonly any[], const R>(
+  f: Fn & ((...args: A) => R),
+): Fn & ((...args: JvpArgs<A>) => ToJvp<R>) => {
+  const strs = [...f[strings]];
+  const func = f[inner].jvp(reId, duId);
+  const g: any = (...args: any): any =>
+    // TODO: support generics
+    call(g, new Uint32Array(), args);
+  funcs.register(g, func);
+  g[inner] = func;
+  g[strings] = strs;
+  return g;
+};
+
 /** Return the variable ID for the abstract boolean `x`. */
 const boolId = (ctx: Context, x: Bool): number =>
   valId(ctx, ctx.func.tyBool(), x);
@@ -607,6 +658,12 @@ export const neg = (x: Real): Real => {
 export const abs = (x: Real): Real => {
   const ctx = getCtx();
   return newVar(ctx.block.abs(ctx.func, realId(ctx, x)));
+};
+
+/** Return the signum of the abstract number `x`. */
+export const sign = (x: Real): Real => {
+  const ctx = getCtx();
+  return newVar(ctx.block.sign(ctx.func, realId(ctx, x)));
 };
 
 /** Return the square root of the abstract number `x`. */
