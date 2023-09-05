@@ -430,7 +430,7 @@ pub fn jvp(f: &Func) -> Func {
         }],
     };
     for &param in f.params.iter() {
-        ad.maybe_unpack(param);
+        ad.unpack(param);
     }
     let body = ad.block(&f.body);
     Func {
