@@ -73,9 +73,6 @@ export interface Vec<T> {
   [K: Nat]: T;
 }
 
-/** A concrete or abstract vector. */
-type ArrayOrVec<T> = T[] | Vec<T>;
-
 /** The context for an abstract function under construction. */
 interface Context {
   /** Handle to Rust-side information about the function itself. */
@@ -100,6 +97,24 @@ interface Context {
   /** Reverse lookup from strings to IDs; also used for deduplication. */
   stringIds: Map<string, number>;
 }
+
+/** Struct field name for the nonlinear part of a dual number. */
+const re = "re";
+
+/** Struct field name for the linear part of a dual number. */
+const du = "du";
+
+/** Return a fresh initial string cache for constructing a new function. */
+const initStrings = (): {
+  strings: string[];
+  stringIds: Map<string, number>;
+} => ({
+  strings: [re, du],
+  stringIds: new Map([
+    [re, 0],
+    [du, 1],
+  ]),
+});
 
 /** Return the variable ID map for type ID `t`, creating it if necessary. */
 const typeMap = (ctx: Context, t: number): Map<unknown, number> => {
@@ -409,7 +424,7 @@ export const fn = <const P extends readonly any[], const R>(
   if (context !== undefined)
     throw Error("can't define a function while defining another function");
   let out: number | undefined = undefined; // function return variable ID
-  let strs: string[] = ["re", "du"];
+  let { strings: strs, stringIds } = initStrings();
   const builder = new wasm.FuncBuilder(0); // TODO: support generics
   const body = new wasm.Block();
   try {
@@ -418,7 +433,7 @@ export const fn = <const P extends readonly any[], const R>(
       block: body,
       variables: new Map(),
       strings: strs,
-      stringIds: new Map(),
+      stringIds,
     };
     context = ctx;
     const args = params.map((ty) => {
@@ -559,11 +574,16 @@ type JvpArgs<T> = {
   [K in keyof T]: ToJvp<T[K]>;
 };
 
+/** Construct a function that computes the Jacobian-vector product of `f`. */
 export const jvp = <const A extends readonly any[], const R>(
   f: Fn & ((...args: A) => R),
 ): Fn & ((...args: JvpArgs<A>) => ToJvp<R>) => {
   const strs = [...f[strings]];
-  const func = f[inner].jvp();
+  const reId = 0;
+  const duId = 1;
+  if (!(strs[reId] === re && strs[duId] === du))
+    throw Error("missing dual number field names");
+  const func = f[inner].jvp(reId, duId);
   const g: any = (...args: any): any =>
     // TODO: support generics
     call(g, new Uint32Array(), args);

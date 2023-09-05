@@ -387,6 +387,13 @@ impl Autodiff<'_> {
     }
 }
 
+/// Return a function that computes the Jacobian-vector product of this function.
+///
+/// The first two types in the new function are the nonlinear and linear `F64` types, respectively.
+/// Every type from the original function is then mapped over directly in a one-to-one fashion, with
+/// indices shifted by two as necessary. Instances of the `F64` type from the original function are
+/// replaced with a `Tuple` type whose members are the linear and nonlinear `F64` types,
+/// respectively (note that this member order does not match the order of the types themselves).
 pub fn jvp(f: &Func) -> Func {
     let mut types = vec![Ty::F64, Ty::F64];
     types.extend(f.types.iter().map(|ty| match ty {

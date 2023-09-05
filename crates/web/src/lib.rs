@@ -118,8 +118,9 @@ impl<'a> rose::Refs<'a> for Refs<'a> {
 struct Pointee {
     inner: Inner,
 
-    // indices for string keys on tuple types that represent structs; the actual strings are stored
-    // in JavaScript
+    /// Indices for string keys on tuple types that represent structs.
+    ///
+    /// The actual strings are stored in JavaScript.
     structs: Box<[Option<Box<[usize]>>]>,
 
     jvp: RefCell<Option<Weak<Pointee>>>,
@@ -251,7 +252,11 @@ impl Func {
         Ok(to_js_value(&ret)?)
     }
 
-    pub fn jvp(&self) -> Self {
+    /// Return a function that computes the Jacobian-vector product of this function.
+    ///
+    /// `re` must be the string ID for the string `"re"` not just in this function, but in every
+    /// function that this function calls, and so on, transitively. Same for `du` and `"du"`.
+    pub fn jvp(&self, re: usize, du: usize) -> Self {
         let Pointee {
             inner,
             structs,
@@ -265,15 +270,18 @@ impl Func {
             match inner {
                 Inner::Transparent { deps, def } => {
                     let mut structs_jvp = vec![None, None];
+                    // the first two types are the two new versions of `F64`; all the other types
+                    // are just mapped one-to-one, except that previous versions of `F64` become
+                    // tuples, so for those we use the string IDs we have been given
                     structs_jvp.extend(structs.iter().enumerate().map(|(i, s)| {
                         match &def.types[i] {
-                            rose::Ty::F64 => Some([1, 0].into()),
+                            rose::Ty::F64 => Some([du, re].into()),
                             _ => s.clone(),
                         }
                     }));
                     Rc::new(Pointee {
                         inner: Inner::Transparent {
-                            deps: deps.iter().map(|f| f.jvp()).collect(),
+                            deps: deps.iter().map(|f| f.jvp(re, du)).collect(),
                             def: rose_autodiff::jvp(def),
                         },
                         structs: structs_jvp.into(),
@@ -283,7 +291,7 @@ impl Func {
                 Inner::Opaque { .. } => todo!(),
             };
         *cache = Some(Rc::downgrade(&rc));
-        Func { rc }
+        Self { rc }
     }
 }
 
