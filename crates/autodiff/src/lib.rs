@@ -1,9 +1,11 @@
 use rose::{id, Binop, Expr, Func, Instr, Ty, Unop};
 
+// see docstring of `pub fn jvp` below
+
 const REAL: id::Ty = id::ty(0);
 const DUAL: id::Ty = id::ty(1);
 
-// alphabetical order
+// JS frontend requires field names to be alphabetized, and `"du"` comes before `"re"`
 const DU: id::Member = id::member(0);
 const RE: id::Member = id::member(1);
 

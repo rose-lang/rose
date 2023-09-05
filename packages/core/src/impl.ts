@@ -104,15 +104,21 @@ const re = "re";
 /** Struct field name for the linear part of a dual number. */
 const du = "du";
 
+/** String ID for `"re"`. */
+const reId = 0;
+
+/** String ID for `"du"`. */
+const duId = 1;
+
 /** Return a fresh initial string cache for constructing a new function. */
 const initStrings = (): {
   strings: string[];
   stringIds: Map<string, number>;
 } => ({
-  strings: [re, du],
+  strings: [re, du], // order matches `reId` and `duId`
   stringIds: new Map([
-    [re, 0],
-    [du, 1],
+    [re, reId],
+    [du, duId],
   ]),
 });
 
@@ -579,10 +585,6 @@ export const jvp = <const A extends readonly any[], const R>(
   f: Fn & ((...args: A) => R),
 ): Fn & ((...args: JvpArgs<A>) => ToJvp<R>) => {
   const strs = [...f[strings]];
-  const reId = 0;
-  const duId = 1;
-  if (!(strs[reId] === re && strs[duId] === du))
-    throw Error("missing dual number field names");
   const func = f[inner].jvp(reId, duId);
   const g: any = (...args: any): any =>
     // TODO: support generics
