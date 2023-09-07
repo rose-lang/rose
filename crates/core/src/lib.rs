@@ -176,25 +176,16 @@ pub enum Expr {
         /// Variable from `body` holding an array element.
         ret: id::Var,
     },
-    /// Scope for a `Ref` with `Constraint::Read`. Returns `Unit`.
+
+    /// Start a scope for a `Ref` with `Constraint::Read`.
     Read {
         /// Contents of the `Ref`.
         var: id::Var,
-        /// Has type `Ref` with scope `arg` and inner type same as `var`.
-        arg: id::Var,
-        body: Box<[Instr]>,
-        /// Variable from `body` holding the result of this block; escapes into outer scope.
-        ret: id::Var,
     },
-    /// Scope for a `Ref` with `Constraint::Accum`. Returns the final contents of the `Ref`.
+    /// Start a scope for a `Ref` with `Constraint::Accum`.
     Accum {
         /// Topology of the `Ref`.
         shape: id::Var,
-        /// Has type `Ref` with scope `arg` and inner type same as `shape`.
-        arg: id::Var,
-        body: Box<[Instr]>,
-        /// Variable from `body` holding the result of this block; escapes into outer scope.
-        ret: id::Var,
     },
 
     /// Read from a `Ref` whose `scope` satisfies `Constraint::Read`.
@@ -208,6 +199,12 @@ pub enum Expr {
         accum: id::Var,
         /// Must be of the `Ref`'s inner type.
         addend: id::Var,
+    },
+
+    /// Consume a `Ref` to get its contained value.
+    Resolve {
+        /// The `Ref`, which must be in scope.
+        var: id::Var,
     },
 }
 
