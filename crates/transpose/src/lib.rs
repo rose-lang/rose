@@ -80,21 +80,14 @@ impl Transpose<'_> {
 
             Expr::Call { id, generics, args } => todo!(),
             Expr::For { arg, body, ret } => todo!(),
-            Expr::Read {
-                var,
-                arg,
-                body,
-                ret,
-            } => todo!(),
-            Expr::Accum {
-                shape,
-                arg,
-                body,
-                ret,
-            } => todo!(),
+
+            Expr::Read { var } => todo!(),
+            Expr::Accum { shape } => todo!(),
 
             Expr::Ask { var } => todo!(),
             Expr::Add { accum, addend } => todo!(),
+
+            Expr::Resolve { var } => todo!(),
         }
     }
 }
@@ -229,11 +222,14 @@ pub fn transpose(f: &Func, linear: id::Ty) -> (Func, Func) {
 
             Expr::Call { .. } => todo!(),
             Expr::For { .. } => todo!(),
+
             Expr::Read { .. } => todo!(),
             Expr::Accum { .. } => todo!(),
 
             Expr::Ask { .. } => todo!(),
             Expr::Add { .. } => todo!(),
+
+            Expr::Resolve { .. } => todo!(),
         }
         if t != linear && f.types[t.ty()] == Ty::F64 {
             fwd_body.push(Instr {
