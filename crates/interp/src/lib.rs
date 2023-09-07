@@ -256,32 +256,17 @@ impl<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> Interpreter<'a, 'b, O, T> {
                     (0..n).map(|i| self.block(*arg, body, *ret, Val::Fin(i)).clone()),
                 ))
             }
-            Expr::Read {
-                var,
-                arg,
-                body,
-                ret,
-            } => {
-                let r = Val::Ref(Rc::new(self.get(*var).clone()));
-                self.block(*arg, body, *ret, r);
-                Val::Unit
-            }
-            Expr::Accum {
-                shape,
-                arg,
-                body,
-                ret,
-            } => {
-                let x = Val::Ref(Rc::new(self.get(*shape).zero()));
-                self.block(*arg, body, *ret, x.clone());
-                x.inner().clone()
-            }
+
+            &Expr::Read { var } => Val::Ref(Rc::new(self.get(var).clone())),
+            &Expr::Accum { shape } => Val::Ref(Rc::new(self.get(shape).zero())),
 
             &Expr::Ask { var } => self.get(var).inner().clone(),
             &Expr::Add { accum, addend } => {
                 self.get(accum).inner().add(self.get(addend));
                 Val::Unit
             }
+
+            &Expr::Resolve { var } => self.get(var).inner().clone(),
         }
     }
 

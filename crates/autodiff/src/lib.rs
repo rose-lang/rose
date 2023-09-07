@@ -40,22 +40,18 @@ impl Autodiff<'_> {
 
     fn unpack(&mut self, var: id::Var) {
         let i = var.var();
-        if let Ty::F64 = self.old_types[self.old_vars[i].ty()] {
-            let x = self.real(Expr::Member {
-                tuple: var,
-                member: RE,
-            });
-            let dx = self.dual(Expr::Member {
-                tuple: var,
-                member: DU,
-            });
-            self.unpacked[i] = Some((x, dx))
-        }
-    }
-
-    fn maybe_unpack(&mut self, var: id::Var) {
-        if self.unpacked[var.var()].is_none() {
-            self.unpack(var);
+        if self.unpacked[i].is_none() {
+            if let Ty::F64 = self.old_types[self.old_vars[i].ty()] {
+                let x = self.real(Expr::Member {
+                    tuple: var,
+                    member: RE,
+                });
+                let dx = self.dual(Expr::Member {
+                    tuple: var,
+                    member: DU,
+                });
+                self.unpacked[i] = Some((x, dx))
+            }
         }
     }
 
@@ -88,7 +84,7 @@ impl Autodiff<'_> {
     fn block(mut self, orig: &[Instr]) -> Box<[Instr]> {
         for Instr { var, expr } in orig {
             self.instr(*var, expr);
-            self.maybe_unpack(*var);
+            self.unpack(*var);
         }
         self.code.into()
     }
@@ -140,6 +136,14 @@ impl Autodiff<'_> {
                 var,
                 expr: Expr::Select { cond, then, els },
             }),
+            &Expr::Read { var: orig } => self.code.push(Instr {
+                var,
+                expr: Expr::Read { var: orig },
+            }),
+            &Expr::Accum { shape } => self.code.push(Instr {
+                var,
+                expr: Expr::Accum { shape },
+            }),
             &Expr::Ask { var } => self.code.push(Instr {
                 var,
                 expr: Expr::Ask { var },
@@ -147,6 +151,10 @@ impl Autodiff<'_> {
             &Expr::Add { accum, addend } => self.code.push(Instr {
                 var,
                 expr: Expr::Add { accum, addend },
+            }),
+            &Expr::Resolve { var: container } => self.code.push(Instr {
+                var,
+                expr: Expr::Resolve { var: container },
             }),
 
             // less boring cases
@@ -168,42 +176,6 @@ impl Autodiff<'_> {
                         ret: *ret,
                     },
                 })
-            }
-            Expr::Read {
-                var: orig,
-                arg,
-                body,
-                ret,
-            } => {
-                let body = self.child(body);
-                self.code.push(Instr {
-                    var,
-                    expr: Expr::Read {
-                        var: *orig,
-                        arg: *arg,
-                        body,
-                        ret: *ret,
-                    },
-                });
-                self.unpack(*ret); // not `maybe_unpack`, because those vars might be scoped wrong
-            }
-            Expr::Accum {
-                shape,
-                arg,
-                body,
-                ret,
-            } => {
-                let body = self.child(body);
-                self.code.push(Instr {
-                    var,
-                    expr: Expr::Accum {
-                        shape: *shape,
-                        arg: *arg,
-                        body,
-                        ret: *ret,
-                    },
-                });
-                self.unpack(*ret); // not `maybe_unpack`, because those vars might be scoped wrong
             }
 
             // interesting cases

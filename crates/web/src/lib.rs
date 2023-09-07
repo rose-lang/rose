@@ -384,46 +384,13 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                 }
                 writeln!(&mut s, "}}")?
             }
-            rose::Expr::Read {
-                var,
-                arg,
-                body,
-                ret,
-            } => {
-                writeln!(&mut s, "read x{} {{", var.var())?;
-                for _ in 0..spaces {
-                    write!(&mut s, " ")?;
-                }
-                let x = arg.var();
-                writeln!(&mut s, "  x{x}: T{}", def.vars[x].ty())?;
-                print_block(s, def, spaces + 2, body, *ret)?;
-                for _ in 0..spaces {
-                    write!(&mut s, " ")?;
-                }
-                writeln!(&mut s, "}}")?
-            }
-            rose::Expr::Accum {
-                shape,
-                arg,
-                body,
-                ret,
-            } => {
-                writeln!(&mut s, "accum x{} {{", shape.var())?;
-                for _ in 0..spaces {
-                    write!(&mut s, " ")?;
-                }
-                let x = arg.var();
-                writeln!(&mut s, "  x{x}: T{}", def.vars[x].ty())?;
-                print_block(s, def, spaces + 2, body, *ret)?;
-                for _ in 0..spaces {
-                    write!(&mut s, " ")?;
-                }
-                writeln!(&mut s, "}}")?
-            }
+            rose::Expr::Read { var } => writeln!(&mut s, "read x{}", var.var())?,
+            rose::Expr::Accum { shape } => writeln!(&mut s, "accum x{}", shape.var())?,
             rose::Expr::Ask { var } => writeln!(&mut s, "ask x{}", var.var())?,
             rose::Expr::Add { accum, addend } => {
                 writeln!(&mut s, "x{} += x{}", accum.var(), addend.var())?
             }
+            rose::Expr::Resolve { var } => writeln!(&mut s, "resolve x{}", var.var())?,
         }
         Ok(())
     }
@@ -1121,12 +1088,6 @@ impl Block {
             let var = instr.var;
             code.push(instr);
             f.extra(var, code);
-            match &code.last().unwrap().expr {
-                &rose::Expr::Read { ret, .. } | &rose::Expr::Accum { ret, .. } => {
-                    f.extra(ret, code);
-                }
-                _ => {}
-            }
         }
     }
 
