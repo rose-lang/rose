@@ -24,7 +24,7 @@ enum BwdTy {
     /// variable we've introduced; we don't add these as we go because we don't know ahead of time
     /// how many types we'll need for intermediate values, and we want all those intermediate value
     /// type IDs to be the same between the forward and backward passes.
-    Accum,
+    Accum(Option<id::Var>, id::Ty),
 
     /// We don't know the type of this variable yet, but will soon.
     ///
@@ -110,7 +110,7 @@ struct Transpose<'a> {
     block: Block,
 }
 
-impl Transpose<'_> {
+impl<'a> Transpose<'a> {
     fn ty(&mut self, ty: Ty) -> id::Ty {
         let t = id::ty(self.types.len());
         self.types.push(ty);
@@ -140,9 +140,10 @@ impl Transpose<'_> {
         self.block.intermediate_members.push(var);
     }
 
-    fn accum(&mut self, shape: id::Var) -> Lin {
-        let acc = self.bwd_var(BwdTy::Accum);
-        let cot = self.bwd_var(BwdTy::Known(self.f.vars[shape.var()]));
+    fn accum(&mut self, shape: id::Var, scope: Option<id::Var>) -> Lin {
+        let t = self.f.vars[shape.var()];
+        let acc = self.bwd_var(BwdTy::Accum(scope, t));
+        let cot = self.bwd_var(BwdTy::Known(t));
         self.block.bwd_nonlinear.push(Instr {
             var: acc,
             expr: Expr::Accum { shape },
@@ -153,8 +154,9 @@ impl Transpose<'_> {
     }
 
     fn calc(&mut self, tan: id::Var) -> Lin {
-        let acc = self.bwd_var(BwdTy::Accum);
-        let cot = self.bwd_var(BwdTy::Known(DUAL));
+        let t = self.f.vars[tan.var()];
+        let acc = self.bwd_var(BwdTy::Accum(None, t));
+        let cot = self.bwd_var(BwdTy::Known(t));
         self.block.bwd_nonlinear.push(Instr {
             var: acc,
             expr: Expr::Accum {
@@ -202,7 +204,16 @@ impl Transpose<'_> {
                 var,
                 expr: Expr::Bool { val },
             }),
-            &Expr::F64 { val } => todo!(),
+            &Expr::F64 { val } => match self.f.vars[var.var()] {
+                DUAL => {
+                    let lin = self.calc(var);
+                    self.resolve(lin);
+                }
+                _ => self.block.fwd.push(Instr {
+                    var,
+                    expr: Expr::F64 { val },
+                }),
+            },
             &Expr::Fin { val } => {
                 self.block.fwd.push(Instr {
                     var,
@@ -226,7 +237,7 @@ impl Transpose<'_> {
                     },
                 });
                 self.keep(var);
-                let lin = self.accum(var);
+                let lin = self.accum(var, None);
                 for (i, &elem) in elems.iter().enumerate() {
                     if let Some(accum) = self.accums[elem.var()] {
                         let index = self.bwd_var(BwdTy::Known(t));
@@ -259,7 +270,7 @@ impl Transpose<'_> {
                     },
                 });
                 self.keep(var);
-                let lin = self.accum(var);
+                let lin = self.accum(var, None);
                 for (i, &member) in members.iter().enumerate() {
                     if let Some(accum) = self.accums[member.var()] {
                         let addend = self.bwd_var(BwdTy::Known(self.f.vars[member.var()]));
@@ -289,19 +300,24 @@ impl Transpose<'_> {
                     var,
                     expr: Expr::Index { array, index },
                 });
-                let acc = self.bwd_var(BwdTy::Accum);
+                let arr_acc = self.accums[array.var()].unwrap();
+                let acc = self.bwd_var(BwdTy::Accum(Some(arr_acc), self.f.vars[array.var()]));
                 self.accums[var.var()] = Some(acc);
                 self.block.bwd_nonlinear.push(Instr {
                     var: acc,
                     expr: Expr::Slice {
-                        array: self.accums[array.var()].unwrap(),
+                        array: arr_acc,
                         index,
                     },
                 });
             }
             &Expr::Member { tuple, member } => match self.f.vars[var.var()] {
                 REAL => self.reals[var.var()] = Some(tuple),
-                DUAL => self.duals[var.var()] = Some(tuple),
+                DUAL => {
+                    let lin = self.accum(var, None); // TODO
+                    self.duals[var.var()] = Some(tuple);
+                    self.resolve(lin);
+                }
                 _ => {
                     self.block.fwd.push(Instr {
                         var,
@@ -311,12 +327,13 @@ impl Transpose<'_> {
                         var,
                         expr: Expr::Member { tuple, member },
                     });
-                    let acc = self.bwd_var(BwdTy::Accum);
+                    let tup_acc = self.accums[tuple.var()].unwrap();
+                    let acc = self.bwd_var(BwdTy::Accum(Some(tup_acc), self.f.vars[tuple.var()]));
                     self.accums[var.var()] = Some(acc);
                     self.block.bwd_nonlinear.push(Instr {
                         var: acc,
                         expr: Expr::Field {
-                            tuple: self.accums[tuple.var()].unwrap(),
+                            tuple: tup_acc,
                             member,
                         },
                     });
@@ -475,6 +492,11 @@ impl Transpose<'_> {
 
 /// Return two functions that make up the transpose of `f`.
 pub fn transpose(f: &Func) -> (Func, Func) {
+    let mut bwd_vars: Vec<_> = f.vars.iter().map(|&t| BwdTy::Known(t)).collect();
+    let real_shape = id::var(bwd_vars.len());
+    bwd_vars.push(BwdTy::Known(DUAL));
+    let intermediates_tuple = id::var(bwd_vars.len());
+    bwd_vars.push(BwdTy::Unknown);
     let mut tp = Transpose {
         f,
         types: f
@@ -485,7 +507,7 @@ pub fn transpose(f: &Func) -> (Func, Func) {
                 Ty::Unit => Ty::Unit,
                 Ty::Bool => Ty::Unit,
                 Ty::F64 => {
-                    if is_primitive(id::ty(i)) {
+                    if !is_primitive(id::ty(i)) {
                         panic!()
                     }
                     Ty::F64
@@ -517,22 +539,23 @@ pub fn transpose(f: &Func) -> (Func, Func) {
             })
             .collect(),
         fwd_vars: f.vars.to_vec(),
-        bwd_vars: f.vars.iter().map(|&t| BwdTy::Known(t)).collect(),
-        real_shape: id::var(0), // TODO
+        bwd_vars,
+        real_shape,
         reals: vec![None; f.vars.len()].into(),
         duals: vec![None; f.vars.len()].into(),
         accums: vec![None; f.vars.len()].into(),     // TODO
         cotangents: vec![None; f.vars.len()].into(), // TODO
         block: Block {
             fwd: vec![],
-            intermediates_tuple: id::var(0), // TODO
+            intermediates_tuple,
             intermediate_members: vec![],
             bwd_nonlinear: vec![],
             bwd_linear: vec![],
         },
     };
+
     let t_intermediates = tp.block(&f.body);
-    let bwd_types = tp.types.clone();
+    let mut bwd_types = tp.types.clone();
 
     let mut fwd_types = tp.types;
     let t_bundle = id::ty(fwd_types.len());
@@ -548,6 +571,43 @@ pub fn transpose(f: &Func) -> (Func, Func) {
         expr: Expr::Tuple {
             members: vec![f.ret, tp.block.intermediates_tuple].into(),
         },
+    });
+
+    let t_unit = id::ty(bwd_types.len());
+    bwd_types.push(Ty::Unit);
+    let mut bwd_vars: Vec<_> = tp
+        .bwd_vars
+        .into_iter()
+        .enumerate()
+        .map(|(i, t)| match t {
+            BwdTy::Known(t) => t,
+            BwdTy::Unit => t_unit,
+            BwdTy::Accum(scope, inner) => {
+                let scope = id::ty(bwd_types.len());
+                bwd_types.push(Ty::Scope {
+                    kind: Constraint::Accum,
+                    id: id::var(i),
+                });
+                let t = id::ty(bwd_types.len());
+                bwd_types.push(Ty::Ref { scope, inner });
+                t
+            }
+            BwdTy::Unknown => panic!(),
+        })
+        .collect();
+    let bwd_ret = id::var(bwd_vars.len());
+    bwd_vars.push(t_unit);
+    let mut bwd_body = vec![Instr {
+        var: tp.real_shape,
+        expr: Expr::F64 { val: 0. },
+    }];
+    bwd_body.append(&mut tp.block.bwd_nonlinear);
+    let mut bwd_linear = tp.block.bwd_linear;
+    bwd_linear.reverse();
+    bwd_body.append(&mut bwd_linear);
+    bwd_body.push(Instr {
+        var: bwd_ret,
+        expr: Expr::Unit,
     });
 
     (
@@ -577,10 +637,10 @@ pub fn transpose(f: &Func) -> (Func, Func) {
                 })
                 .collect(), // TODO
             types: bwd_types.into(),
-            vars: [].into(),   // TODO
-            params: [].into(), // TODO
-            ret: id::var(0),   // TODO
-            body: [].into(),   // TODO
+            vars: bwd_vars.into(),
+            params: f.params.clone(), // TODO
+            ret: bwd_ret,
+            body: bwd_body.into(),
         },
     )
 }

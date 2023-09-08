@@ -293,6 +293,39 @@ impl Func {
         *cache = Some(Rc::downgrade(&rc));
         Self { rc }
     }
+
+    #[cfg(feature = "debug")]
+    pub fn transpose(&self) -> Result<String, JsError> {
+        match &self.rc.as_ref().inner {
+            Inner::Transparent { def, .. } => {
+                let (fwd, bwd) = rose_transpose::transpose(def);
+                let fwd = Func {
+                    rc: Rc::new(Pointee {
+                        inner: Inner::Transparent {
+                            deps: [].into(),
+                            def: fwd,
+                        },
+                        structs: [].into(),
+                        jvp: RefCell::new(None),
+                    }),
+                };
+                let bwd = Func {
+                    rc: Rc::new(Pointee {
+                        inner: Inner::Transparent {
+                            deps: [].into(),
+                            def: bwd,
+                        },
+                        structs: [].into(),
+                        jvp: RefCell::new(None),
+                    }),
+                };
+                let fwd_str = pprint(&fwd)?;
+                let bwd_str = pprint(&bwd)?;
+                Ok(format!("{fwd_str}\n\n{bwd_str}"))
+            }
+            Inner::Opaque { .. } => todo!(),
+        }
+    }
 }
 
 #[cfg(feature = "debug")]
