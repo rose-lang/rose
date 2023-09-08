@@ -363,13 +363,13 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                 writeln!(&mut s, "x{}[x{}]", array.var(), index.var())?
             }
             rose::Expr::Member { tuple, member } => {
-                writeln!(&mut s, "x{}.{}", tuple.var(), member.member())?
+                writeln!(&mut s, "x{}[{}]", tuple.var(), member.member())?
             }
             rose::Expr::Slice { array, index } => {
                 writeln!(&mut s, "x{}![x{}]", array.var(), index.var())?
             }
             rose::Expr::Field { tuple, member } => {
-                writeln!(&mut s, "x{}!.{}", tuple.var(), member.member())?
+                writeln!(&mut s, "x{}![{}]", tuple.var(), member.member())?
             }
             rose::Expr::Unary { op, arg } => match op {
                 rose::Unop::Not => writeln!(&mut s, "not x{}", arg.var())?,
@@ -488,7 +488,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
             rose::Ty::Unit | rose::Ty::Bool | rose::Ty::F64 => writeln!(&mut s, "{ty:?}")?,
             rose::Ty::Fin { size } => writeln!(&mut s, "{size}")?,
             rose::Ty::Generic { id } => writeln!(&mut s, "G{}", id.generic())?,
-            rose::Ty::Scope { kind, id } => writeln!(&mut s, "B{}: {kind:?}", id.var())?,
+            rose::Ty::Scope { kind, id } => writeln!(&mut s, "x{}: {kind:?}", id.var())?,
             rose::Ty::Ref { scope, inner } => {
                 writeln!(&mut s, "Ref T{} T{}", scope.ty(), inner.ty())?
             }
