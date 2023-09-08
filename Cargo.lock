@@ -191,7 +191,6 @@ dependencies = [
 name = "rose-transpose"
 version = "0.0.0"
 dependencies = [
- "indexmap",
  "rose",
 ]
 
