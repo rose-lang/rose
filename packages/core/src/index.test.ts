@@ -12,6 +12,7 @@ import {
   interp,
   jvp,
   mul,
+  or,
   select,
   sign,
   sqrt,
@@ -346,7 +347,7 @@ describe("valid", () => {
 
   test("JVP with sharing in call graph", () => {
     let f = fn([Real], Real, (x) => x);
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 20; ++i) {
       f = fn([Real], Real, (x) => add(f(x), f(x)));
     }
     const g = interp(jvp(f));
@@ -355,12 +356,23 @@ describe("valid", () => {
 
   test("VJP", () => {
     const f = fn([Vec(2, Real)], Real, (v) => mul(v[0], v[1]));
-    const g = vjp(f);
-    const h = fn([], Vec(3, Real), () => {
-      const { ret: x, grad } = g([2, 3]);
+    const g = fn([], Vec(3, Real), () => {
+      const { ret: x, grad } = vjp(f)([2, 3]);
       const v = grad(1);
       return [x, v[0], v[1]];
     });
-    expect(interp(h)()).toEqual([6, 3, 2]);
+    expect(interp(g)()).toEqual([6, 3, 2]);
+  });
+
+  test("VJP with struct and select", () => {
+    const Stuff = { a: Null, b: Bool, c: Real } as const;
+    const f = fn([Stuff], Real, ({ b, c }) => select(or(false, b), Real, c, 2));
+    const g = fn([Bool, Real], { x: Real, stuff: Stuff }, (b, c) => {
+      const { ret: x, grad } = vjp(f)({ a: null, b, c });
+      return { x, stuff: grad(3) };
+    });
+    const h = interp(g);
+    expect(h(true, 5)).toEqual({ x: 5, stuff: { a: null, b: true, c: 3 } });
+    expect(h(false, 7)).toEqual({ x: 2, stuff: { a: null, b: false, c: 0 } });
   });
 });

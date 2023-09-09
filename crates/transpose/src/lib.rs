@@ -275,10 +275,16 @@ impl<'a> Transpose<'a> {
                 var,
                 expr: Expr::Unit,
             }),
-            &Expr::Bool { val } => self.block.fwd.push(Instr {
-                var,
-                expr: Expr::Bool { val },
-            }),
+            &Expr::Bool { val } => {
+                self.block.fwd.push(Instr {
+                    var,
+                    expr: Expr::Bool { val },
+                });
+                self.block.bwd_nonlin.push(Instr {
+                    var,
+                    expr: Expr::Bool { val },
+                });
+            }
             &Expr::F64 { val } => {
                 match self.f.vars[var.var()] {
                     DUAL => {
@@ -562,12 +568,25 @@ impl<'a> Transpose<'a> {
                         self.resolve(lin);
                     }
                     _ => {
+                        let (a, b) = match op {
+                            Binop::And | Binop::Or | Binop::Iff | Binop::Xor => (left, right),
+                            Binop::Neq
+                            | Binop::Lt
+                            | Binop::Leq
+                            | Binop::Eq
+                            | Binop::Gt
+                            | Binop::Geq
+                            | Binop::Add
+                            | Binop::Sub
+                            | Binop::Mul
+                            | Binop::Div => (self.get_prim(left), self.get_prim(right)),
+                        };
                         self.block.fwd.push(Instr {
                             var,
                             expr: Expr::Binary {
                                 op,
-                                left: self.get_prim(left),
-                                right: self.get_prim(right),
+                                left: a,
+                                right: b,
                             },
                         });
                         self.keep(var);
@@ -575,7 +594,42 @@ impl<'a> Transpose<'a> {
                 }
                 self.prims[var.var()] = Some(Src::Original);
             }
-            &Expr::Select { cond, then, els } => todo!(),
+            &Expr::Select { cond, then, els } => {
+                self.block.fwd.push(Instr {
+                    var,
+                    expr: Expr::Select {
+                        cond,
+                        then: self.get_re(then),
+                        els: self.get_re(els),
+                    },
+                });
+                self.keep(var);
+                let lin = self.accum(var, Scope::Original);
+                let acc_then = self.get_dual_accum(then).unwrap();
+                let acc_els = self.get_dual_accum(els).unwrap();
+                // TODO: this scope is wrong; it actually needs to match both `then` and `els`
+                let acc = self.bwd_var(BwdTy::Accum(Scope::Original, self.f.vars[then.var()]));
+                let unit = self.bwd_var(BwdTy::Unit);
+                self.block.bwd_lin.push(Instr {
+                    var: unit,
+                    expr: Expr::Add {
+                        accum: acc,
+                        addend: lin.cot,
+                    },
+                });
+                self.block.bwd_lin.push(Instr {
+                    var: acc,
+                    expr: Expr::Select {
+                        cond,
+                        then: acc_then,
+                        els: acc_els,
+                    },
+                });
+                self.resolve(lin);
+                if let Ty::F64 = self.types[self.f.vars[var.var()].ty()] {
+                    self.duals[var.var()] = Some((Src::Original, Src::Original));
+                }
+            }
 
             Expr::Call { id, generics, args } => todo!(),
             Expr::For { arg, body, ret } => {
@@ -610,7 +664,7 @@ pub fn transpose(f: &Func) -> (Func, Func) {
         .enumerate()
         .map(|(i, ty)| match ty {
             Ty::Unit => Ty::Unit,
-            Ty::Bool => Ty::Unit,
+            Ty::Bool => Ty::Bool,
             Ty::F64 => {
                 if !is_primitive(id::ty(i)) {
                     panic!()
