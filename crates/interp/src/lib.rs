@@ -193,11 +193,11 @@ impl<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> Interpreter<'a, 'b, O, T> {
             },
 
             &Expr::Slice { array, index } => match (self.get(array).inner(), self.get(index)) {
-                (Val::Array(v), &Val::Fin(i)) => v[i].clone(),
+                (Val::Array(v), &Val::Fin(i)) => Val::Ref(Rc::new(v[i].clone())),
                 _ => unreachable!(),
             },
             &Expr::Field { tuple, member } => match self.get(tuple).inner() {
-                Val::Tuple(x) => x[member.member()].clone(),
+                Val::Tuple(x) => Val::Ref(Rc::new(x[member.member()].clone())),
                 _ => unreachable!(),
             },
 
