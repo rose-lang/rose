@@ -17,6 +17,7 @@ import {
   sqrt,
   sub,
   vec,
+  vjp,
 } from "./index.js";
 
 describe("invalid", () => {
@@ -350,5 +351,10 @@ describe("valid", () => {
     }
     const g = interp(jvp(f));
     expect(g({ re: 2, du: 3 })).toEqual({ re: 2097152, du: 3145728 });
+  });
+
+  test("VJP", () => {
+    const f = fn([Vec(2, Real)], Real, (v) => mul(v[0], v[1]));
+    vjp(f);
   });
 });

@@ -15,7 +15,6 @@ import {
   gt,
   iff,
   inner,
-  jvp,
   leq,
   lt,
   mul,
@@ -188,12 +187,5 @@ T2 = [T1; T0]
 }
 `.trimStart(),
     );
-  });
-
-  test("transpose", () => {
-    const f = fn([Real, Real], Real, (x, y) => mul(x, y));
-    const g = jvp(f);
-    console.log(pprint(g));
-    console.log(g[inner].transpose());
   });
 });
