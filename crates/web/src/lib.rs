@@ -617,7 +617,7 @@ enum Ty {
     /// A tuple type, with additional information about key names that makes it into a struct.
     Struct {
         /// String IDs for key names, in order; the actual strings are stored in JavaScript.
-        keys: Box<[usize]>,
+        keys: Option<Box<[usize]>>,
 
         /// Member types of the underlying tuple. Must be the same length as `keys`.
         members: Box<[id::Ty]>,
@@ -635,7 +635,7 @@ impl Ty {
             Ty::Scope { kind, id } => (rose::Ty::Scope { kind, id }, None),
             Ty::Ref { scope, inner } => (rose::Ty::Ref { scope, inner }, None),
             Ty::Array { index, elem } => (rose::Ty::Array { index, elem }, None),
-            Ty::Struct { keys, members } => (rose::Ty::Tuple { members }, Some(keys)),
+            Ty::Struct { keys, members } => (rose::Ty::Tuple { members }, keys),
         }
     }
 }
@@ -830,7 +830,10 @@ impl FuncBuilder {
     /// `Err` if `t` is out of range or does not represent a struct type.
     pub fn keys(&self, t: usize) -> Result<Box<[usize]>, JsError> {
         match self.ty(t)? {
-            Ty::Struct { keys, members: _ } => Ok(keys.clone()),
+            Ty::Struct {
+                keys: Some(keys),
+                members: _,
+            } => Ok(keys.clone()),
             _ => Err(JsError::new("type is not a struct")),
         }
     }
@@ -942,7 +945,7 @@ impl FuncBuilder {
     pub fn ty_struct(&mut self, keys: &[usize], mems: &[usize]) -> usize {
         self.newtype(
             Ty::Struct {
-                keys: keys.into(),
+                keys: Some(keys.into()),
                 members: mems.iter().map(|&t| id::ty(t)).collect(),
             },
             EnumSet::only(rose::Constraint::Value),
@@ -1127,10 +1130,7 @@ impl FuncBuilder {
                 Ty::Struct {
                     keys: structs[t]
                         .as_ref()
-                        .unwrap()
-                        .iter()
-                        .map(|&s| strings[s])
-                        .collect(),
+                        .map(|ss| ss.iter().map(|&s| strings[s]).collect()),
                     members: members
                         .iter()
                         .map(|x| types[x.ty()])

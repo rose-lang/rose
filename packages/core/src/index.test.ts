@@ -355,6 +355,12 @@ describe("valid", () => {
 
   test("VJP", () => {
     const f = fn([Vec(2, Real)], Real, (v) => mul(v[0], v[1]));
-    vjp(f);
+    const g = vjp(f);
+    const h = fn([], Vec(3, Real), () => {
+      const { ret: x, grad } = g([2, 3]);
+      const v = grad(1);
+      return [x, v[0], v[1]];
+    });
+    expect(interp(h)()).toBe([6, 3, 2]);
   });
 });

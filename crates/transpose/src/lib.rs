@@ -33,6 +33,35 @@ enum BwdTy {
     Unknown,
 }
 
+/// The source of a primitive variable.
+#[derive(Clone, Copy)]
+enum Src {
+    /// This variable is original.
+    Original,
+
+    /// This variable is an alias of an original primitive variable of the same type.
+    Alias(id::Var),
+
+    /// This variable is a component of an original dual number variable.
+    Projection(id::Var),
+}
+
+impl Src {
+    fn prim(self, x: id::Var) -> Self {
+        match self {
+            Self::Original => Self::Alias(x),
+            _ => self,
+        }
+    }
+
+    fn dual(self, x: id::Var) -> Self {
+        match self {
+            Self::Original => Self::Projection(x),
+            _ => self,
+        }
+    }
+}
+
 /// Linear variables in the backward pass for a variable from the original function.
 struct Lin {
     /// Accumulator variable.
@@ -48,16 +77,16 @@ struct Block {
     fwd: Vec<Instr>,
 
     /// Variable IDs for intermediate values to be saved at the end of this forward pass block.
-    intermediate_members: Vec<id::Var>,
+    inter_mem: Vec<id::Var>,
 
     /// Variable ID for the intermediate values tuple in this backward pass block.
-    intermediates_tuple: id::Var,
+    inter_tup: id::Var,
 
     /// Instructions at the beginning of this backward pass block, in order.
-    bwd_nonlinear: Vec<Instr>,
+    bwd_nonlin: Vec<Instr>,
 
     /// Instructions at the end of this backward pass block, in reverse order.
-    bwd_linear: Vec<Instr>,
+    bwd_lin: Vec<Instr>,
 }
 
 /// The forward pass and backward pass of a transposed function under construction.
@@ -94,23 +123,49 @@ struct Transpose<'a> {
     /// one dummy variable as the shape.
     real_shape: id::Var,
 
-    /// Variables from the original function that are just the real part of a dual number variable.
-    reals: Box<[Option<id::Var>]>,
+    /// Sources of primitive variables from the original function.
+    prims: Box<[Option<Src>]>,
 
-    /// Variables from the original function that are just the dual part of a dual number variable.
-    duals: Box<[Option<id::Var>]>,
+    /// Sources for dual number variables from the original function.
+    duals: Box<[Option<(Src, Src)>]>,
 
     /// Accumulator variables for variables from the original function.
     accums: Box<[Option<id::Var>]>,
 
     /// Cotangent variables for variables from the original function.
-    cotangents: Box<[Option<id::Var>]>,
+    cotans: Box<[Option<id::Var>]>,
 
     /// The current block under construction.
     block: Block,
 }
 
 impl<'a> Transpose<'a> {
+    fn re(&self, x: id::Var) -> Src {
+        let (src, _) = self.duals[x.var()].unwrap();
+        src.dual(x)
+    }
+
+    fn du(&self, x: id::Var) -> Src {
+        let (_, src) = self.duals[x.var()].unwrap();
+        src.dual(x)
+    }
+
+    fn get_prim_accum(&self, x: id::Var) -> id::Var {
+        let z = match self.prims[x.var()].unwrap() {
+            Src::Original => x,
+            Src::Alias(y) | Src::Projection(y) => y,
+        };
+        self.accums[z.var()].unwrap()
+    }
+
+    fn get_dual_accum(&self, x: id::Var) -> Option<id::Var> {
+        let z = match self.duals[x.var()] {
+            None | Some((_, Src::Original)) => x,
+            Some((_, Src::Alias(y))) | Some((_, Src::Projection(y))) => y,
+        };
+        self.accums[z.var()]
+    }
+
     fn ty(&mut self, ty: Ty) -> id::Ty {
         let t = id::ty(self.types.len());
         self.types.push(ty);
@@ -130,26 +185,26 @@ impl<'a> Transpose<'a> {
     }
 
     fn keep(&mut self, var: id::Var) {
-        self.block.bwd_nonlinear.push(Instr {
+        self.block.bwd_nonlin.push(Instr {
             var,
             expr: Expr::Member {
-                tuple: self.block.intermediates_tuple,
-                member: id::member(self.block.intermediate_members.len()),
+                tuple: self.block.inter_tup,
+                member: id::member(self.block.inter_mem.len()),
             },
         });
-        self.block.intermediate_members.push(var);
+        self.block.inter_mem.push(var);
     }
 
     fn accum(&mut self, shape: id::Var, scope: Option<id::Var>) -> Lin {
         let t = self.f.vars[shape.var()];
         let acc = self.bwd_var(BwdTy::Accum(scope, t));
         let cot = self.bwd_var(BwdTy::Known(t));
-        self.block.bwd_nonlinear.push(Instr {
+        self.block.bwd_nonlin.push(Instr {
             var: acc,
             expr: Expr::Accum { shape },
         });
         self.accums[shape.var()] = Some(acc);
-        self.cotangents[shape.var()] = Some(cot);
+        self.cotans[shape.var()] = Some(cot);
         Lin { acc, cot }
     }
 
@@ -157,19 +212,19 @@ impl<'a> Transpose<'a> {
         let t = self.f.vars[tan.var()];
         let acc = self.bwd_var(BwdTy::Accum(None, t));
         let cot = self.bwd_var(BwdTy::Known(t));
-        self.block.bwd_nonlinear.push(Instr {
+        self.block.bwd_nonlin.push(Instr {
             var: acc,
             expr: Expr::Accum {
                 shape: self.real_shape,
             },
         });
         self.accums[tan.var()] = Some(acc);
-        self.cotangents[tan.var()] = Some(cot);
+        self.cotans[tan.var()] = Some(cot);
         Lin { acc, cot }
     }
 
     fn resolve(&mut self, lin: Lin) {
-        self.block.bwd_linear.push(Instr {
+        self.block.bwd_lin.push(Instr {
             var: lin.cot,
             expr: Expr::Resolve { var: lin.acc },
         })
@@ -179,7 +234,7 @@ impl<'a> Transpose<'a> {
         for instr in block.iter() {
             self.instr(instr.var, &instr.expr);
         }
-        let vars = take(&mut self.block.intermediate_members);
+        let vars = take(&mut self.block.inter_mem);
         let t = self.ty(Ty::Tuple {
             members: vars.iter().map(|&x| self.fwd_vars[x.var()]).collect(),
         });
@@ -190,7 +245,7 @@ impl<'a> Transpose<'a> {
                 members: vars.into(),
             },
         });
-        self.bwd_vars[self.block.intermediates_tuple.var()] = BwdTy::Known(t);
+        self.bwd_vars[self.block.inter_tup.var()] = BwdTy::Known(t);
         t
     }
 
@@ -204,22 +259,25 @@ impl<'a> Transpose<'a> {
                 var,
                 expr: Expr::Bool { val },
             }),
-            &Expr::F64 { val } => match self.f.vars[var.var()] {
-                DUAL => {
-                    let lin = self.calc(var);
-                    self.resolve(lin);
+            &Expr::F64 { val } => {
+                match self.f.vars[var.var()] {
+                    DUAL => {
+                        let lin = self.calc(var);
+                        self.resolve(lin);
+                    }
+                    _ => self.block.fwd.push(Instr {
+                        var,
+                        expr: Expr::F64 { val },
+                    }),
                 }
-                _ => self.block.fwd.push(Instr {
-                    var,
-                    expr: Expr::F64 { val },
-                }),
-            },
+                self.prims[var.var()] = Some(Src::Original);
+            }
             &Expr::Fin { val } => {
                 self.block.fwd.push(Instr {
                     var,
                     expr: Expr::Fin { val },
                 });
-                self.block.bwd_nonlinear.push(Instr {
+                self.block.bwd_nonlin.push(Instr {
                     var,
                     expr: Expr::Fin { val },
                 });
@@ -239,22 +297,22 @@ impl<'a> Transpose<'a> {
                 self.keep(var);
                 let lin = self.accum(var, None);
                 for (i, &elem) in elems.iter().enumerate() {
-                    if let Some(accum) = self.accums[elem.var()] {
+                    if let Some(accum) = self.get_dual_accum(elem) {
                         let index = self.bwd_var(BwdTy::Known(t));
                         let addend = self.bwd_var(BwdTy::Known(self.f.vars[elem.var()]));
                         let unit = self.bwd_var(BwdTy::Unit);
-                        self.block.bwd_linear.push(Instr {
+                        self.block.bwd_lin.push(Instr {
                             var: unit,
                             expr: Expr::Add { accum, addend },
                         });
-                        self.block.bwd_linear.push(Instr {
+                        self.block.bwd_lin.push(Instr {
                             var: addend,
                             expr: Expr::Index {
                                 array: lin.cot,
                                 index,
                             },
                         });
-                        self.block.bwd_linear.push(Instr {
+                        self.block.bwd_lin.push(Instr {
                             var: index,
                             expr: Expr::Fin { val: i },
                         });
@@ -262,220 +320,242 @@ impl<'a> Transpose<'a> {
                 }
                 self.resolve(lin);
             }
-            Expr::Tuple { members } => {
-                self.block.fwd.push(Instr {
-                    var,
-                    expr: Expr::Tuple {
-                        members: members.clone(),
-                    },
-                });
-                self.keep(var);
-                let lin = self.accum(var, None);
-                for (i, &member) in members.iter().enumerate() {
-                    if let Some(accum) = self.accums[member.var()] {
-                        let addend = self.bwd_var(BwdTy::Known(self.f.vars[member.var()]));
-                        let unit = self.bwd_var(BwdTy::Unit);
-                        self.block.bwd_linear.push(Instr {
-                            var: unit,
-                            expr: Expr::Add { accum, addend },
-                        });
-                        self.block.bwd_linear.push(Instr {
-                            var: addend,
-                            expr: Expr::Member {
-                                tuple: lin.cot,
-                                member: id::member(i),
-                            },
-                        });
-                    }
+            Expr::Tuple { members } => match self.types[self.f.vars[var.var()].ty()] {
+                Ty::F64 => {
+                    let x = members[0];
+                    let dx = members[1];
+                    self.duals[var.var()] = Some((
+                        self.prims[x.var()].unwrap().prim(x),
+                        self.prims[dx.var()].unwrap().prim(dx),
+                    ));
                 }
-                self.resolve(lin);
-            }
+                _ => {
+                    self.block.fwd.push(Instr {
+                        var,
+                        expr: Expr::Tuple {
+                            members: members.clone(),
+                        },
+                    });
+                    self.keep(var);
+                    let lin = self.accum(var, None);
+                    for (i, &member) in members.iter().enumerate() {
+                        if let Some(accum) = self.get_dual_accum(member) {
+                            let addend = self.bwd_var(BwdTy::Known(self.f.vars[member.var()]));
+                            let unit = self.bwd_var(BwdTy::Unit);
+                            self.block.bwd_lin.push(Instr {
+                                var: unit,
+                                expr: Expr::Add { accum, addend },
+                            });
+                            self.block.bwd_lin.push(Instr {
+                                var: addend,
+                                expr: Expr::Member {
+                                    tuple: lin.cot,
+                                    member: id::member(i),
+                                },
+                            });
+                        }
+                    }
+                    self.resolve(lin);
+                }
+            },
 
             &Expr::Index { array, index } => {
                 self.block.fwd.push(Instr {
                     var,
                     expr: Expr::Index { array, index },
                 });
-                self.block.bwd_nonlinear.push(Instr {
+                self.block.bwd_nonlin.push(Instr {
                     var,
                     expr: Expr::Index { array, index },
                 });
                 let arr_acc = self.accums[array.var()].unwrap();
                 let acc = self.bwd_var(BwdTy::Accum(Some(arr_acc), self.f.vars[array.var()]));
                 self.accums[var.var()] = Some(acc);
-                self.block.bwd_nonlinear.push(Instr {
+                self.block.bwd_nonlin.push(Instr {
                     var: acc,
                     expr: Expr::Slice {
                         array: arr_acc,
                         index,
                     },
                 });
+                if let Ty::F64 = self.types[self.f.vars[var.var()].ty()] {
+                    self.duals[var.var()] = Some((Src::Original, Src::Original));
+                }
             }
-            &Expr::Member { tuple, member } => match self.f.vars[var.var()] {
-                REAL => self.reals[var.var()] = Some(tuple),
-                DUAL => {
-                    let lin = self.accum(var, None); // TODO
-                    self.duals[var.var()] = Some(tuple);
-                    self.resolve(lin);
+            &Expr::Member { tuple, member } => {
+                let t = self.f.vars[var.var()];
+                match t {
+                    REAL => self.prims[var.var()] = Some(self.re(tuple)),
+                    DUAL => self.prims[var.var()] = Some(self.du(tuple)),
+                    _ => {
+                        self.block.fwd.push(Instr {
+                            var,
+                            expr: Expr::Member { tuple, member },
+                        });
+                        self.block.bwd_nonlin.push(Instr {
+                            var,
+                            expr: Expr::Member { tuple, member },
+                        });
+                        let tup_acc = self.accums[tuple.var()].unwrap();
+                        let acc =
+                            self.bwd_var(BwdTy::Accum(Some(tup_acc), self.f.vars[tuple.var()]));
+                        self.accums[var.var()] = Some(acc);
+                        self.block.bwd_nonlin.push(Instr {
+                            var: acc,
+                            expr: Expr::Field {
+                                tuple: tup_acc,
+                                member,
+                            },
+                        });
+                        if let Ty::F64 = self.types[t.ty()] {
+                            self.duals[var.var()] = Some((Src::Original, Src::Original));
+                        }
+                    }
                 }
-                _ => {
-                    self.block.fwd.push(Instr {
-                        var,
-                        expr: Expr::Member { tuple, member },
-                    });
-                    self.block.bwd_nonlinear.push(Instr {
-                        var,
-                        expr: Expr::Member { tuple, member },
-                    });
-                    let tup_acc = self.accums[tuple.var()].unwrap();
-                    let acc = self.bwd_var(BwdTy::Accum(Some(tup_acc), self.f.vars[tuple.var()]));
-                    self.accums[var.var()] = Some(acc);
-                    self.block.bwd_nonlinear.push(Instr {
-                        var: acc,
-                        expr: Expr::Field {
-                            tuple: tup_acc,
-                            member,
-                        },
-                    });
-                }
-            },
+            }
 
             &Expr::Slice { array, index } => todo!(),
             &Expr::Field { tuple, member } => todo!(),
 
-            &Expr::Unary { op, arg } => match self.f.vars[var.var()] {
-                DUAL => match op {
-                    Unop::Not | Unop::Abs | Unop::Sign | Unop::Sqrt => panic!(),
-                    Unop::Neg => {
-                        let lin = self.calc(var);
-                        let res = self.bwd_var(BwdTy::Known(DUAL));
-                        let unit = self.bwd_var(BwdTy::Unit);
-                        self.block.bwd_linear.push(Instr {
-                            var: unit,
-                            expr: Expr::Add {
-                                accum: self.accums[arg.var()].unwrap(),
-                                addend: res,
-                            },
-                        });
-                        self.block.bwd_linear.push(Instr {
-                            var: res,
-                            expr: Expr::Unary {
-                                op: Unop::Neg,
-                                arg: lin.cot,
-                            },
-                        });
-                        self.resolve(lin);
-                    }
-                },
-                _ => {
-                    self.block.fwd.push(Instr {
-                        var,
-                        expr: Expr::Unary { op, arg },
-                    });
-                    self.keep(var);
-                }
-            },
-            &Expr::Binary { op, left, right } => match self.f.vars[var.var()] {
-                DUAL => {
-                    let lin = self.calc(var);
-                    match op {
-                        Binop::And
-                        | Binop::Or
-                        | Binop::Iff
-                        | Binop::Xor
-                        | Binop::Neq
-                        | Binop::Lt
-                        | Binop::Leq
-                        | Binop::Eq
-                        | Binop::Gt
-                        | Binop::Geq => panic!(),
-                        Binop::Add => {
-                            let a = self.bwd_var(BwdTy::Unit);
-                            let b = self.bwd_var(BwdTy::Unit);
-                            self.block.bwd_linear.push(Instr {
-                                var: a,
-                                expr: Expr::Add {
-                                    accum: self.accums[left.var()].unwrap(),
-                                    addend: lin.cot,
-                                },
-                            });
-                            self.block.bwd_linear.push(Instr {
-                                var: b,
-                                expr: Expr::Add {
-                                    accum: self.accums[right.var()].unwrap(),
-                                    addend: lin.cot,
-                                },
-                            });
-                        }
-                        Binop::Sub => {
+            &Expr::Unary { op, arg } => {
+                match self.f.vars[var.var()] {
+                    DUAL => match op {
+                        Unop::Not | Unop::Abs | Unop::Sign | Unop::Sqrt => panic!(),
+                        Unop::Neg => {
+                            let lin = self.calc(var);
                             let res = self.bwd_var(BwdTy::Known(DUAL));
-                            let a = self.bwd_var(BwdTy::Unit);
-                            let b = self.bwd_var(BwdTy::Unit);
-                            self.block.bwd_linear.push(Instr {
-                                var: a,
+                            let unit = self.bwd_var(BwdTy::Unit);
+                            self.block.bwd_lin.push(Instr {
+                                var: unit,
                                 expr: Expr::Add {
-                                    accum: self.accums[left.var()].unwrap(),
-                                    addend: lin.cot,
-                                },
-                            });
-                            self.block.bwd_linear.push(Instr {
-                                var: b,
-                                expr: Expr::Add {
-                                    accum: self.accums[right.var()].unwrap(),
+                                    accum: self.get_prim_accum(arg),
                                     addend: res,
                                 },
                             });
-                            self.block.bwd_linear.push(Instr {
+                            self.block.bwd_lin.push(Instr {
                                 var: res,
                                 expr: Expr::Unary {
                                     op: Unop::Neg,
                                     arg: lin.cot,
                                 },
                             });
+                            self.resolve(lin);
                         }
-                        Binop::Mul | Binop::Div => {
-                            let res = self.bwd_var(BwdTy::Known(DUAL));
-                            let unit = self.bwd_var(BwdTy::Unit);
-                            self.block.bwd_linear.push(Instr {
-                                var: unit,
-                                expr: Expr::Add {
-                                    accum: self.accums[left.var()].unwrap(),
-                                    addend: res,
-                                },
-                            });
-                            self.block.bwd_linear.push(Instr {
-                                var: res,
-                                expr: Expr::Binary {
-                                    op,
-                                    left: lin.cot,
-                                    right,
-                                },
-                            });
-                        }
+                    },
+                    _ => {
+                        self.block.fwd.push(Instr {
+                            var,
+                            expr: Expr::Unary { op, arg },
+                        });
+                        self.keep(var);
                     }
-                    self.resolve(lin);
                 }
-                _ => {
-                    self.block.fwd.push(Instr {
-                        var,
-                        expr: Expr::Binary { op, left, right },
-                    });
-                    self.keep(var);
+                self.prims[var.var()] = Some(Src::Original);
+            }
+            &Expr::Binary { op, left, right } => {
+                match self.f.vars[var.var()] {
+                    DUAL => {
+                        let lin = self.calc(var);
+                        match op {
+                            Binop::And
+                            | Binop::Or
+                            | Binop::Iff
+                            | Binop::Xor
+                            | Binop::Neq
+                            | Binop::Lt
+                            | Binop::Leq
+                            | Binop::Eq
+                            | Binop::Gt
+                            | Binop::Geq => panic!(),
+                            Binop::Add => {
+                                let a = self.bwd_var(BwdTy::Unit);
+                                let b = self.bwd_var(BwdTy::Unit);
+                                self.block.bwd_lin.push(Instr {
+                                    var: a,
+                                    expr: Expr::Add {
+                                        accum: self.get_prim_accum(left),
+                                        addend: lin.cot,
+                                    },
+                                });
+                                self.block.bwd_lin.push(Instr {
+                                    var: b,
+                                    expr: Expr::Add {
+                                        accum: self.get_prim_accum(right),
+                                        addend: lin.cot,
+                                    },
+                                });
+                            }
+                            Binop::Sub => {
+                                let res = self.bwd_var(BwdTy::Known(DUAL));
+                                let a = self.bwd_var(BwdTy::Unit);
+                                let b = self.bwd_var(BwdTy::Unit);
+                                self.block.bwd_lin.push(Instr {
+                                    var: a,
+                                    expr: Expr::Add {
+                                        accum: self.get_prim_accum(left),
+                                        addend: lin.cot,
+                                    },
+                                });
+                                self.block.bwd_lin.push(Instr {
+                                    var: b,
+                                    expr: Expr::Add {
+                                        accum: self.get_prim_accum(right),
+                                        addend: res,
+                                    },
+                                });
+                                self.block.bwd_lin.push(Instr {
+                                    var: res,
+                                    expr: Expr::Unary {
+                                        op: Unop::Neg,
+                                        arg: lin.cot,
+                                    },
+                                });
+                            }
+                            Binop::Mul | Binop::Div => {
+                                let res = self.bwd_var(BwdTy::Known(DUAL));
+                                let unit = self.bwd_var(BwdTy::Unit);
+                                self.block.bwd_lin.push(Instr {
+                                    var: unit,
+                                    expr: Expr::Add {
+                                        accum: self.get_prim_accum(left),
+                                        addend: res,
+                                    },
+                                });
+                                self.block.bwd_lin.push(Instr {
+                                    var: res,
+                                    expr: Expr::Binary {
+                                        op,
+                                        left: lin.cot,
+                                        right,
+                                    },
+                                });
+                            }
+                        }
+                        self.resolve(lin);
+                    }
+                    _ => {
+                        self.block.fwd.push(Instr {
+                            var,
+                            expr: Expr::Binary { op, left, right },
+                        });
+                        self.keep(var);
+                    }
                 }
-            },
+                self.prims[var.var()] = Some(Src::Original);
+            }
             &Expr::Select { cond, then, els } => todo!(),
 
             Expr::Call { id, generics, args } => todo!(),
             Expr::For { arg, body, ret } => {
                 let mut block = Block {
                     fwd: vec![],
-                    intermediate_members: vec![],
-                    intermediates_tuple: self.bwd_var(BwdTy::Unknown),
-                    bwd_nonlinear: vec![],
-                    bwd_linear: vec![],
+                    inter_mem: vec![],
+                    inter_tup: self.bwd_var(BwdTy::Unknown),
+                    bwd_nonlin: vec![],
+                    bwd_lin: vec![],
                 };
                 swap(&mut self.block, &mut block);
-                self.block(body);
+                self.block(body); // TODO
                 swap(&mut self.block, &mut block);
             }
 
@@ -492,65 +572,81 @@ impl<'a> Transpose<'a> {
 
 /// Return two functions that make up the transpose of `f`.
 pub fn transpose(f: &Func) -> (Func, Func) {
+    let types: Vec<_> = f
+        .types
+        .iter()
+        .enumerate()
+        .map(|(i, ty)| match ty {
+            Ty::Unit => Ty::Unit,
+            Ty::Bool => Ty::Unit,
+            Ty::F64 => {
+                if !is_primitive(id::ty(i)) {
+                    panic!()
+                }
+                Ty::F64
+            }
+            &Ty::Fin { size } => Ty::Fin { size },
+            &Ty::Generic { id } => Ty::Generic { id },
+            &Ty::Scope { kind, id } => Ty::Scope { kind, id },
+            &Ty::Ref { scope, inner } => {
+                if is_primitive(inner) {
+                    panic!()
+                }
+                Ty::Ref { scope, inner }
+            }
+            &Ty::Array { index, elem } => {
+                if is_primitive(elem) {
+                    panic!()
+                }
+                Ty::Array { index, elem }
+            }
+            Ty::Tuple { members } => {
+                if members.iter().any(|&t| is_primitive(t)) {
+                    Ty::F64
+                } else {
+                    Ty::Tuple {
+                        members: members.clone(),
+                    }
+                }
+            }
+        })
+        .collect();
+
     let mut bwd_vars: Vec<_> = f.vars.iter().map(|&t| BwdTy::Known(t)).collect();
     let real_shape = id::var(bwd_vars.len());
     bwd_vars.push(BwdTy::Known(DUAL));
     let intermediates_tuple = id::var(bwd_vars.len());
     bwd_vars.push(BwdTy::Unknown);
+
+    let mut duals = vec![None; f.vars.len()].into_boxed_slice();
+    let mut accums = vec![None; f.vars.len()].into_boxed_slice();
+
+    for param in f.params.iter() {
+        let t = f.vars[param.var()];
+        if let Ty::F64 = types[t.ty()] {
+            duals[param.var()] = Some((Src::Original, Src::Original));
+        }
+        let acc = id::var(bwd_vars.len());
+        bwd_vars.push(BwdTy::Accum(None, t));
+        accums[param.var()] = Some(acc);
+    }
+
     let mut tp = Transpose {
         f,
-        types: f
-            .types
-            .iter()
-            .enumerate()
-            .map(|(i, ty)| match ty {
-                Ty::Unit => Ty::Unit,
-                Ty::Bool => Ty::Unit,
-                Ty::F64 => {
-                    if !is_primitive(id::ty(i)) {
-                        panic!()
-                    }
-                    Ty::F64
-                }
-                &Ty::Fin { size } => Ty::Fin { size },
-                &Ty::Generic { id } => Ty::Generic { id },
-                &Ty::Scope { kind, id } => Ty::Scope { kind, id },
-                &Ty::Ref { scope, inner } => {
-                    if is_primitive(inner) {
-                        panic!()
-                    }
-                    Ty::Ref { scope, inner }
-                }
-                &Ty::Array { index, elem } => {
-                    if is_primitive(elem) {
-                        panic!()
-                    }
-                    Ty::Array { index, elem }
-                }
-                Ty::Tuple { members } => {
-                    if members.iter().any(|&t| is_primitive(t)) {
-                        Ty::F64
-                    } else {
-                        Ty::Tuple {
-                            members: members.clone(),
-                        }
-                    }
-                }
-            })
-            .collect(),
+        types,
         fwd_vars: f.vars.to_vec(),
         bwd_vars,
         real_shape,
-        reals: vec![None; f.vars.len()].into(),
-        duals: vec![None; f.vars.len()].into(),
-        accums: vec![None; f.vars.len()].into(),     // TODO
-        cotangents: vec![None; f.vars.len()].into(), // TODO
+        prims: vec![None; f.vars.len()].into(),
+        duals,
+        accums,
+        cotans: vec![None; f.vars.len()].into(),
         block: Block {
             fwd: vec![],
-            intermediates_tuple,
-            intermediate_members: vec![],
-            bwd_nonlinear: vec![],
-            bwd_linear: vec![],
+            inter_tup: intermediates_tuple,
+            inter_mem: vec![],
+            bwd_nonlin: vec![],
+            bwd_lin: vec![],
         },
     };
 
@@ -569,7 +665,7 @@ pub fn transpose(f: &Func) -> (Func, Func) {
     fwd_body.push(Instr {
         var: fwd_ret,
         expr: Expr::Tuple {
-            members: vec![f.ret, tp.block.intermediates_tuple].into(),
+            members: vec![f.ret, tp.block.inter_tup].into(),
         },
     });
 
@@ -601,8 +697,8 @@ pub fn transpose(f: &Func) -> (Func, Func) {
         var: tp.real_shape,
         expr: Expr::F64 { val: 0. },
     }];
-    bwd_body.append(&mut tp.block.bwd_nonlinear);
-    let mut bwd_linear = tp.block.bwd_linear;
+    bwd_body.append(&mut tp.block.bwd_nonlin);
+    let mut bwd_linear = tp.block.bwd_lin;
     bwd_linear.reverse();
     bwd_body.append(&mut bwd_linear);
     bwd_body.push(Instr {
