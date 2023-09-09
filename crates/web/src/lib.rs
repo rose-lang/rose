@@ -40,6 +40,7 @@ pub fn layouts() -> Result<JsValue, serde_wasm_bindgen::Error> {
         ("Func", layout::<rose::Func>()),
         ("Instr", layout::<rose::Instr>()),
         ("Ty", layout::<rose::Ty>()),
+        ("Val", layout::<rose_interp::Val>()),
     ])
 }
 

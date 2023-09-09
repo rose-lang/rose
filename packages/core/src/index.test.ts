@@ -361,6 +361,6 @@ describe("valid", () => {
       const v = grad(1);
       return [x, v[0], v[1]];
     });
-    expect(interp(h)()).toBe([6, 3, 2]);
+    expect(interp(h)()).toEqual([6, 3, 2]);
   });
 });
