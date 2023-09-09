@@ -271,10 +271,18 @@ impl<'a> Transpose<'a> {
 
     fn instr(&mut self, var: id::Var, expr: &Expr) {
         match expr {
-            Expr::Unit => self.block.fwd.push(Instr {
-                var,
-                expr: Expr::Unit,
-            }),
+            Expr::Unit => {
+                self.block.fwd.push(Instr {
+                    var,
+                    expr: Expr::Unit,
+                });
+                self.block.bwd_nonlin.push(Instr {
+                    var,
+                    expr: Expr::Unit,
+                });
+                let lin = self.accum(var, Scope::Original);
+                self.resolve(lin);
+            }
             &Expr::Bool { val } => {
                 self.block.fwd.push(Instr {
                     var,
@@ -284,6 +292,8 @@ impl<'a> Transpose<'a> {
                     var,
                     expr: Expr::Bool { val },
                 });
+                let lin = self.accum(var, Scope::Original);
+                self.resolve(lin);
             }
             &Expr::F64 { val } => {
                 match self.f.vars[var.var()] {
@@ -307,6 +317,8 @@ impl<'a> Transpose<'a> {
                     var,
                     expr: Expr::Fin { val },
                 });
+                let lin = self.accum(var, Scope::Original);
+                self.resolve(lin);
             }
 
             Expr::Array { elems } => {

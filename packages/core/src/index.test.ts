@@ -375,4 +375,28 @@ describe("valid", () => {
     expect(h(true, 5)).toEqual({ x: 5, stuff: { a: null, b: true, c: 3 } });
     expect(h(false, 7)).toEqual({ x: 2, stuff: { a: null, b: false, c: 0 } });
   });
+
+  test("VJP with select on null", () => {
+    const f = fn([Null], Null, () => select(true, Null, null, null));
+    const g = fn([], Null, () => vjp(f)(null).ret);
+    const h = interp(g);
+    expect(h()).toBe(null);
+  });
+
+  test("VJP with select on booleans", () => {
+    const f = fn([Bool], Bool, (p) => select(p, Bool, false, true));
+    const g = fn([Bool], Bool, (p) => vjp(f)(p).ret);
+    const h = interp(g);
+    expect(h(true)).toBe(false);
+    expect(h(false)).toBe(true);
+  });
+
+  test("VJP with select on indices", () => {
+    const n = 2;
+    const f = fn([Bool], n, (p) => select(p, n, 0, 1));
+    const g = fn([Bool], n, (p) => vjp(f)(p).ret);
+    const h = interp(g);
+    expect(h(true)).toBe(0);
+    expect(h(false)).toBe(1);
+  });
 });
