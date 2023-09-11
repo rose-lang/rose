@@ -12,13 +12,11 @@ import {
   interp,
   jvp,
   mul,
-  or,
   select,
   sign,
   sqrt,
   sub,
   vec,
-  vjp,
 } from "./index.js";
 
 describe("invalid", () => {
@@ -347,56 +345,10 @@ describe("valid", () => {
 
   test("JVP with sharing in call graph", () => {
     let f = fn([Real], Real, (x) => x);
-    for (let i = 0; i < 20; ++i) {
+    for (let i = 0; i < 20; i++) {
       f = fn([Real], Real, (x) => add(f(x), f(x)));
     }
     const g = interp(jvp(f));
     expect(g({ re: 2, du: 3 })).toEqual({ re: 2097152, du: 3145728 });
-  });
-
-  test("VJP", () => {
-    const f = fn([Vec(2, Real)], Real, (v) => mul(v[0], v[1]));
-    const g = fn([], Vec(3, Real), () => {
-      const { ret: x, grad } = vjp(f)([2, 3]);
-      const v = grad(1);
-      return [x, v[0], v[1]];
-    });
-    expect(interp(g)()).toEqual([6, 3, 2]);
-  });
-
-  test("VJP with struct and select", () => {
-    const Stuff = { a: Null, b: Bool, c: Real } as const;
-    const f = fn([Stuff], Real, ({ b, c }) => select(or(false, b), Real, c, 2));
-    const g = fn([Bool, Real], { x: Real, stuff: Stuff }, (b, c) => {
-      const { ret: x, grad } = vjp(f)({ a: null, b, c });
-      return { x, stuff: grad(3) };
-    });
-    const h = interp(g);
-    expect(h(true, 5)).toEqual({ x: 5, stuff: { a: null, b: true, c: 3 } });
-    expect(h(false, 7)).toEqual({ x: 2, stuff: { a: null, b: false, c: 0 } });
-  });
-
-  test("VJP with select on null", () => {
-    const f = fn([Null], Null, () => select(true, Null, null, null));
-    const g = fn([], Null, () => vjp(f)(null).ret);
-    const h = interp(g);
-    expect(h()).toBe(null);
-  });
-
-  test("VJP with select on booleans", () => {
-    const f = fn([Bool], Bool, (p) => select(p, Bool, false, true));
-    const g = fn([Bool], Bool, (p) => vjp(f)(p).ret);
-    const h = interp(g);
-    expect(h(true)).toBe(false);
-    expect(h(false)).toBe(true);
-  });
-
-  test("VJP with select on indices", () => {
-    const n = 2;
-    const f = fn([Bool], n, (p) => select(p, n, 0, 1));
-    const g = fn([Bool], n, (p) => vjp(f)(p).ret);
-    const h = interp(g);
-    expect(h(true)).toBe(0);
-    expect(h(false)).toBe(1);
   });
 });

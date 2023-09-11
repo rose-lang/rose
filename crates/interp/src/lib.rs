@@ -16,7 +16,7 @@ pub enum Val {
     Bool(bool),
     F64(Cell<f64>),
     Fin(usize),
-    Ref(Rc<Val>, Option<usize>),
+    Ref(Rc<Val>),
     Array(Vals), // assume all indices are `Fin`
     Tuple(Vals),
 }
@@ -50,35 +50,9 @@ impl Val {
         }
     }
 
-    fn fin(&self) -> usize {
-        match self {
-            &Val::Fin(i) => i,
-            _ => unreachable!(),
-        }
-    }
-
-    fn get(&self, i: usize) -> &Self {
-        match self {
-            Val::Array(x) => &x[i],
-            Val::Tuple(x) => &x[i],
-            _ => unreachable!(),
-        }
-    }
-
-    fn slice(&self, i: usize) -> Self {
-        match self {
-            Val::Ref(x, None) => Val::Ref(Rc::clone(x), Some(i)),
-            Val::Ref(x, Some(j)) => Val::Ref(Rc::new(x.get(*j).clone()), Some(i)),
-            _ => unreachable!(),
-        }
-    }
-
     fn inner(&self) -> &Self {
         match self {
-            Val::Ref(x, i) => match i {
-                None => x.as_ref(),
-                &Some(j) => x.get(j),
-            },
+            Val::Ref(x) => x.as_ref(),
             _ => unreachable!(),
         }
     }
@@ -90,7 +64,7 @@ impl Val {
             &Self::Bool(x) => Self::Bool(x),
             Self::F64(_) => Self::F64(Cell::new(0.)),
             &Self::Fin(x) => Self::Fin(x),
-            Self::Ref(..) => unreachable!(),
+            Self::Ref(_) => unreachable!(),
             Self::Array(x) => Self::Array(collect_vals(x.iter().map(|x| x.zero()))),
             Self::Tuple(x) => Self::Tuple(collect_vals(x.iter().map(|x| x.zero()))),
         }
@@ -218,8 +192,14 @@ impl<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> Interpreter<'a, 'b, O, T> {
                 _ => unreachable!(),
             },
 
-            &Expr::Slice { array, index } => self.get(array).slice(self.get(index).fin()),
-            &Expr::Field { tuple, member } => self.get(tuple).slice(member.member()),
+            &Expr::Slice { array, index } => match (self.get(array).inner(), self.get(index)) {
+                (Val::Array(v), &Val::Fin(i)) => v[i].clone(),
+                _ => unreachable!(),
+            },
+            &Expr::Field { tuple, member } => match self.get(tuple).inner() {
+                Val::Tuple(x) => x[member.member()].clone(),
+                _ => unreachable!(),
+            },
 
             &Expr::Unary { op, arg } => {
                 let x = self.get(arg);
@@ -277,8 +257,8 @@ impl<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> Interpreter<'a, 'b, O, T> {
                 ))
             }
 
-            &Expr::Read { var } => Val::Ref(Rc::new(self.get(var).clone()), None),
-            &Expr::Accum { shape } => Val::Ref(Rc::new(self.get(shape).zero()), None),
+            &Expr::Read { var } => Val::Ref(Rc::new(self.get(var).clone())),
+            &Expr::Accum { shape } => Val::Ref(Rc::new(self.get(shape).zero())),
 
             &Expr::Ask { var } => self.get(var).inner().clone(),
             &Expr::Add { accum, addend } => {

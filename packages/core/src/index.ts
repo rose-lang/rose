@@ -27,6 +27,5 @@ export {
   sqrt,
   sub,
   vec,
-  vjp,
   xor,
 } from "./impl.js";

@@ -15,7 +15,6 @@ js-sys = "0.3"
 rose = { path = "../core" }
 rose-autodiff = { path = "../autodiff" }
 rose-interp = { path = "../interp", features = ["serde"] }
-rose-transpose = { path = "../transpose" }
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.4"
 wasm-bindgen = "=0.2.87" # Must be this version of wbg

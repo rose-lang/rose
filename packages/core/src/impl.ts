@@ -595,51 +595,6 @@ export const jvp = <const A extends readonly any[], const R>(
   return g;
 };
 
-export const vjp = <const A, const R>(
-  f: Fn & ((arg: A) => R),
-): ((arg: A) => { ret: R; grad: (cot: R) => A }) => {
-  const g = jvp(f);
-  const tp = g[inner].transpose();
-  const fwdFunc = tp.fwd()!;
-  const bwdFunc = tp.bwd()!;
-  const fwd: Fn = { [inner]: fwdFunc, [strings]: [...f[strings]] };
-  const bwd: Fn = { [inner]: bwdFunc, [strings]: [...f[strings]] };
-  funcs.register(fwd, fwdFunc);
-  funcs.register(bwd, bwdFunc);
-  return (arg: A) => {
-    const ctx = getCtx();
-    const strs = intern(ctx, fwd[strings]);
-    const generics = new Uint32Array(); // TODO: support generics
-    const [tArg, tBundle] = ctx.func.ingest(fwd[inner], strs, generics);
-    const [tRet, tInter] = ctx.func.members(tBundle);
-    const argId = valId(ctx, tArg, arg);
-    const bundleId = ctx.block.call(
-      ctx.func,
-      fwd[inner],
-      generics,
-      tBundle,
-      new Uint32Array([argId]),
-    );
-    const primalId = ctx.block.member(ctx.func, tRet, bundleId, 0);
-    const interId = ctx.block.member(ctx.func, tInter, bundleId, 1);
-    const grad = (cot: R) => {
-      if (getCtx() !== ctx) throw Error("VJP closure escaped its context");
-      const cotId = valId(ctx, tRet, cot);
-      const accId = ctx.block.accum(ctx.func, tArg, argId);
-      const tScope = ctx.func.tyAccum(accId);
-      ctx.block.call(
-        ctx.func,
-        bwd[inner],
-        new Uint32Array([tScope]), // TODO: support generics
-        ctx.func.tyUnit(),
-        new Uint32Array([accId, cotId, interId]),
-      );
-      return idVal(ctx, tArg, ctx.block.resolve(ctx.func, tArg, accId)) as A;
-    };
-    return { ret: idVal(ctx, tRet, primalId) as R, grad };
-  };
-};
-
 /** Return the variable ID for the abstract boolean `x`. */
 const boolId = (ctx: Context, x: Bool): number =>
   valId(ctx, ctx.func.tyBool(), x);
