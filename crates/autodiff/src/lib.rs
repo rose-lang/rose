@@ -136,17 +136,9 @@ impl Autodiff<'_> {
                 var,
                 expr: Expr::Select { cond, then, els },
             }),
-            &Expr::Read { var: orig } => self.code.push(Instr {
-                var,
-                expr: Expr::Read { var: orig },
-            }),
             &Expr::Accum { shape } => self.code.push(Instr {
                 var,
                 expr: Expr::Accum { shape },
-            }),
-            &Expr::Ask { var } => self.code.push(Instr {
-                var,
-                expr: Expr::Ask { var },
             }),
             &Expr::Add { accum, addend } => self.code.push(Instr {
                 var,
@@ -376,13 +368,9 @@ pub fn jvp(f: &Func) -> Func {
         Ty::Bool => Ty::Bool,
         &Ty::Fin { size } => Ty::Fin { size },
         &Ty::Generic { id } => Ty::Generic { id },
-        &Ty::Scope { kind, id } => Ty::Scope { kind, id },
 
         // less boring cases
-        &Ty::Ref { scope, inner } => Ty::Ref {
-            scope: map(scope),
-            inner: map(inner),
-        },
+        &Ty::Ref { inner } => Ty::Ref { inner: map(inner) },
         &Ty::Array { index, elem } => Ty::Array {
             index: map(index),
             elem: map(elem),

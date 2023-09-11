@@ -625,12 +625,12 @@ export const vjp = <const A, const R>(
     const grad = (cot: R) => {
       if (getCtx() !== ctx) throw Error("VJP closure escaped its context");
       const cotId = valId(ctx, tRet, cot);
-      const accId = ctx.block.accum(ctx.func, tArg, argId);
-      const tScope = ctx.func.tyAccum(accId);
+      const tRef = ctx.func.tyRef(tArg);
+      const accId = ctx.block.accum(ctx.func, tRef, argId);
       ctx.block.call(
         ctx.func,
         bwd[inner],
-        new Uint32Array([tScope]), // TODO: support generics
+        new Uint32Array([]), // TODO: support generics
         ctx.func.tyUnit(),
         new Uint32Array([accId, cotId, interId]),
       );

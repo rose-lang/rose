@@ -1,5 +1,4 @@
-use enumset::EnumSet;
-use rose::{id, Binop, Constraint, Expr, Func, Instr, Ty, Unop};
+use rose::{id, Binop, Expr, Func, Instr, Ty, Unop};
 use std::mem::{swap, take};
 
 const REAL: id::Ty = id::ty(0);
@@ -7,12 +6,6 @@ const DUAL: id::Ty = id::ty(1);
 
 fn is_primitive(t: id::Ty) -> bool {
     t == REAL || t == DUAL
-}
-
-enum Scope {
-    Generic(id::Generic),
-    Derived(id::Var),
-    Original,
 }
 
 /// Type ID of a variable while building up the backward pass.
@@ -26,12 +19,7 @@ enum BwdTy {
     Unit,
 
     /// This variable is an accumulator.
-    ///
-    /// After we process the entire function, we need to add a scope type for every new accumulator
-    /// variable we've introduced; we don't add these as we go because we don't know ahead of time
-    /// how many types we'll need for intermediate values, and we want all those intermediate value
-    /// type IDs to be the same between the forward and backward passes.
-    Accum(Scope, id::Ty),
+    Accum(id::Ty),
 
     /// We don't know the type of this variable yet, but will soon.
     ///
@@ -215,9 +203,9 @@ impl<'a> Transpose<'a> {
         self.block.inter_mem.push(var);
     }
 
-    fn accum(&mut self, shape: id::Var, scope: Scope) -> Lin {
+    fn accum(&mut self, shape: id::Var) -> Lin {
         let t = self.f.vars[shape.var()];
-        let acc = self.bwd_var(BwdTy::Accum(scope, t));
+        let acc = self.bwd_var(BwdTy::Accum(t));
         let cot = self.bwd_var(BwdTy::Known(t));
         self.block.bwd_nonlin.push(Instr {
             var: acc,
@@ -230,7 +218,7 @@ impl<'a> Transpose<'a> {
 
     fn calc(&mut self, tan: id::Var) -> Lin {
         let t = self.f.vars[tan.var()];
-        let acc = self.bwd_var(BwdTy::Accum(Scope::Original, t));
+        let acc = self.bwd_var(BwdTy::Accum(t));
         let cot = self.bwd_var(BwdTy::Known(t));
         self.block.bwd_nonlin.push(Instr {
             var: acc,
@@ -280,7 +268,7 @@ impl<'a> Transpose<'a> {
                     var,
                     expr: Expr::Unit,
                 });
-                let lin = self.accum(var, Scope::Original);
+                let lin = self.accum(var);
                 self.resolve(lin);
             }
             &Expr::Bool { val } => {
@@ -292,7 +280,7 @@ impl<'a> Transpose<'a> {
                     var,
                     expr: Expr::Bool { val },
                 });
-                let lin = self.accum(var, Scope::Original);
+                let lin = self.accum(var);
                 self.resolve(lin);
             }
             &Expr::F64 { val } => {
@@ -317,7 +305,7 @@ impl<'a> Transpose<'a> {
                     var,
                     expr: Expr::Fin { val },
                 });
-                let lin = self.accum(var, Scope::Original);
+                let lin = self.accum(var);
                 self.resolve(lin);
             }
 
@@ -333,7 +321,7 @@ impl<'a> Transpose<'a> {
                     },
                 });
                 self.keep(var);
-                let lin = self.accum(var, Scope::Original);
+                let lin = self.accum(var);
                 for (i, &elem) in elems.iter().enumerate() {
                     if let Some(accum) = self.get_dual_accum(elem) {
                         let index = self.bwd_var(BwdTy::Known(t));
@@ -375,7 +363,7 @@ impl<'a> Transpose<'a> {
                         },
                     });
                     self.keep(var);
-                    let lin = self.accum(var, Scope::Original);
+                    let lin = self.accum(var);
                     for (i, &member) in members.iter().enumerate() {
                         if let Some(accum) = self.get_dual_accum(member) {
                             let addend = self.bwd_var(BwdTy::Known(self.f.vars[member.var()]));
@@ -407,10 +395,7 @@ impl<'a> Transpose<'a> {
                     expr: Expr::Index { array, index },
                 });
                 let arr_acc = self.accums[array.var()].unwrap();
-                let acc = self.bwd_var(BwdTy::Accum(
-                    Scope::Derived(arr_acc),
-                    self.f.vars[array.var()],
-                ));
+                let acc = self.bwd_var(BwdTy::Accum(self.f.vars[array.var()]));
                 self.accums[var.var()] = Some(acc);
                 self.block.bwd_nonlin.push(Instr {
                     var: acc,
@@ -438,10 +423,7 @@ impl<'a> Transpose<'a> {
                             expr: Expr::Member { tuple, member },
                         });
                         let tup_acc = self.accums[tuple.var()].unwrap();
-                        let acc = self.bwd_var(BwdTy::Accum(
-                            Scope::Derived(tup_acc),
-                            self.f.vars[tuple.var()],
-                        ));
+                        let acc = self.bwd_var(BwdTy::Accum(self.f.vars[tuple.var()]));
                         self.accums[var.var()] = Some(acc);
                         self.block.bwd_nonlin.push(Instr {
                             var: acc,
@@ -616,11 +598,11 @@ impl<'a> Transpose<'a> {
                     },
                 });
                 self.keep(var);
-                let lin = self.accum(var, Scope::Original);
+                let lin = self.accum(var);
                 let acc_then = self.get_dual_accum(then).unwrap();
                 let acc_els = self.get_dual_accum(els).unwrap();
                 // TODO: this scope is wrong; it actually needs to match both `then` and `els`
-                let acc = self.bwd_var(BwdTy::Accum(Scope::Original, self.f.vars[then.var()]));
+                let acc = self.bwd_var(BwdTy::Accum(self.f.vars[then.var()]));
                 let unit = self.bwd_var(BwdTy::Unit);
                 self.block.bwd_lin.push(Instr {
                     var: unit,
@@ -657,10 +639,8 @@ impl<'a> Transpose<'a> {
                 swap(&mut self.block, &mut block);
             }
 
-            &Expr::Read { var } => todo!(),
             &Expr::Accum { shape } => todo!(),
 
-            &Expr::Ask { var } => todo!(),
             &Expr::Add { accum, addend } => todo!(),
 
             &Expr::Resolve { var } => todo!(),
@@ -685,12 +665,11 @@ pub fn transpose(f: &Func) -> (Func, Func) {
             }
             &Ty::Fin { size } => Ty::Fin { size },
             &Ty::Generic { id } => Ty::Generic { id },
-            &Ty::Scope { kind, id } => Ty::Scope { kind, id },
-            &Ty::Ref { scope, inner } => {
+            &Ty::Ref { inner } => {
                 if is_primitive(inner) {
                     panic!()
                 }
-                Ty::Ref { scope, inner }
+                Ty::Ref { inner }
             }
             &Ty::Array { index, elem } => {
                 if is_primitive(elem) {
@@ -710,23 +689,6 @@ pub fn transpose(f: &Func) -> (Func, Func) {
         })
         .collect();
 
-    let mut bwd_generics: Vec<_> = f
-        .generics
-        .iter()
-        .map(|&before| {
-            let mut after = before;
-            if before.contains(Constraint::Read) {
-                after.remove(Constraint::Read);
-                after.insert(Constraint::Accum);
-            }
-            if before.contains(Constraint::Accum) {
-                after.remove(Constraint::Accum);
-                after.insert(Constraint::Read);
-            }
-            after
-        })
-        .collect();
-
     let mut bwd_vars: Vec<_> = f.vars.iter().map(|&t| BwdTy::Known(t)).collect();
     let real_shape = id::var(bwd_vars.len());
     bwd_vars.push(BwdTy::Known(DUAL));
@@ -743,8 +705,6 @@ pub fn transpose(f: &Func) -> (Func, Func) {
         .params
         .iter()
         .map(|&param| {
-            let g = id::generic(bwd_generics.len());
-            bwd_generics.push(EnumSet::only(Constraint::Accum));
             let t = f.vars[param.var()];
             bwd_nonlin.push(Instr {
                 var: param,
@@ -755,7 +715,7 @@ pub fn transpose(f: &Func) -> (Func, Func) {
             });
             inter_mem.push(param);
             let acc = id::var(bwd_vars.len());
-            bwd_vars.push(BwdTy::Accum(Scope::Generic(g), t));
+            bwd_vars.push(BwdTy::Accum(t));
             if let Ty::F64 = types[t.ty()] {
                 duals[param.var()] = Some((Src::Original, Src::Original));
             }
@@ -813,14 +773,9 @@ pub fn transpose(f: &Func) -> (Func, Func) {
         .map(|(i, t)| match t {
             BwdTy::Known(t) => t,
             BwdTy::Unit => t_unit,
-            BwdTy::Accum(scope, inner) => {
-                let scope = id::ty(bwd_types.len());
-                bwd_types.push(Ty::Scope {
-                    kind: Constraint::Accum,
-                    id: id::var(i),
-                });
+            BwdTy::Accum(inner) => {
                 let t = id::ty(bwd_types.len());
-                bwd_types.push(Ty::Ref { scope, inner });
+                bwd_types.push(Ty::Ref { inner });
                 t
             }
             BwdTy::Unknown => panic!(),
@@ -858,7 +813,7 @@ pub fn transpose(f: &Func) -> (Func, Func) {
             body: fwd_body.into(),
         },
         Func {
-            generics: bwd_generics.into(),
+            generics: f.generics.clone(),
             types: bwd_types.into(),
             vars: bwd_vars.into(),
             params: bwd_params.into(),
