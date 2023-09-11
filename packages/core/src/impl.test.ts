@@ -39,6 +39,7 @@ test("core IR type layouts", () => {
     Func: { size: 44, align: 4 },
     Instr: { size: 32, align: 8 },
     Ty: { size: 12, align: 4 },
+    Val: { size: 16, align: 8 },
   });
 });
 

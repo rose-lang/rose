@@ -188,6 +188,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rose-transpose"
+version = "0.0.0"
+dependencies = [
+ "enumset",
+ "rose",
+]
+
+[[package]]
 name = "rose-web"
 version = "0.0.0"
 dependencies = [
@@ -198,6 +206,7 @@ dependencies = [
  "rose",
  "rose-autodiff",
  "rose-interp",
+ "rose-transpose",
  "serde",
  "serde-wasm-bindgen",
  "wasm-bindgen",
