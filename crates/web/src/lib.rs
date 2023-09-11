@@ -40,6 +40,7 @@ pub fn layouts() -> Result<JsValue, serde_wasm_bindgen::Error> {
         ("Func", layout::<rose::Func>()),
         ("Instr", layout::<rose::Instr>()),
         ("Ty", layout::<rose::Ty>()),
+        ("Val", layout::<rose_interp::Val>()),
     ])
 }
 
@@ -124,6 +125,10 @@ struct Pointee {
     structs: Box<[Option<Box<[usize]>>]>,
 
     jvp: RefCell<Option<Weak<Pointee>>>,
+
+    fwd: RefCell<Option<Weak<Pointee>>>,
+
+    bwd: RefCell<Option<Weak<Pointee>>>,
 }
 
 /// A node in a reference-counted acyclic digraph of functions.
@@ -149,6 +154,8 @@ impl Func {
                 },
                 structs: [].into(),
                 jvp: RefCell::new(None),
+                fwd: RefCell::new(None),
+                bwd: RefCell::new(None),
             }),
         }
     }
@@ -261,6 +268,7 @@ impl Func {
             inner,
             structs,
             jvp,
+            ..
         } = self.rc.as_ref();
         let mut cache = jvp.borrow_mut();
         if let Some(rc) = cache.as_ref().and_then(|weak| weak.upgrade()) {
@@ -286,12 +294,108 @@ impl Func {
                         },
                         structs: structs_jvp.into(),
                         jvp: RefCell::new(None),
+                        fwd: RefCell::new(None),
+                        bwd: RefCell::new(None),
                     })
                 }
                 Inner::Opaque { .. } => todo!(),
             };
         *cache = Some(Rc::downgrade(&rc));
         Self { rc }
+    }
+
+    fn transpose_pair(&self) -> (Self, Self) {
+        let Pointee {
+            inner,
+            structs,
+            fwd,
+            bwd,
+            ..
+        } = self.rc.as_ref();
+        let mut cache_fwd = fwd.borrow_mut();
+        let mut cache_bwd = bwd.borrow_mut();
+        if let (Some(rc_fwd), Some(rc_bwd)) = (
+            cache_fwd.as_ref().and_then(|weak| weak.upgrade()),
+            cache_bwd.as_ref().and_then(|weak| weak.upgrade()),
+        ) {
+            return (Self { rc: rc_fwd }, Self { rc: rc_bwd });
+        }
+        let (rc_fwd, rc_bwd) = match inner {
+            Inner::Transparent { deps, def } => {
+                let (deps_fwd, deps_bwd): (Vec<_>, Vec<_>) =
+                    deps.iter().map(|f| f.transpose_pair()).unzip();
+                let (def_fwd, def_bwd) = rose_transpose::transpose(def);
+                let structs_fwd = def_fwd
+                    .types
+                    .iter()
+                    .enumerate()
+                    .map(|(i, ty)| match ty {
+                        rose::Ty::F64 => None,
+                        _ => structs.get(i).cloned().flatten(),
+                    })
+                    .collect();
+                let structs_bwd = def_bwd
+                    .types
+                    .iter()
+                    .enumerate()
+                    .map(|(i, ty)| match ty {
+                        rose::Ty::F64 => None,
+                        _ => structs.get(i).cloned().flatten(),
+                    })
+                    .collect();
+                (
+                    Rc::new(Pointee {
+                        inner: Inner::Transparent {
+                            deps: deps_fwd.into(),
+                            def: def_fwd,
+                        },
+                        structs: structs_fwd,
+                        jvp: RefCell::new(None),
+                        fwd: RefCell::new(None),
+                        bwd: RefCell::new(None),
+                    }),
+                    Rc::new(Pointee {
+                        inner: Inner::Transparent {
+                            deps: deps_bwd.into(),
+                            def: def_bwd,
+                        },
+                        structs: structs_bwd,
+                        jvp: RefCell::new(None),
+                        fwd: RefCell::new(None),
+                        bwd: RefCell::new(None),
+                    }),
+                )
+            }
+            Inner::Opaque { .. } => panic!(),
+        };
+        *cache_fwd = Some(Rc::downgrade(&rc_fwd));
+        *cache_bwd = Some(Rc::downgrade(&rc_bwd));
+        (Self { rc: rc_fwd }, Self { rc: rc_bwd })
+    }
+
+    pub fn transpose(&self) -> Transpose {
+        let (fwd, bwd) = self.transpose_pair();
+        Transpose {
+            fwd: Some(fwd),
+            bwd: Some(bwd),
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub struct Transpose {
+    fwd: Option<Func>,
+    bwd: Option<Func>,
+}
+
+#[wasm_bindgen]
+impl Transpose {
+    pub fn fwd(&mut self) -> Option<Func> {
+        self.fwd.take()
+    }
+
+    pub fn bwd(&mut self) -> Option<Func> {
+        self.bwd.take()
     }
 }
 
@@ -504,7 +608,7 @@ enum Ty {
     /// A tuple type, with additional information about key names that makes it into a struct.
     Struct {
         /// String IDs for key names, in order; the actual strings are stored in JavaScript.
-        keys: Box<[usize]>,
+        keys: Option<Box<[usize]>>,
 
         /// Member types of the underlying tuple. Must be the same length as `keys`.
         members: Box<[id::Ty]>,
@@ -521,7 +625,7 @@ impl Ty {
             Ty::Fin { size } => (rose::Ty::Fin { size }, None),
             Ty::Ref { inner } => (rose::Ty::Ref { inner }, None),
             Ty::Array { index, elem } => (rose::Ty::Array { index, elem }, None),
-            Ty::Struct { keys, members } => (rose::Ty::Tuple { members }, Some(keys)),
+            Ty::Struct { keys, members } => (rose::Ty::Tuple { members }, keys),
         }
     }
 }
@@ -611,6 +715,8 @@ impl FuncBuilder {
                 },
                 structs: structs.into(),
                 jvp: RefCell::new(None),
+                fwd: RefCell::new(None),
+                bwd: RefCell::new(None),
             }),
         }
     }
@@ -714,7 +820,10 @@ impl FuncBuilder {
     /// `Err` if `t` is out of range or does not represent a struct type.
     pub fn keys(&self, t: usize) -> Result<Box<[usize]>, JsError> {
         match self.ty(t)? {
-            Ty::Struct { keys, members: _ } => Ok(keys.clone()),
+            Ty::Struct {
+                keys: Some(keys),
+                members: _,
+            } => Ok(keys.clone()),
             _ => Err(JsError::new("type is not a struct")),
         }
     }
@@ -792,6 +901,16 @@ impl FuncBuilder {
         )
     }
 
+    #[wasm_bindgen(js_name = "tyRef")]
+    pub fn ty_ref(&mut self, inner: usize) -> usize {
+        self.newtype(
+            Ty::Ref {
+                inner: id::ty(inner),
+            },
+            EnumSet::empty(),
+        )
+    }
+
     /// Return the ID for the type of arrays with index type `index` and element type `elem`,
     ///
     /// Assumes `index` and `elem` are valid type IDs.
@@ -819,7 +938,7 @@ impl FuncBuilder {
     pub fn ty_struct(&mut self, keys: &[usize], mems: &[usize]) -> usize {
         self.newtype(
             Ty::Struct {
-                keys: keys.into(),
+                keys: Some(keys.into()),
                 members: mems.iter().map(|&t| id::ty(t)).collect(),
             },
             EnumSet::only(rose::Constraint::Value),
@@ -958,12 +1077,6 @@ impl FuncBuilder {
     /// This is meant to be used to pull all the types from a callee into a broader context. The
     /// `generics` are the IDs of all the types provided as generic type parameters for the callee.
     /// The `types are the IDs of all the types that have been pulled in so far.
-    ///
-    /// The element type of `types`, and the return type of this function, use `Option` because some
-    /// types from the callee may be ignored, specifically those that reference internal scopes.
-    /// These cannot appear in the callee's signature if it is a valid function, so we can simply
-    /// turn them into `None` and propagate those through if we find further types that depend on
-    /// them.
     fn resolve(
         &mut self,
         generics: &[usize],
@@ -1001,10 +1114,7 @@ impl FuncBuilder {
                 Ty::Struct {
                     keys: structs[t]
                         .as_ref()
-                        .unwrap()
-                        .iter()
-                        .map(|&s| strings[s])
-                        .collect(),
+                        .map(|ss| ss.iter().map(|&s| strings[s]).collect()),
                     members: members.iter().map(|x| types[x.ty()]).collect(),
                 },
                 EnumSet::only(rose::Constraint::Value),
@@ -1425,6 +1535,18 @@ impl Block {
             body: code.into(),
             ret: id::var(out),
         };
+        self.instr(f, id::ty(t), expr)
+    }
+
+    pub fn accum(&mut self, f: &mut FuncBuilder, t: usize, shape: usize) -> usize {
+        let expr = rose::Expr::Accum {
+            shape: id::var(shape),
+        };
+        self.instr(f, id::ty(t), expr)
+    }
+
+    pub fn resolve(&mut self, f: &mut FuncBuilder, t: usize, var: usize) -> usize {
+        let expr = rose::Expr::Resolve { var: id::var(var) };
         self.instr(f, id::ty(t), expr)
     }
 }
