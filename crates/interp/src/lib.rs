@@ -109,12 +109,7 @@ fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty
         Ty::F64 => Ty::F64,
         &Ty::Fin { size } => Ty::Fin { size },
 
-        &Ty::Scope { kind, id: _ } => Ty::Scope {
-            kind,
-            id: id::var(usize::MAX), // we erase scope info
-        },
-        Ty::Ref { scope, inner } => Ty::Ref {
-            scope: types[scope.ty()],
+        Ty::Ref { inner } => Ty::Ref {
             inner: types[inner.ty()],
         },
         Ty::Array { index, elem } => Ty::Array {
@@ -257,10 +252,8 @@ impl<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> Interpreter<'a, 'b, O, T> {
                 ))
             }
 
-            &Expr::Read { var } => Val::Ref(Rc::new(self.get(var).clone())),
             &Expr::Accum { shape } => Val::Ref(Rc::new(self.get(shape).zero())),
 
-            &Expr::Ask { var } => self.get(var).inner().clone(),
             &Expr::Add { accum, addend } => {
                 self.get(accum).inner().add(self.get(addend));
                 Val::Unit

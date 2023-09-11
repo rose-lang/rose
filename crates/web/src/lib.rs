@@ -384,9 +384,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                 }
                 writeln!(&mut s, "}}")?
             }
-            rose::Expr::Read { var } => writeln!(&mut s, "read x{}", var.var())?,
             rose::Expr::Accum { shape } => writeln!(&mut s, "accum x{}", shape.var())?,
-            rose::Expr::Ask { var } => writeln!(&mut s, "ask x{}", var.var())?,
             rose::Expr::Add { accum, addend } => {
                 writeln!(&mut s, "x{} += x{}", accum.var(), addend.var())?
             }
@@ -455,10 +453,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
             rose::Ty::Unit | rose::Ty::Bool | rose::Ty::F64 => writeln!(&mut s, "{ty:?}")?,
             rose::Ty::Fin { size } => writeln!(&mut s, "{size}")?,
             rose::Ty::Generic { id } => writeln!(&mut s, "G{}", id.generic())?,
-            rose::Ty::Scope { kind, id } => writeln!(&mut s, "x{}: {kind:?}", id.var())?,
-            rose::Ty::Ref { scope, inner } => {
-                writeln!(&mut s, "Ref T{} T{}", scope.ty(), inner.ty())?
-            }
+            rose::Ty::Ref { inner } => writeln!(&mut s, "&T{}", inner.ty())?,
             rose::Ty::Array { index, elem } => {
                 writeln!(&mut s, "[T{}; T{}]", elem.ty(), index.ty())?
             }
@@ -499,7 +494,6 @@ enum Ty {
         size: usize,
     },
     Ref {
-        scope: id::Ty,
         inner: id::Ty,
     },
     Array {
@@ -525,7 +519,7 @@ impl Ty {
             Ty::Bool => (rose::Ty::Bool, None),
             Ty::F64 => (rose::Ty::F64, None),
             Ty::Fin { size } => (rose::Ty::Fin { size }, None),
-            Ty::Ref { scope, inner } => (rose::Ty::Ref { scope, inner }, None),
+            Ty::Ref { inner } => (rose::Ty::Ref { inner }, None),
             Ty::Array { index, elem } => (rose::Ty::Array { index, elem }, None),
             Ty::Struct { keys, members } => (rose::Ty::Tuple { members }, Some(keys)),
         }
@@ -975,14 +969,12 @@ impl FuncBuilder {
         generics: &[usize],
         strings: &[usize],
         structs: &[Option<Box<[usize]>>],
-        types: &[Option<id::Ty>],
+        types: &[id::Ty],
         t: usize,
         ty: &rose::Ty,
-    ) -> Option<id::Ty> {
+    ) -> id::Ty {
         let (deduped, constrs) = match ty {
-            // inner scopes can't be in the param or return types, which are all we care about here
-            rose::Ty::Scope { kind: _, id: _ } => return None,
-            rose::Ty::Generic { id } => return Some(id::ty(generics[id.generic()])),
+            rose::Ty::Generic { id } => return id::ty(generics[id.generic()]),
 
             rose::Ty::Unit => (Ty::Unit, EnumSet::only(rose::Constraint::Value)),
             rose::Ty::Bool => (Ty::Bool, EnumSet::only(rose::Constraint::Value)),
@@ -992,17 +984,16 @@ impl FuncBuilder {
                 rose::Constraint::Value | rose::Constraint::Index,
             ),
 
-            rose::Ty::Ref { scope, inner } => (
+            rose::Ty::Ref { inner } => (
                 Ty::Ref {
-                    scope: types[scope.ty()]?,
-                    inner: types[inner.ty()]?,
+                    inner: types[inner.ty()],
                 },
                 EnumSet::empty(),
             ),
             rose::Ty::Array { index, elem } => (
                 Ty::Array {
-                    index: types[index.ty()]?,
-                    elem: types[elem.ty()]?,
+                    index: types[index.ty()],
+                    elem: types[elem.ty()],
                 },
                 EnumSet::only(rose::Constraint::Value),
             ),
@@ -1014,16 +1005,13 @@ impl FuncBuilder {
                         .iter()
                         .map(|&s| strings[s])
                         .collect(),
-                    members: members
-                        .iter()
-                        .map(|x| types[x.ty()])
-                        .collect::<Option<_>>()?,
+                    members: members.iter().map(|x| types[x.ty()]).collect(),
                 },
                 EnumSet::only(rose::Constraint::Value),
             ),
         };
         let (i, _) = self.types.insert_full(deduped, constrs);
-        Some(id::ty(i))
+        id::ty(i)
     }
 
     /// Return the parameter and return type IDs in this function for calling `f` with `generics`.
@@ -1051,9 +1039,9 @@ impl FuncBuilder {
         let mut sig: Vec<_> = def
             .params
             .iter()
-            .map(|x| types[def.vars[x.var()].ty()].unwrap().ty())
+            .map(|x| types[def.vars[x.var()].ty()].ty())
             .collect();
-        sig.push(types[def.vars[def.ret.var()].ty()].unwrap().ty());
+        sig.push(types[def.vars[def.ret.var()].ty()].ty());
         sig
     }
 }

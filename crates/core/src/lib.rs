@@ -10,10 +10,6 @@ pub enum Constraint {
     Value,
     /// Can be the `index` type of an `Array`.
     Index,
-    /// Allows a `Ref` to be read when used as its `scope` type.
-    Read,
-    /// Allows a `Ref` to be accumulated into when used as its `scope` type.
-    Accum,
 }
 
 /// A type.
@@ -29,14 +25,7 @@ pub enum Ty {
     Generic {
         id: id::Generic,
     },
-    Scope {
-        /// Must be either `Read` or `Accum`.
-        kind: Constraint,
-        /// The `arg` variable of the `Expr` introducing this scope.
-        id: id::Var,
-    },
     Ref {
-        scope: id::Ty,
         inner: id::Ty,
     },
     Array {
@@ -177,23 +166,13 @@ pub enum Expr {
         ret: id::Var,
     },
 
-    /// Start a scope for a `Ref` with `Constraint::Read`.
-    Read {
-        /// Contents of the `Ref`.
-        var: id::Var,
-    },
-    /// Start a scope for a `Ref` with `Constraint::Accum`.
+    /// Start a scope for an accumulator `Ref`.
     Accum {
         /// Topology of the `Ref`.
         shape: id::Var,
     },
 
-    /// Read from a `Ref` whose `scope` satisfies `Constraint::Read`.
-    Ask {
-        /// The `Ref`, which must be in scope.
-        var: id::Var,
-    },
-    /// Accumulate into a `Ref` whose `scope` satisfies `Constraint::Accum`. Returns `Unit`.
+    /// Accumulate into an accumulator `Ref`. Returns `Unit`.
     Add {
         /// The `Ref`, which must be in scope.
         accum: id::Var,
