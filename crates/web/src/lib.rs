@@ -559,7 +559,7 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
             rose::Ty::Generic { id } => writeln!(&mut s, "G{}", id.generic())?,
             rose::Ty::Ref { inner } => writeln!(&mut s, "&T{}", inner.ty())?,
             rose::Ty::Array { index, elem } => {
-                writeln!(&mut s, "[T{}; T{}]", elem.ty(), index.ty())?
+                writeln!(&mut s, "[T{}]T{}", index.ty(), elem.ty())?
             }
             rose::Ty::Tuple { members } => {
                 write!(&mut s, "(")?;
