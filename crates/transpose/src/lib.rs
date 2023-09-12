@@ -1,3 +1,4 @@
+use indexmap::IndexSet;
 use rose::{id, Binop, Expr, Func, Instr, Ty, Unop};
 use std::mem::{swap, take};
 
@@ -6,26 +7,6 @@ const DUAL: id::Ty = id::ty(1);
 
 fn is_primitive(t: id::Ty) -> bool {
     t == REAL || t == DUAL
-}
-
-/// Type ID of a variable while building up the backward pass.
-enum BwdTy {
-    /// We already know the type ID of this variable.
-    ///
-    /// Usually this means the variable is directly mapped from a variable in the original function.
-    Known(id::Ty),
-
-    /// This variable has the unit type.
-    Unit,
-
-    /// This variable is an accumulator.
-    Accum(id::Ty),
-
-    /// We don't know the type of this variable yet, but will soon.
-    ///
-    /// Usually this means the variable is a tuple of intermediate values, and we'll update its type
-    /// to something concrete when we reach the end of the block.
-    Unknown,
 }
 
 /// The source of a primitive variable.
@@ -89,12 +70,26 @@ struct Transpose<'a> {
     /// The function being transposed, which is usually a forward-mode derivative.
     f: &'a Func,
 
-    /// Shared types between the forward and backward passes.
+    /// Mapped versions of `f.types`.
     ///
-    /// This starts out the same length as `f.types`, with the only difference being that all dual
-    /// number types are replaced with `F64`. Then we add more types only for tuples and arrays of
-    /// intermediate values that are shared between the two passes.
-    types: Vec<Ty>,
+    /// The only reason this is useful is to easily check whether a type is the dual number type by
+    /// looking it up here to see if it's equal to `F64`.
+    mapped_types: Vec<Ty>,
+
+    /// Additional types, shared between the forward and backward passes.
+    ///
+    /// This starts out empty: at first we only have `mapped_types`, but later we'll add more types
+    /// for tuples and arrays of intermediate values that are shared between the two passes, and
+    /// also for new reference types that are only used in the backward pass. These `types` will
+    /// later all be appended onto `mapped_types`, so any type indices referencing them should be
+    /// offset by `mapped_types.len()`.
+    types: IndexSet<Ty>,
+
+    /// Type ID for `Unit`.
+    ///
+    /// We could get this every time by looking up in `types`, but it's easier to just always put it
+    /// in at the beginning to save ourselves the repeated hash lookups.
+    unit: id::Ty,
 
     /// Types of variables in the forward pass.
     ///
@@ -104,9 +99,9 @@ struct Transpose<'a> {
 
     /// Types of variables in the backward pass.
     ///
-    /// This starts out with the `Known` type of every variable from `f.vars`, but more variables
-    /// can be added for intermediate values, accumulators, and cotangents.
-    bwd_vars: Vec<BwdTy>,
+    /// This starts out with `Some` type for every variable from `f.vars`, but more variables can be
+    /// added for intermediate values, accumulators, and cotangents.
+    bwd_vars: Vec<Option<id::Ty>>,
 
     /// A variable of type `F64` defined at the beginning of the backward pass.
     ///
@@ -175,9 +170,8 @@ impl<'a> Transpose<'a> {
     }
 
     fn ty(&mut self, ty: Ty) -> id::Ty {
-        let t = id::ty(self.types.len());
-        self.types.push(ty);
-        t
+        let (i, _) = self.types.insert_full(ty);
+        id::ty(self.f.types.len() + i)
     }
 
     fn fwd_var(&mut self, t: id::Ty) -> id::Var {
@@ -186,7 +180,7 @@ impl<'a> Transpose<'a> {
         var
     }
 
-    fn bwd_var(&mut self, t: BwdTy) -> id::Var {
+    fn bwd_var(&mut self, t: Option<id::Ty>) -> id::Var {
         let var = id::var(self.bwd_vars.len());
         self.bwd_vars.push(t);
         var
@@ -204,9 +198,10 @@ impl<'a> Transpose<'a> {
     }
 
     fn accum(&mut self, shape: id::Var) -> Lin {
-        let t = self.f.vars[shape.var()];
-        let acc = self.bwd_var(BwdTy::Accum(t));
-        let cot = self.bwd_var(BwdTy::Known(t));
+        let t_cot = self.f.vars[shape.var()];
+        let t_acc = self.ty(Ty::Ref { inner: t_cot });
+        let acc = self.bwd_var(Some(t_acc));
+        let cot = self.bwd_var(Some(t_cot));
         self.block.bwd_nonlin.push(Instr {
             var: acc,
             expr: Expr::Accum { shape },
@@ -217,9 +212,10 @@ impl<'a> Transpose<'a> {
     }
 
     fn calc(&mut self, tan: id::Var) -> Lin {
-        let t = self.f.vars[tan.var()];
-        let acc = self.bwd_var(BwdTy::Accum(t));
-        let cot = self.bwd_var(BwdTy::Known(t));
+        let t_cot = self.f.vars[tan.var()];
+        let t_acc = self.ty(Ty::Ref { inner: t_cot });
+        let acc = self.bwd_var(Some(t_acc));
+        let cot = self.bwd_var(Some(t_cot));
         self.block.bwd_nonlin.push(Instr {
             var: acc,
             expr: Expr::Accum {
@@ -253,7 +249,7 @@ impl<'a> Transpose<'a> {
                 members: vars.into(),
             },
         });
-        self.bwd_vars[self.block.inter_tup.var()] = BwdTy::Known(t);
+        self.bwd_vars[self.block.inter_tup.var()] = Some(t);
         (t, var)
     }
 
@@ -324,9 +320,9 @@ impl<'a> Transpose<'a> {
                 let lin = self.accum(var);
                 for (i, &elem) in elems.iter().enumerate() {
                     if let Some(accum) = self.get_dual_accum(elem) {
-                        let index = self.bwd_var(BwdTy::Known(t));
-                        let addend = self.bwd_var(BwdTy::Known(self.f.vars[elem.var()]));
-                        let unit = self.bwd_var(BwdTy::Unit);
+                        let index = self.bwd_var(Some(t));
+                        let addend = self.bwd_var(Some(self.f.vars[elem.var()]));
+                        let unit = self.bwd_var(Some(self.unit));
                         self.block.bwd_lin.push(Instr {
                             var: unit,
                             expr: Expr::Add { accum, addend },
@@ -346,7 +342,7 @@ impl<'a> Transpose<'a> {
                 }
                 self.resolve(lin);
             }
-            Expr::Tuple { members } => match self.types[self.f.vars[var.var()].ty()] {
+            Expr::Tuple { members } => match self.mapped_types[self.f.vars[var.var()].ty()] {
                 Ty::F64 => {
                     let x = members[1];
                     let dx = members[0];
@@ -366,8 +362,8 @@ impl<'a> Transpose<'a> {
                     let lin = self.accum(var);
                     for (i, &member) in members.iter().enumerate() {
                         if let Some(accum) = self.get_dual_accum(member) {
-                            let addend = self.bwd_var(BwdTy::Known(self.f.vars[member.var()]));
-                            let unit = self.bwd_var(BwdTy::Unit);
+                            let addend = self.bwd_var(Some(self.f.vars[member.var()]));
+                            let unit = self.bwd_var(Some(self.unit));
                             self.block.bwd_lin.push(Instr {
                                 var: unit,
                                 expr: Expr::Add { accum, addend },
@@ -395,7 +391,7 @@ impl<'a> Transpose<'a> {
                     expr: Expr::Index { array, index },
                 });
                 let arr_acc = self.accums[array.var()].unwrap();
-                let acc = self.bwd_var(BwdTy::Accum(self.f.vars[array.var()]));
+                let acc = self.bwd_var(Some(self.f.vars[array.var()]));
                 self.accums[var.var()] = Some(acc);
                 self.block.bwd_nonlin.push(Instr {
                     var: acc,
@@ -404,7 +400,7 @@ impl<'a> Transpose<'a> {
                         index,
                     },
                 });
-                if let Ty::F64 = self.types[self.f.vars[var.var()].ty()] {
+                if let Ty::F64 = self.mapped_types[self.f.vars[var.var()].ty()] {
                     self.duals[var.var()] = Some((Src::Original, Src::Original));
                 }
             }
@@ -423,7 +419,7 @@ impl<'a> Transpose<'a> {
                             expr: Expr::Member { tuple, member },
                         });
                         let tup_acc = self.accums[tuple.var()].unwrap();
-                        let acc = self.bwd_var(BwdTy::Accum(self.f.vars[tuple.var()]));
+                        let acc = self.bwd_var(Some(self.f.vars[tuple.var()]));
                         self.accums[var.var()] = Some(acc);
                         self.block.bwd_nonlin.push(Instr {
                             var: acc,
@@ -432,7 +428,7 @@ impl<'a> Transpose<'a> {
                                 member,
                             },
                         });
-                        if let Ty::F64 = self.types[t.ty()] {
+                        if let Ty::F64 = self.mapped_types[t.ty()] {
                             self.duals[var.var()] = Some((Src::Original, Src::Original));
                         }
                     }
@@ -448,8 +444,8 @@ impl<'a> Transpose<'a> {
                         Unop::Not | Unop::Abs | Unop::Sign | Unop::Sqrt => panic!(),
                         Unop::Neg => {
                             let lin = self.calc(var);
-                            let res = self.bwd_var(BwdTy::Known(DUAL));
-                            let unit = self.bwd_var(BwdTy::Unit);
+                            let res = self.bwd_var(Some(DUAL));
+                            let unit = self.bwd_var(Some(self.unit));
                             self.block.bwd_lin.push(Instr {
                                 var: unit,
                                 expr: Expr::Add {
@@ -496,8 +492,8 @@ impl<'a> Transpose<'a> {
                             | Binop::Gt
                             | Binop::Geq => panic!(),
                             Binop::Add => {
-                                let a = self.bwd_var(BwdTy::Unit);
-                                let b = self.bwd_var(BwdTy::Unit);
+                                let a = self.bwd_var(Some(self.unit));
+                                let b = self.bwd_var(Some(self.unit));
                                 self.block.bwd_lin.push(Instr {
                                     var: a,
                                     expr: Expr::Add {
@@ -514,9 +510,9 @@ impl<'a> Transpose<'a> {
                                 });
                             }
                             Binop::Sub => {
-                                let res = self.bwd_var(BwdTy::Known(DUAL));
-                                let a = self.bwd_var(BwdTy::Unit);
-                                let b = self.bwd_var(BwdTy::Unit);
+                                let res = self.bwd_var(Some(DUAL));
+                                let a = self.bwd_var(Some(self.unit));
+                                let b = self.bwd_var(Some(self.unit));
                                 self.block.bwd_lin.push(Instr {
                                     var: a,
                                     expr: Expr::Add {
@@ -540,8 +536,8 @@ impl<'a> Transpose<'a> {
                                 });
                             }
                             Binop::Mul | Binop::Div => {
-                                let res = self.bwd_var(BwdTy::Known(DUAL));
-                                let unit = self.bwd_var(BwdTy::Unit);
+                                let res = self.bwd_var(Some(DUAL));
+                                let unit = self.bwd_var(Some(self.unit));
                                 self.block.bwd_lin.push(Instr {
                                     var: unit,
                                     expr: Expr::Add {
@@ -601,9 +597,8 @@ impl<'a> Transpose<'a> {
                 let lin = self.accum(var);
                 let acc_then = self.get_dual_accum(then).unwrap();
                 let acc_els = self.get_dual_accum(els).unwrap();
-                // TODO: this scope is wrong; it actually needs to match both `then` and `els`
-                let acc = self.bwd_var(BwdTy::Accum(self.f.vars[then.var()]));
-                let unit = self.bwd_var(BwdTy::Unit);
+                let acc = self.bwd_var(Some(self.f.vars[then.var()])); // or `els`, doesn't matter
+                let unit = self.bwd_var(Some(self.unit));
                 self.block.bwd_lin.push(Instr {
                     var: unit,
                     expr: Expr::Add {
@@ -620,7 +615,7 @@ impl<'a> Transpose<'a> {
                     },
                 });
                 self.resolve(lin);
-                if let Ty::F64 = self.types[self.f.vars[var.var()].ty()] {
+                if let Ty::F64 = self.mapped_types[self.f.vars[var.var()].ty()] {
                     self.duals[var.var()] = Some((Src::Original, Src::Original));
                 }
             }
@@ -630,7 +625,7 @@ impl<'a> Transpose<'a> {
                 let mut block = Block {
                     fwd: vec![],
                     inter_mem: vec![],
-                    inter_tup: self.bwd_var(BwdTy::Unknown),
+                    inter_tup: self.bwd_var(None),
                     bwd_nonlin: vec![],
                     bwd_lin: vec![],
                 };
@@ -650,7 +645,7 @@ impl<'a> Transpose<'a> {
 
 /// Return two functions that make up the transpose of `f`.
 pub fn transpose(f: &Func) -> (Func, Func) {
-    let types: Vec<_> = f
+    let mapped_types: Vec<_> = f
         .types
         .iter()
         .enumerate()
@@ -689,11 +684,11 @@ pub fn transpose(f: &Func) -> (Func, Func) {
         })
         .collect();
 
-    let mut bwd_vars: Vec<_> = f.vars.iter().map(|&t| BwdTy::Known(t)).collect();
+    let mut bwd_vars: Vec<_> = f.vars.iter().map(|&t| Some(t)).collect();
     let real_shape = id::var(bwd_vars.len());
-    bwd_vars.push(BwdTy::Known(DUAL));
+    bwd_vars.push(Some(DUAL));
     let inter_tup = id::var(bwd_vars.len());
-    bwd_vars.push(BwdTy::Unknown);
+    bwd_vars.push(None);
 
     let mut duals = vec![None; f.vars.len()].into_boxed_slice();
     let mut accums = vec![None; f.vars.len()].into_boxed_slice();
@@ -701,11 +696,16 @@ pub fn transpose(f: &Func) -> (Func, Func) {
     let mut inter_mem = vec![];
     let mut bwd_nonlin = vec![];
 
+    let mut types = IndexSet::new();
+    let (t_unit, _) = types.insert_full(Ty::Unit);
+
     let mut bwd_params: Vec<_> = f
         .params
         .iter()
         .map(|&param| {
-            let t = f.vars[param.var()];
+            let t_cot = f.vars[param.var()];
+            let (i, _) = types.insert_full(Ty::Ref { inner: t_cot });
+            let t_acc = id::ty(f.types.len() + i);
             bwd_nonlin.push(Instr {
                 var: param,
                 expr: Expr::Member {
@@ -715,8 +715,8 @@ pub fn transpose(f: &Func) -> (Func, Func) {
             });
             inter_mem.push(param);
             let acc = id::var(bwd_vars.len());
-            bwd_vars.push(BwdTy::Accum(t));
-            if let Ty::F64 = types[t.ty()] {
+            bwd_vars.push(Some(t_acc));
+            if let Ty::F64 = mapped_types[t_cot.ty()] {
                 duals[param.var()] = Some((Src::Original, Src::Original));
             }
             accums[param.var()] = Some(acc);
@@ -726,7 +726,9 @@ pub fn transpose(f: &Func) -> (Func, Func) {
 
     let mut tp = Transpose {
         f,
+        mapped_types,
         types,
+        unit: id::ty(f.types.len() + t_unit),
         fwd_vars: f.vars.to_vec(),
         bwd_vars,
         real_shape,
@@ -746,11 +748,12 @@ pub fn transpose(f: &Func) -> (Func, Func) {
     let (t_intermediates, fwd_inter) = tp.block(&f.body);
     let fwd_ret = tp.get_re(f.ret);
     let bwd_acc = tp.get_dual_accum(f.ret).unwrap();
-    let mut bwd_types = tp.types.clone();
 
-    let mut fwd_types = tp.types;
-    let t_bundle = id::ty(fwd_types.len());
-    fwd_types.push(Ty::Tuple {
+    let mut all_types = tp.mapped_types;
+    all_types.extend(tp.types.into_iter());
+
+    let t_bundle = id::ty(all_types.len());
+    all_types.push(Ty::Tuple {
         members: vec![f.vars[f.ret.var()], t_intermediates].into(),
     });
     let mut fwd_vars = tp.fwd_vars;
@@ -764,27 +767,11 @@ pub fn transpose(f: &Func) -> (Func, Func) {
         },
     });
 
-    let t_unit = id::ty(bwd_types.len());
-    bwd_types.push(Ty::Unit);
-    let mut bwd_vars: Vec<_> = tp
-        .bwd_vars
-        .into_iter()
-        .enumerate()
-        .map(|(i, t)| match t {
-            BwdTy::Known(t) => t,
-            BwdTy::Unit => t_unit,
-            BwdTy::Accum(inner) => {
-                let t = id::ty(bwd_types.len());
-                bwd_types.push(Ty::Ref { inner });
-                t
-            }
-            BwdTy::Unknown => panic!(),
-        })
-        .collect();
+    let mut bwd_vars: Vec<_> = tp.bwd_vars.into_iter().map(|t| t.unwrap()).collect();
     let bwd_cot = id::var(bwd_vars.len());
     bwd_vars.push(f.vars[f.ret.var()]);
     let bwd_unit = id::var(bwd_vars.len());
-    bwd_vars.push(t_unit);
+    bwd_vars.push(tp.unit);
     bwd_params.push(bwd_cot);
     bwd_params.push(tp.block.inter_tup);
     let mut bwd_body = vec![Instr {
@@ -803,10 +790,11 @@ pub fn transpose(f: &Func) -> (Func, Func) {
     bwd_linear.reverse();
     bwd_body.append(&mut bwd_linear);
 
+    let types_boxed = all_types.into_boxed_slice();
     (
         Func {
             generics: f.generics.clone(),
-            types: fwd_types.into(),
+            types: types_boxed.clone(),
             vars: fwd_vars.into(),
             params: f.params.clone(),
             ret: fwd_bundle,
@@ -814,7 +802,7 @@ pub fn transpose(f: &Func) -> (Func, Func) {
         },
         Func {
             generics: f.generics.clone(),
-            types: bwd_types.into(),
+            types: types_boxed,
             vars: bwd_vars.into(),
             params: bwd_params.into(),
             ret: bwd_unit,
