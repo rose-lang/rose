@@ -524,7 +524,7 @@ impl<'a> Transpose<'a> {
 
                 let t_cot = match &self.f.types[self.f.vars[var.var()].ty()] {
                     &Ty::Ref { inner } => inner,
-                    ty => panic!("{:?}", ty),
+                    _ => panic!(),
                 };
                 let cot = self.bwd_var(Some(t_cot));
                 self.block.bwd_nonlin.push(Instr {
@@ -539,7 +539,29 @@ impl<'a> Transpose<'a> {
                     self.duals[var.var()] = Some((Src(None), Src(None)));
                 }
             }
-            &Expr::Field { tuple, member } => todo!(),
+            &Expr::Field { tuple, member } => {
+                self.block.fwd.push(Instr {
+                    var,
+                    expr: Expr::Field { tuple, member },
+                });
+
+                let t_cot = match &self.f.types[self.f.vars[var.var()].ty()] {
+                    &Ty::Ref { inner } => inner,
+                    _ => panic!(),
+                };
+                let cot = self.bwd_var(Some(t_cot));
+                self.block.bwd_nonlin.push(Instr {
+                    var: cot,
+                    expr: Expr::Member {
+                        tuple: self.get_cotan(tuple),
+                        member,
+                    },
+                });
+                self.cotans[var.var()] = Some(cot);
+                if let Ty::F64 = self.mapped_types[self.f.vars[var.var()].ty()] {
+                    self.duals[var.var()] = Some((Src(None), Src(None)));
+                }
+            }
 
             &Expr::Unary { op, arg } => {
                 match self.f.vars[var.var()] {

@@ -447,4 +447,12 @@ describe("valid", () => {
       [-2, -480],
     ]);
   });
+
+  test("VJP twice with struct", () => {
+    const Pair = { x: Real, y: Real } as const;
+    const f = fn([Pair], Real, ({ x, y }) => mul(x, y));
+    const g = fn([Pair], Pair, (p) => vjp(f)(p).grad(1));
+    const h = fn([Pair, Pair], Pair, (p, q) => vjp(g)(p).grad(q));
+    expect(interp(h)({ x: 2, y: 3 }, { x: 5, y: 7 })).toEqual({ x: 7, y: 5 });
+  });
 });
