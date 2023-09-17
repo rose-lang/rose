@@ -124,10 +124,13 @@ struct Pointee {
     /// The actual strings are stored in JavaScript.
     structs: Box<[Option<Box<[usize]>>]>,
 
+    /// Jacobian-vector product.
     jvp: RefCell<Option<Weak<Pointee>>>,
 
+    /// Forward pass of the vector-Jacobian product.
     fwd: RefCell<Option<Weak<Pointee>>>,
 
+    /// Backward pass of the vector-Jacobian product.
     bwd: RefCell<Option<Weak<Pointee>>>,
 }
 
@@ -304,6 +307,7 @@ impl Func {
         Self { rc }
     }
 
+    /// Return the forward and backward pass of the transpose of this function.
     fn transpose_pair(&self) -> (Self, Self) {
         let Pointee {
             inner,
@@ -382,6 +386,9 @@ impl Func {
         (Self { rc: rc_fwd }, Self { rc: rc_bwd })
     }
 
+    /// Return the transpose of this function.
+    ///
+    /// Assumes that this function has already been computed as the `jvp` of another function.
     pub fn transpose(&self) -> Transpose {
         let (fwd, bwd) = self.transpose_pair();
         Transpose {
@@ -391,6 +398,7 @@ impl Func {
     }
 }
 
+/// A temporary object to hold the two passes of a transposed function before they are destructured.
 #[wasm_bindgen]
 pub struct Transpose {
     fwd: Option<Func>,
@@ -399,10 +407,12 @@ pub struct Transpose {
 
 #[wasm_bindgen]
 impl Transpose {
+    /// Return the forward pass.
     pub fn fwd(&mut self) -> Option<Func> {
         self.fwd.take()
     }
 
+    /// Return the backward pass.
     pub fn bwd(&mut self) -> Option<Func> {
         self.bwd.take()
     }
@@ -1545,6 +1555,10 @@ impl Block {
         self.instr(f, id::ty(t), expr)
     }
 
+    /// Return the variable ID for a new instruction defining an accumulator with the given `shape`.
+    ///
+    /// Assumes `shape` is defined and in scope, and that `t` is the ID of a reference type whose
+    /// inner type is the same as the type of `shape`.
     pub fn accum(&mut self, f: &mut FuncBuilder, t: usize, shape: usize) -> usize {
         let expr = rose::Expr::Accum {
             shape: id::var(shape),
@@ -1552,6 +1566,10 @@ impl Block {
         self.instr(f, id::ty(t), expr)
     }
 
+    /// Return the variable ID for a new instruction resolving the given accumulator `var`.
+    ///
+    /// Assumes `var` is defined and in scope, and that `t` is the inner type of the reference type
+    /// for `var`.
     pub fn resolve(&mut self, f: &mut FuncBuilder, t: usize, var: usize) -> usize {
         let expr = rose::Expr::Resolve { var: id::var(var) };
         self.instr(f, id::ty(t), expr)

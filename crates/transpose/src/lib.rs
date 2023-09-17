@@ -266,6 +266,7 @@ impl<'a> Transpose<'a> {
         self.block.inter_mem.push(var);
     }
 
+    /// Create a non-primitive accumulator for `shape`; return it along with its eventual cotangent.
     fn accum(&mut self, shape: id::Var) -> Lin {
         let t_cot = self.f.vars[shape.var()];
         let t_acc = self.ty(Ty::Ref { inner: t_cot });
@@ -280,6 +281,7 @@ impl<'a> Transpose<'a> {
         Lin { acc, cot }
     }
 
+    /// Create a primitive accumulator for the given `tangent`, using `self.real_shape`.
     fn calc(&mut self, tangent: id::Var) -> Lin {
         let t_cot = self.f.vars[tangent.var()];
         let t_acc = self.ty(Ty::Ref { inner: t_cot });
@@ -296,6 +298,7 @@ impl<'a> Transpose<'a> {
         Lin { acc, cot }
     }
 
+    /// Resolve the given accumulator.
     fn resolve(&mut self, lin: Lin) {
         self.block.bwd_lin.push(Instr {
             var: lin.cot,
@@ -303,6 +306,7 @@ impl<'a> Transpose<'a> {
         })
     }
 
+    /// Process `block` and return the type and forward variable for the intermediate values tuple.
     fn block(&mut self, block: &[Instr]) -> (id::Ty, id::Var) {
         for instr in block.iter() {
             self.instr(instr.var, &instr.expr);
@@ -322,6 +326,7 @@ impl<'a> Transpose<'a> {
         (t, var)
     }
 
+    /// Process the instruction with the given `var` and `expr`.
     fn instr(&mut self, var: id::Var, expr: &Expr) {
         match expr {
             Expr::Unit => {
