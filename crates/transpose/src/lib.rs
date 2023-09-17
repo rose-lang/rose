@@ -776,15 +776,35 @@ impl<'a> Transpose<'a> {
             }
 
             &Expr::Accum { shape } => {
+                self.block.fwd.push(Instr {
+                    var,
+                    expr: Expr::Accum {
+                        shape: self.get_re(shape),
+                    },
+                });
+
                 let cot = self.bwd_var(Some(self.f.vars[shape.var()]));
                 self.cotans[var.var()] = Some(cot);
                 self.stack.push(take(&mut self.block.bwd_nonlin));
             }
 
             &Expr::Add { accum, addend } => {
-                let lin = self.accum(var);
-                self.block.bwd_lin.push(Instr {
+                self.block.fwd.push(Instr {
                     var,
+                    expr: Expr::Add {
+                        accum,
+                        addend: self.get_re(addend),
+                    },
+                });
+
+                self.block.bwd_nonlin.push(Instr {
+                    var,
+                    expr: Expr::Unit,
+                });
+                let lin = self.accum(var);
+                let unit = self.bwd_var(Some(self.unit));
+                self.block.bwd_lin.push(Instr {
+                    var: unit,
                     expr: Expr::Add {
                         accum: self.get_accum(addend),
                         addend: self.get_cotan(accum),
@@ -794,6 +814,11 @@ impl<'a> Transpose<'a> {
             }
 
             &Expr::Resolve { var: accum } => {
+                self.block.fwd.push(Instr {
+                    var,
+                    expr: Expr::Resolve { var: accum },
+                });
+
                 let mut bwd_nonlin = replace(&mut self.block.bwd_nonlin, self.stack.pop().unwrap());
                 bwd_nonlin.reverse();
                 self.block.bwd_lin.append(&mut bwd_nonlin);
@@ -954,6 +979,12 @@ pub fn transpose(f: &Func, deps: &[(&[Ty], id::Ty)]) -> (Func, Func) {
     let mut bwd_lin = tp.block.bwd_lin;
     bwd_lin.reverse();
     bwd_body.append(&mut bwd_lin);
+    let bwd_ret = id::var(bwd_vars.len()); // separate var, because `bwd_unit` might not be in scope
+    bwd_vars.push(tp.unit);
+    bwd_body.push(Instr {
+        var: bwd_ret,
+        expr: Expr::Unit,
+    });
 
     (
         Func {
@@ -969,7 +1000,7 @@ pub fn transpose(f: &Func, deps: &[(&[Ty], id::Ty)]) -> (Func, Func) {
             types: bwd_types.into(),
             vars: bwd_vars.into(),
             params: bwd_params.into(),
-            ret: bwd_unit,
+            ret: bwd_ret,
             body: bwd_body.into(),
         },
     )
