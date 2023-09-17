@@ -400,6 +400,17 @@ describe("valid", () => {
     expect(h(false)).toBe(1);
   });
 
+  test("VJP with vector comprehension", () => {
+    const n = 2;
+    const f = fn([Vec(n, Real)], Vec(n, Real), (v) =>
+      vec(n, Real, (i) => mul(v[i], v[i])),
+    );
+    const g = fn([Vec(n, Real), Vec(n, Real)], Vec(n, Real), (u, v) =>
+      vjp(f)(u).grad(v),
+    );
+    expect(interp(g)([2, 3], [5, 7])).toEqual([20, 42]);
+  });
+
   test("VJP twice", () => {
     const f = fn([Real], Real, (x) => {
       const y = mul(x, x);

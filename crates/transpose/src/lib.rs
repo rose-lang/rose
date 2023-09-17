@@ -763,6 +763,9 @@ impl<'a> Transpose<'a> {
                 self.resolve(lin);
             }
             Expr::For { arg, body, ret } => {
+                let t_index = self.f.vars[arg.var()];
+                let t_elem = self.f.vars[ret.var()];
+
                 let mut block = Block {
                     fwd: vec![],
                     inter_mem: vec![],
@@ -771,8 +774,152 @@ impl<'a> Transpose<'a> {
                     bwd_lin: vec![],
                 };
                 swap(&mut self.block, &mut block);
-                self.block(body); // TODO
+                let (t_inter, fwd_inter) = self.block(body);
                 swap(&mut self.block, &mut block);
+
+                let t_bundle = self.ty(Ty::Tuple {
+                    members: [t_elem, t_inter].into(),
+                });
+                let bundle = self.fwd_var(t_bundle);
+                block.fwd.push(Instr {
+                    var: bundle,
+                    expr: Expr::Tuple {
+                        members: [self.get_re(*ret), fwd_inter].into(),
+                    },
+                });
+                let t_arr_bundle = self.ty(Ty::Array {
+                    index: t_index,
+                    elem: t_bundle,
+                });
+                let arr_bundle = self.fwd_var(t_arr_bundle);
+                self.block.fwd.push(Instr {
+                    var: arr_bundle,
+                    expr: Expr::For {
+                        arg: *arg,
+                        body: block.fwd.into(),
+                        ret: bundle,
+                    },
+                });
+                let fst_index = self.fwd_var(t_index);
+                let fst_bundle = self.fwd_var(t_bundle);
+                let elem = self.fwd_var(t_elem);
+                self.block.fwd.push(Instr {
+                    var,
+                    expr: Expr::For {
+                        arg: fst_index,
+                        body: [
+                            Instr {
+                                var: fst_bundle,
+                                expr: Expr::Index {
+                                    array: arr_bundle,
+                                    index: fst_index,
+                                },
+                            },
+                            Instr {
+                                var: elem,
+                                expr: Expr::Member {
+                                    tuple: fst_bundle,
+                                    member: id::member(0),
+                                },
+                            },
+                        ]
+                        .into(),
+                        ret: elem,
+                    },
+                });
+                self.keep(var);
+                let t_arr_inter = self.ty(Ty::Array {
+                    index: t_index,
+                    elem: t_inter,
+                });
+                let arr_inter = self.fwd_var(t_arr_inter);
+                let snd_index = self.fwd_var(t_index);
+                let snd_bundle = self.fwd_var(t_bundle);
+                let inter = self.fwd_var(t_inter);
+                self.block.fwd.push(Instr {
+                    var: arr_inter,
+                    expr: Expr::For {
+                        arg: snd_index,
+                        body: [
+                            Instr {
+                                var: snd_bundle,
+                                expr: Expr::Index {
+                                    array: arr_bundle,
+                                    index: snd_index,
+                                },
+                            },
+                            Instr {
+                                var: inter,
+                                expr: Expr::Member {
+                                    tuple: snd_bundle,
+                                    member: id::member(1),
+                                },
+                            },
+                        ]
+                        .into(),
+                        ret: inter,
+                    },
+                });
+
+                let arr_inter_bwd = self.bwd_var(Some(t_arr_inter));
+                self.block.bwd_nonlin.push(Instr {
+                    var: arr_inter_bwd,
+                    expr: Expr::Member {
+                        tuple: self.block.inter_tup,
+                        member: id::member(self.block.inter_mem.len()),
+                    },
+                });
+                self.block.inter_mem.push(arr_inter);
+
+                let lin = self.accum(var);
+                let bwd_acc = self.get_accum(*ret);
+                let bwd_cot = self.bwd_var(Some(t_elem));
+                let mut bwd_body = vec![
+                    Instr {
+                        var: bwd_cot,
+                        expr: Expr::Index {
+                            array: lin.cot,
+                            index: *arg,
+                        },
+                    },
+                    Instr {
+                        var: block.inter_tup,
+                        expr: Expr::Index {
+                            array: arr_inter_bwd,
+                            index: *arg,
+                        },
+                    },
+                ];
+                bwd_body.append(&mut block.bwd_nonlin);
+                let unit = self.bwd_var(Some(self.unit));
+                bwd_body.push(Instr {
+                    var: unit,
+                    expr: Expr::Add {
+                        accum: bwd_acc,
+                        addend: bwd_cot,
+                    },
+                });
+                block.bwd_lin.reverse();
+                bwd_body.append(&mut block.bwd_lin);
+                let bwd_ret = self.bwd_var(Some(self.unit));
+                bwd_body.push(Instr {
+                    var: bwd_ret,
+                    expr: Expr::Unit,
+                });
+                let t_arr_unit = self.ty(Ty::Array {
+                    index: t_index,
+                    elem: self.unit,
+                });
+                let arr_unit = self.bwd_var(Some(t_arr_unit));
+                self.block.bwd_lin.push(Instr {
+                    var: arr_unit,
+                    expr: Expr::For {
+                        arg: *arg,
+                        body: bwd_body.into(),
+                        ret: bwd_ret,
+                    },
+                });
+                self.resolve(lin);
             }
 
             &Expr::Accum { shape } => {
