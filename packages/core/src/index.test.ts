@@ -399,4 +399,14 @@ describe("valid", () => {
     expect(h(true)).toBe(0);
     expect(h(false)).toBe(1);
   });
+
+  test("VJP twice", () => {
+    const f = fn([Real], Real, (x) => {
+      const y = mul(x, x);
+      return mul(x, y);
+    });
+    const g = fn([Real], Real, (x) => vjp(f)(x).grad(1));
+    const h = fn([Real], Real, (x) => vjp(g)(x).grad(1));
+    expect(interp(h)(10)).toBe(60);
+  });
 });

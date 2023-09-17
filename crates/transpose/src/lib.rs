@@ -1,6 +1,6 @@
 use indexmap::{indexset, IndexSet};
 use rose::{id, Binop, Expr, Func, Instr, Ty, Unop};
-use std::mem::{swap, take};
+use std::mem::{replace, swap, take};
 
 /// By convention, the first type in a function to be transposed must be the nonlinear `F64`.
 const REAL: id::Ty = id::ty(0);
@@ -203,6 +203,11 @@ impl<'a> Transpose<'a> {
     /// Return the accumulator variable for the linear part of `x`, which has a non-primitive type.
     fn get_accum(&self, x: id::Var) -> id::Var {
         self.accums[self.get_du(x).var()].unwrap()
+    }
+
+    /// Return the cotangent variable for the linear part of `x`, which has a non-primitive type.
+    fn get_cotan(&self, x: id::Var) -> id::Var {
+        self.cotans[self.get_du(x).var()].unwrap()
     }
 
     /// Return the ID for `ty`, adding it to `types` if it isn't already there.
@@ -430,7 +435,7 @@ impl<'a> Transpose<'a> {
                     var,
                     expr: Expr::Index { array, index },
                 });
-                let arr_acc = self.accums[array.var()].unwrap();
+                let arr_acc = self.get_accum(array);
                 let acc = self.bwd_var(Some(self.f.vars[array.var()]));
                 self.accums[var.var()] = Some(acc);
                 self.block.bwd_nonlin.push(Instr {
@@ -458,7 +463,7 @@ impl<'a> Transpose<'a> {
                             var,
                             expr: Expr::Member { tuple, member },
                         });
-                        let tup_acc = self.accums[tuple.var()].unwrap();
+                        let tup_acc = self.get_accum(tuple);
                         let acc = self.bwd_var(Some(self.f.vars[tuple.var()]));
                         self.accums[var.var()] = Some(acc);
                         self.block.bwd_nonlin.push(Instr {
@@ -625,38 +630,44 @@ impl<'a> Transpose<'a> {
                 self.prims[var.var()] = Some(Src(None));
             }
             &Expr::Select { cond, then, els } => {
-                self.block.fwd.push(Instr {
-                    var,
-                    expr: Expr::Select {
-                        cond,
-                        then: self.get_re(then),
-                        els: self.get_re(els),
-                    },
-                });
-                self.keep(var);
-                let lin = self.accum(var);
-                let acc_then = self.get_accum(then);
-                let acc_els = self.get_accum(els);
-                let acc = self.bwd_var(Some(self.f.vars[then.var()])); // or `els`, doesn't matter
-                let unit = self.bwd_var(Some(self.unit));
-                self.block.bwd_lin.push(Instr {
-                    var: unit,
-                    expr: Expr::Add {
-                        accum: acc,
-                        addend: lin.cot,
-                    },
-                });
-                self.block.bwd_lin.push(Instr {
-                    var: acc,
-                    expr: Expr::Select {
-                        cond,
-                        then: acc_then,
-                        els: acc_els,
-                    },
-                });
-                self.resolve(lin);
-                if let Ty::F64 = self.mapped_types[self.f.vars[var.var()].ty()] {
-                    self.duals[var.var()] = Some((Src(None), Src(None)));
+                let t = self.f.vars[var.var()];
+                match &self.f.types[t.ty()] {
+                    &Ty::Ref { inner } => todo!(),
+                    _ => {
+                        self.block.fwd.push(Instr {
+                            var,
+                            expr: Expr::Select {
+                                cond,
+                                then: self.get_re(then),
+                                els: self.get_re(els),
+                            },
+                        });
+                        self.keep(var);
+                        let lin = self.accum(var);
+                        let acc_then = self.get_accum(then);
+                        let acc_els = self.get_accum(els);
+                        let acc = self.bwd_var(Some(self.f.vars[then.var()])); // `els` is fine too
+                        let unit = self.bwd_var(Some(self.unit));
+                        self.block.bwd_lin.push(Instr {
+                            var: unit,
+                            expr: Expr::Add {
+                                accum: acc,
+                                addend: lin.cot,
+                            },
+                        });
+                        self.block.bwd_lin.push(Instr {
+                            var: acc,
+                            expr: Expr::Select {
+                                cond,
+                                then: acc_then,
+                                els: acc_els,
+                            },
+                        });
+                        self.resolve(lin);
+                        if let Ty::F64 = self.mapped_types[t.ty()] {
+                            self.duals[var.var()] = Some((Src(None), Src(None)));
+                        }
+                    }
                 }
             }
 
@@ -674,11 +685,43 @@ impl<'a> Transpose<'a> {
                 swap(&mut self.block, &mut block);
             }
 
-            &Expr::Accum { shape } => todo!(),
+            &Expr::Accum { shape } => {
+                let cot = self.bwd_var(Some(self.f.vars[shape.var()]));
+                self.cotans[var.var()] = Some(cot);
+                self.stack.push(take(&mut self.block.bwd_nonlin));
+            }
 
-            &Expr::Add { accum, addend } => todo!(),
+            &Expr::Add { accum, addend } => {
+                let lin = self.accum(var);
+                self.block.bwd_lin.push(Instr {
+                    var,
+                    expr: Expr::Add {
+                        accum: self.get_accum(addend),
+                        addend: self.get_cotan(accum),
+                    },
+                });
+                self.resolve(lin);
+            }
 
-            &Expr::Resolve { var } => todo!(),
+            &Expr::Resolve { var: accum } => {
+                let mut bwd_nonlin = replace(&mut self.block.bwd_nonlin, self.stack.pop().unwrap());
+                bwd_nonlin.reverse();
+                self.block.bwd_lin.append(&mut bwd_nonlin);
+                let acc = self.bwd_var(Some(self.f.vars[accum.var()]));
+                self.block.bwd_lin.push(Instr {
+                    var: self.get_cotan(accum),
+                    expr: Expr::Resolve { var: acc },
+                });
+                self.keep(var);
+                self.block.bwd_nonlin.push(Instr {
+                    var: acc,
+                    expr: Expr::Accum { shape: var },
+                });
+                self.accums[var.var()] = Some(acc);
+                if let Ty::F64 = self.mapped_types[self.f.vars[var.var()].ty()] {
+                    self.duals[var.var()] = Some((Src(None), Src(None)));
+                }
+            }
         }
     }
 }
@@ -754,15 +797,24 @@ pub fn transpose(f: &Func) -> (Func, Func) {
         .params
         .iter()
         .map(|&param| {
-            let t_cot = f.vars[param.var()];
-            let t_acc = tp.ty(Ty::Ref { inner: t_cot });
-            tp.keep(param);
-            let acc = tp.bwd_var(Some(t_acc));
-            if let Ty::F64 = tp.mapped_types[t_cot.ty()] {
-                tp.duals[param.var()] = Some((Src(None), Src(None)));
+            let t = f.vars[param.var()];
+            match &f.types[t.ty()] {
+                &Ty::Ref { inner } => {
+                    let cot = tp.bwd_var(Some(inner));
+                    tp.cotans[param.var()] = Some(cot);
+                    cot
+                }
+                _ => {
+                    let t_acc = tp.ty(Ty::Ref { inner: t });
+                    tp.keep(param);
+                    let acc = tp.bwd_var(Some(t_acc));
+                    if let Ty::F64 = tp.mapped_types[t.ty()] {
+                        tp.duals[param.var()] = Some((Src(None), Src(None)));
+                    }
+                    tp.accums[param.var()] = Some(acc);
+                    acc
+                }
             }
-            tp.accums[param.var()] = Some(acc);
-            acc
         })
         .collect();
 
