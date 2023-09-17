@@ -595,6 +595,7 @@ export const jvp = <const A extends readonly any[], const R>(
   return g;
 };
 
+/** Construct a closure that computes the Jacobian-vector product of `f`. */
 export const vjp = <const A, const R>(
   f: Fn & ((arg: A) => R),
 ): ((arg: A) => { ret: R; grad: (cot: R) => A }) => {

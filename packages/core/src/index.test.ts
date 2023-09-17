@@ -399,4 +399,75 @@ describe("valid", () => {
     expect(h(true)).toBe(0);
     expect(h(false)).toBe(1);
   });
+
+  test("VJP with vector comprehension", () => {
+    const n = 2;
+    const f = fn([Vec(n, Real)], Vec(n, Real), (v) =>
+      vec(n, Real, (i) => mul(v[i], v[i])),
+    );
+    const g = fn([Vec(n, Real), Vec(n, Real)], Vec(n, Real), (u, v) =>
+      vjp(f)(u).grad(v),
+    );
+    expect(interp(g)([2, 3], [5, 7])).toEqual([20, 42]);
+  });
+
+  test("VJP twice", () => {
+    const f = fn([Real], Real, (x) => {
+      const y = mul(x, x);
+      return mul(x, y);
+    });
+    const g = fn([Real], Real, (x) => vjp(f)(x).grad(1));
+    const h = fn([Real], Real, (x) => vjp(g)(x).grad(1));
+    expect(interp(h)(10)).toBe(60);
+  });
+
+  test("Hessian", () => {
+    const powi = (x: Real, n: number): Real => {
+      if (!Number.isInteger(n))
+        throw new Error(`exponent is not an integer: ${n}`);
+      // https://en.wikipedia.org/wiki/Exponentiation_by_squaring
+      if (n < 0) return powi(div(1, x), -n);
+      else if (n == 0) return 1;
+      else if (n == 1) return x;
+      else if (n % 2 == 0) return powi(mul(x, x), n / 2);
+      else return mul(x, powi(mul(x, x), (n - 1) / 2));
+    };
+    const f = fn([Vec(2, Real)], Real, (v) => {
+      const x = v[0];
+      const y = v[1];
+      return sub(sub(powi(x, 3), mul(2, mul(x, y))), powi(y, 6));
+    });
+    const g = fn([Vec(2, Real)], Vec(2, Real), (v) => vjp(f)(v).grad(1));
+    const h = fn([Vec(2, Real)], Vec(2, Vec(2, Real)), (v) => {
+      const { grad } = vjp(g)(v);
+      return [grad([1, 0] as any), grad([0, 1] as any)];
+    });
+    expect(interp(h)([1, 2])).toEqual([
+      [6, -2],
+      [-2, -480],
+    ]);
+  });
+
+  test("VJP twice with struct", () => {
+    const Pair = { x: Real, y: Real } as const;
+    const f = fn([Pair], Real, ({ x, y }) => mul(x, y));
+    const g = fn([Pair], Pair, (p) => vjp(f)(p).grad(1));
+    const h = fn([Pair, Pair], Pair, (p, q) => vjp(g)(p).grad(q));
+    expect(interp(h)({ x: 2, y: 3 }, { x: 5, y: 7 })).toEqual({ x: 7, y: 5 });
+  });
+
+  test("VJP twice with select", () => {
+    const Stuff = { p: Bool, x: Real, y: Real, z: Real } as const;
+    const f = fn([Stuff], Real, ({ p, x, y, z }) =>
+      mul(z, select(p, Real, x, y)),
+    );
+    const g = fn([Stuff], Stuff, (p) => vjp(f)(p).grad(1));
+    const h = fn([Stuff, Stuff], Stuff, (p, q) => vjp(g)(p).grad(q));
+    expect(
+      interp(h)(
+        { p: true, x: 2, y: 3, z: 5 },
+        { p: false, x: 7, y: 11, z: 13 },
+      ),
+    ).toEqual({ p: true, x: 13, y: 0, z: 7 });
+  });
 });
