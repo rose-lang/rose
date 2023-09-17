@@ -420,4 +420,31 @@ describe("valid", () => {
     const h = fn([Real], Real, (x) => vjp(g)(x).grad(1));
     expect(interp(h)(10)).toBe(60);
   });
+
+  test("Hessian", () => {
+    const powi = (x: Real, n: number): Real => {
+      if (!Number.isInteger(n))
+        throw new Error(`exponent is not an integer: ${n}`);
+      // https://en.wikipedia.org/wiki/Exponentiation_by_squaring
+      if (n < 0) return powi(div(1, x), -n);
+      else if (n == 0) return 1;
+      else if (n == 1) return x;
+      else if (n % 2 == 0) return powi(mul(x, x), n / 2);
+      else return mul(x, powi(mul(x, x), (n - 1) / 2));
+    };
+    const f = fn([Vec(2, Real)], Real, (v) => {
+      const x = v[0];
+      const y = v[1];
+      return sub(sub(powi(x, 3), mul(2, mul(x, y))), powi(y, 6));
+    });
+    const g = fn([Vec(2, Real)], Vec(2, Real), (v) => vjp(f)(v).grad(1));
+    const h = fn([Vec(2, Real)], Vec(2, Vec(2, Real)), (v) => {
+      const { grad } = vjp(g)(v);
+      return [grad([1, 0] as any), grad([0, 1] as any)];
+    });
+    expect(interp(h)([1, 2])).toEqual([
+      [6, -2],
+      [-2, -480],
+    ]);
+  });
 });

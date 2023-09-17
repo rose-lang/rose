@@ -354,10 +354,18 @@ impl<'a> Transpose<'a> {
                         let lin = self.calc(var);
                         self.resolve(lin);
                     }
-                    _ => self.block.fwd.push(Instr {
-                        var,
-                        expr: Expr::F64 { val },
-                    }),
+                    _ => {
+                        self.block.fwd.push(Instr {
+                            var,
+                            expr: Expr::F64 { val },
+                        });
+                        self.block.bwd_nonlin.push(Instr {
+                            var,
+                            expr: Expr::F64 { val },
+                        });
+                        let lin = self.accum(var);
+                        self.resolve(lin);
+                    }
                 }
                 self.prims[var.var()] = Some(Src(None));
             }
@@ -458,7 +466,10 @@ impl<'a> Transpose<'a> {
                     expr: Expr::Index { array, index },
                 });
                 let arr_acc = self.get_accum(array);
-                let acc = self.bwd_var(Some(self.f.vars[array.var()]));
+                let t_acc = self.ty(Ty::Ref {
+                    inner: self.f.vars[var.var()],
+                });
+                let acc = self.bwd_var(Some(t_acc));
                 self.accums[var.var()] = Some(acc);
                 self.block.bwd_nonlin.push(Instr {
                     var: acc,
@@ -486,7 +497,10 @@ impl<'a> Transpose<'a> {
                             expr: Expr::Member { tuple, member },
                         });
                         let tup_acc = self.get_accum(tuple);
-                        let acc = self.bwd_var(Some(self.f.vars[tuple.var()]));
+                        let t_acc = self.ty(Ty::Ref {
+                            inner: self.f.vars[var.var()],
+                        });
+                        let acc = self.bwd_var(Some(t_acc));
                         self.accums[var.var()] = Some(acc);
                         self.block.bwd_nonlin.push(Instr {
                             var: acc,
@@ -502,7 +516,29 @@ impl<'a> Transpose<'a> {
                 }
             }
 
-            &Expr::Slice { array, index } => todo!(),
+            &Expr::Slice { array, index } => {
+                self.block.fwd.push(Instr {
+                    var,
+                    expr: Expr::Slice { array, index },
+                });
+
+                let t_cot = match &self.f.types[self.f.vars[var.var()].ty()] {
+                    &Ty::Ref { inner } => inner,
+                    ty => panic!("{:?}", ty),
+                };
+                let cot = self.bwd_var(Some(t_cot));
+                self.block.bwd_nonlin.push(Instr {
+                    var: cot,
+                    expr: Expr::Index {
+                        array: self.get_cotan(array),
+                        index,
+                    },
+                });
+                self.cotans[var.var()] = Some(cot);
+                if let Ty::F64 = self.mapped_types[self.f.vars[var.var()].ty()] {
+                    self.duals[var.var()] = Some((Src(None), Src(None)));
+                }
+            }
             &Expr::Field { tuple, member } => todo!(),
 
             &Expr::Unary { op, arg } => {
