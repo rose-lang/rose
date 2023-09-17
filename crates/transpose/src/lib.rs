@@ -1,38 +1,41 @@
-use indexmap::IndexSet;
+use indexmap::{indexset, IndexSet};
 use rose::{id, Binop, Expr, Func, Instr, Ty, Unop};
 use std::mem::{swap, take};
 
+/// By convention, the first type in a function to be transposed must be the nonlinear `F64`.
 const REAL: id::Ty = id::ty(0);
+
+/// By convention, the first type in a function to be transposed must be the linear `F64`.
 const DUAL: id::Ty = id::ty(1);
 
+/// Return true iff `t` is the type ID of a linear type in a function to be transposed.
+///
+/// In this module, "primitive" specifically means a linear or nonlinear `F64` type, and
+/// specifically excludes other types that might be considered primitive, such as `Unit` or `Bool`.
 fn is_primitive(t: id::Ty) -> bool {
     t == REAL || t == DUAL
 }
 
-/// The source of a primitive variable.
+/// By convention, the first member in a type for the dual numbers must be the linear part.
+const DU: id::Member = id::member(0);
+
+/// By convention, the second member in a type for the dual numbers must be the nonlinear part.
+const RE: id::Member = id::member(1);
+
+/// The source of a primitive variable or a component of a dual number variable.
+///
+/// The value `None` means that this is the original source, whereas `Some` means that it is an
+/// alias of a the given primitive variable or a component of the given dual number variable.
 #[derive(Clone, Copy)]
-enum Src {
-    /// This variable is original.
-    Original,
-
-    /// This variable is an alias of an original primitive variable of the same type.
-    Alias(id::Var),
-
-    /// This variable is a component of an original dual number variable.
-    Projection(id::Var),
-}
+struct Src(Option<id::Var>);
 
 impl Src {
-    fn prim(self, x: id::Var) -> Self {
-        match self {
-            Self::Original => Self::Alias(x),
-            _ => self,
-        }
-    }
-
-    fn dual(self, x: id::Var) -> Self {
-        match self {
-            Self::Original => Self::Projection(x),
+    /// Return the source for a variable derived from `self`.
+    ///
+    /// The variable ID `x` represents `self`, not the new source being returned.
+    fn derive(self, x: id::Var) -> Self {
+        match self.0 {
+            None => Self(Some(x)),
             _ => self,
         }
     }
@@ -100,7 +103,8 @@ struct Transpose<'a> {
     /// Types of variables in the backward pass.
     ///
     /// This starts out with `Some` type for every variable from `f.vars`, but more variables can be
-    /// added for intermediate values, accumulators, and cotangents.
+    /// added for intermediate values, accumulators, and cotangents. The only time a variable's type
+    /// here is `None` is for tuples of intermediate values; see the `inter_tup` field in `Block`.
     bwd_vars: Vec<Option<id::Ty>>,
 
     /// A variable of type `F64` defined at the beginning of the backward pass.
@@ -117,6 +121,9 @@ struct Transpose<'a> {
     prims: Box<[Option<Src>]>,
 
     /// Sources for dual number variables from the original function.
+    ///
+    /// The sources are for the nonlinear part and the linear part, respectively; note that this
+    /// disagrees with the order for tuple members dictated by `DU` and `RE`.
     duals: Box<[Option<(Src, Src)>]>,
 
     /// Accumulator variables for variables from the original function.
@@ -125,67 +132,102 @@ struct Transpose<'a> {
     /// Cotangent variables for variables from the original function.
     cotans: Box<[Option<id::Var>]>,
 
+    /// Stack of pending unreversed instructions for the backward pass.
+    ///
+    /// In general, we keep track of reversed instructions in the `bwd_lin` field of `block`; those
+    /// will go after the unreversed `bwd_nonlin` instructions. When we enter a new scope via
+    /// `Expr::For`, we start an entirely new `block`, so even though those inner `bwd_nonlin`
+    /// instructions may end up interleaved with our current `bwd_lin` instructions, that's fine
+    /// because they're going in a separate instruction list anyway.
+    ///
+    /// But for `Expr::Accum` and `Expr::Resolve`, we're introducing a new scope without actually
+    /// starting a new `block`. In that case, we still need for all the instructions we put in
+    /// `bwd_nonlin` during this scope to go before all our `bwd_lin` instructions from the scope,
+    /// but we also need them to go after any `bwd_lin` instructions we add after the scope ends.
+    /// So, what we do is push `bwd_nonlin` onto this `stack` when we enter the scope via
+    /// `Expr::Accum`, and then when we exit the scope via `Expr::Resolve`, we pop it off, reverse
+    /// it, and append it to `bwd_lin`. Then when we finally finish the actual block, the stack
+    /// should be empty, so we just reverse `bwd_lin` and append it to `bwd_nonlin` as normal.
+    stack: Vec<Vec<Instr>>,
+
     /// The current block under construction.
     block: Block,
 }
 
 impl<'a> Transpose<'a> {
+    /// Return the source of a variable that is the nonlinear part of `x`.
     fn re(&self, x: id::Var) -> Src {
         let (src, _) = self.duals[x.var()].unwrap();
-        src.dual(x)
+        src.derive(x)
     }
 
+    /// Return the source of a variable that is the linear part of `x`.
     fn du(&self, x: id::Var) -> Src {
         let (_, src) = self.duals[x.var()].unwrap();
-        src.dual(x)
+        src.derive(x)
     }
 
+    /// Return the source variable for `x`, which has a primitive type.
     fn get_prim(&self, x: id::Var) -> id::Var {
         match self.prims[x.var()].unwrap() {
-            Src::Original => x,
-            Src::Alias(y) | Src::Projection(y) => y,
+            Src(None) => x,
+            Src(Some(y)) => y,
         }
     }
 
+    /// Return the source variable for the nonlinear part of `x`, which has a non-primitive type.
+    ///
+    /// Every non-primitive variable whose type is not the dual numbers is considered original.
     fn get_re(&self, x: id::Var) -> id::Var {
         match self.duals[x.var()] {
-            None | Some((Src::Original, _)) => x,
-            Some((Src::Alias(y), _)) | Some((Src::Projection(y), _)) => y,
+            None | Some((Src(None), _)) => x,
+            Some((Src(Some(y)), _)) => y,
         }
     }
 
+    /// Return the source variable for the linear part of `x`, which has a non-primitive type.
+    ///
+    /// Every non-primitive variable whose type is not the dual numbers is considered original.
     fn get_du(&self, x: id::Var) -> id::Var {
         match self.duals[x.var()] {
-            None | Some((_, Src::Original)) => x,
-            Some((_, Src::Alias(y))) | Some((_, Src::Projection(y))) => y,
+            None | Some((_, Src(None))) => x,
+            Some((_, Src(Some(y)))) => y,
         }
     }
 
+    /// Return the accumulator variable for `x`, which has a primitive type.
     fn get_prim_accum(&self, x: id::Var) -> id::Var {
         self.accums[self.get_prim(x).var()].unwrap()
     }
 
-    fn get_dual_accum(&self, x: id::Var) -> Option<id::Var> {
-        self.accums[self.get_du(x).var()]
+    /// Return the accumulator variable for the linear part of `x`, which has a non-primitive type.
+    fn get_accum(&self, x: id::Var) -> id::Var {
+        self.accums[self.get_du(x).var()].unwrap()
     }
 
+    /// Return the ID for `ty`, adding it to `types` if it isn't already there.
     fn ty(&mut self, ty: Ty) -> id::Ty {
         let (i, _) = self.types.insert_full(ty);
         id::ty(self.f.types.len() + i)
     }
 
+    /// Return the ID for a new variable with type ID `t` in the forward pass.
     fn fwd_var(&mut self, t: id::Ty) -> id::Var {
         let var = id::var(self.fwd_vars.len());
         self.fwd_vars.push(t);
         var
     }
 
+    /// Return the ID for a new variable with type ID `t` in the backward pass.
+    ///
+    /// `t` should be `None` iff it is a tuple of intermediate values.
     fn bwd_var(&mut self, t: Option<id::Ty>) -> id::Var {
         let var = id::var(self.bwd_vars.len());
         self.bwd_vars.push(t);
         var
     }
 
+    /// Include `var` in the intermediate values tuple for the current block.
     fn keep(&mut self, var: id::Var) {
         self.block.bwd_nonlin.push(Instr {
             var,
@@ -211,8 +253,8 @@ impl<'a> Transpose<'a> {
         Lin { acc, cot }
     }
 
-    fn calc(&mut self, tan: id::Var) -> Lin {
-        let t_cot = self.f.vars[tan.var()];
+    fn calc(&mut self, tangent: id::Var) -> Lin {
+        let t_cot = self.f.vars[tangent.var()];
         let t_acc = self.ty(Ty::Ref { inner: t_cot });
         let acc = self.bwd_var(Some(t_acc));
         let cot = self.bwd_var(Some(t_cot));
@@ -222,8 +264,8 @@ impl<'a> Transpose<'a> {
                 shape: self.real_shape,
             },
         });
-        self.accums[tan.var()] = Some(acc);
-        self.cotans[tan.var()] = Some(cot);
+        self.accums[tangent.var()] = Some(acc);
+        self.cotans[tangent.var()] = Some(cot);
         Lin { acc, cot }
     }
 
@@ -290,7 +332,7 @@ impl<'a> Transpose<'a> {
                         expr: Expr::F64 { val },
                     }),
                 }
-                self.prims[var.var()] = Some(Src::Original);
+                self.prims[var.var()] = Some(Src(None));
             }
             &Expr::Fin { val } => {
                 self.block.fwd.push(Instr {
@@ -319,36 +361,35 @@ impl<'a> Transpose<'a> {
                 self.keep(var);
                 let lin = self.accum(var);
                 for (i, &elem) in elems.iter().enumerate() {
-                    if let Some(accum) = self.get_dual_accum(elem) {
-                        let index = self.bwd_var(Some(t));
-                        let addend = self.bwd_var(Some(self.f.vars[elem.var()]));
-                        let unit = self.bwd_var(Some(self.unit));
-                        self.block.bwd_lin.push(Instr {
-                            var: unit,
-                            expr: Expr::Add { accum, addend },
-                        });
-                        self.block.bwd_lin.push(Instr {
-                            var: addend,
-                            expr: Expr::Index {
-                                array: lin.cot,
-                                index,
-                            },
-                        });
-                        self.block.bwd_lin.push(Instr {
-                            var: index,
-                            expr: Expr::Fin { val: i },
-                        });
-                    }
+                    let accum = self.get_accum(elem);
+                    let index = self.bwd_var(Some(t));
+                    let addend = self.bwd_var(Some(self.f.vars[elem.var()]));
+                    let unit = self.bwd_var(Some(self.unit));
+                    self.block.bwd_lin.push(Instr {
+                        var: unit,
+                        expr: Expr::Add { accum, addend },
+                    });
+                    self.block.bwd_lin.push(Instr {
+                        var: addend,
+                        expr: Expr::Index {
+                            array: lin.cot,
+                            index,
+                        },
+                    });
+                    self.block.bwd_lin.push(Instr {
+                        var: index,
+                        expr: Expr::Fin { val: i },
+                    });
                 }
                 self.resolve(lin);
             }
             Expr::Tuple { members } => match self.mapped_types[self.f.vars[var.var()].ty()] {
                 Ty::F64 => {
-                    let x = members[1];
-                    let dx = members[0];
+                    let x = members[RE.member()];
+                    let dx = members[DU.member()];
                     self.duals[var.var()] = Some((
-                        self.prims[x.var()].unwrap().prim(x),
-                        self.prims[dx.var()].unwrap().prim(dx),
+                        self.prims[x.var()].unwrap().derive(x),
+                        self.prims[dx.var()].unwrap().derive(dx),
                     ));
                 }
                 _ => {
@@ -361,21 +402,20 @@ impl<'a> Transpose<'a> {
                     self.keep(var);
                     let lin = self.accum(var);
                     for (i, &member) in members.iter().enumerate() {
-                        if let Some(accum) = self.get_dual_accum(member) {
-                            let addend = self.bwd_var(Some(self.f.vars[member.var()]));
-                            let unit = self.bwd_var(Some(self.unit));
-                            self.block.bwd_lin.push(Instr {
-                                var: unit,
-                                expr: Expr::Add { accum, addend },
-                            });
-                            self.block.bwd_lin.push(Instr {
-                                var: addend,
-                                expr: Expr::Member {
-                                    tuple: lin.cot,
-                                    member: id::member(i),
-                                },
-                            });
-                        }
+                        let accum = self.get_accum(member);
+                        let addend = self.bwd_var(Some(self.f.vars[member.var()]));
+                        let unit = self.bwd_var(Some(self.unit));
+                        self.block.bwd_lin.push(Instr {
+                            var: unit,
+                            expr: Expr::Add { accum, addend },
+                        });
+                        self.block.bwd_lin.push(Instr {
+                            var: addend,
+                            expr: Expr::Member {
+                                tuple: lin.cot,
+                                member: id::member(i),
+                            },
+                        });
                     }
                     self.resolve(lin);
                 }
@@ -401,7 +441,7 @@ impl<'a> Transpose<'a> {
                     },
                 });
                 if let Ty::F64 = self.mapped_types[self.f.vars[var.var()].ty()] {
-                    self.duals[var.var()] = Some((Src::Original, Src::Original));
+                    self.duals[var.var()] = Some((Src(None), Src(None)));
                 }
             }
             &Expr::Member { tuple, member } => {
@@ -429,7 +469,7 @@ impl<'a> Transpose<'a> {
                             },
                         });
                         if let Ty::F64 = self.mapped_types[t.ty()] {
-                            self.duals[var.var()] = Some((Src::Original, Src::Original));
+                            self.duals[var.var()] = Some((Src(None), Src(None)));
                         }
                     }
                 }
@@ -474,7 +514,7 @@ impl<'a> Transpose<'a> {
                         self.keep(var);
                     }
                 }
-                self.prims[var.var()] = Some(Src::Original);
+                self.prims[var.var()] = Some(Src(None));
             }
             &Expr::Binary { op, left, right } => {
                 match self.f.vars[var.var()] {
@@ -582,7 +622,7 @@ impl<'a> Transpose<'a> {
                         self.keep(var);
                     }
                 }
-                self.prims[var.var()] = Some(Src::Original);
+                self.prims[var.var()] = Some(Src(None));
             }
             &Expr::Select { cond, then, els } => {
                 self.block.fwd.push(Instr {
@@ -595,8 +635,8 @@ impl<'a> Transpose<'a> {
                 });
                 self.keep(var);
                 let lin = self.accum(var);
-                let acc_then = self.get_dual_accum(then).unwrap();
-                let acc_els = self.get_dual_accum(els).unwrap();
+                let acc_then = self.get_accum(then);
+                let acc_els = self.get_accum(els);
                 let acc = self.bwd_var(Some(self.f.vars[then.var()])); // or `els`, doesn't matter
                 let unit = self.bwd_var(Some(self.unit));
                 self.block.bwd_lin.push(Instr {
@@ -616,7 +656,7 @@ impl<'a> Transpose<'a> {
                 });
                 self.resolve(lin);
                 if let Ty::F64 = self.mapped_types[self.f.vars[var.var()].ty()] {
-                    self.duals[var.var()] = Some((Src::Original, Src::Original));
+                    self.duals[var.var()] = Some((Src(None), Src(None)));
                 }
             }
 
@@ -643,118 +683,100 @@ impl<'a> Transpose<'a> {
     }
 }
 
-/// Return two functions that make up the transpose of `f`.
+/// Return the forward and backward pass for the transpose of `f`.
 pub fn transpose(f: &Func) -> (Func, Func) {
-    let mapped_types: Vec<_> = f
-        .types
-        .iter()
-        .enumerate()
-        .map(|(i, ty)| match ty {
-            Ty::Unit => Ty::Unit,
-            Ty::Bool => Ty::Bool,
-            Ty::F64 => {
-                if !is_primitive(id::ty(i)) {
-                    panic!()
-                }
-                Ty::F64
-            }
-            &Ty::Fin { size } => Ty::Fin { size },
-            &Ty::Generic { id } => Ty::Generic { id },
-            &Ty::Ref { inner } => {
-                if is_primitive(inner) {
-                    panic!()
-                }
-                Ty::Ref { inner }
-            }
-            &Ty::Array { index, elem } => {
-                if is_primitive(elem) {
-                    panic!()
-                }
-                Ty::Array { index, elem }
-            }
-            Ty::Tuple { members } => {
-                if members.iter().any(|&t| is_primitive(t)) {
-                    Ty::F64
-                } else {
-                    Ty::Tuple {
-                        members: members.clone(),
-                    }
-                }
-            }
-        })
-        .collect();
-
     let mut bwd_vars: Vec<_> = f.vars.iter().map(|&t| Some(t)).collect();
     let real_shape = id::var(bwd_vars.len());
     bwd_vars.push(Some(DUAL));
     let inter_tup = id::var(bwd_vars.len());
     bwd_vars.push(None);
 
-    let mut duals = vec![None; f.vars.len()].into_boxed_slice();
-    let mut accums = vec![None; f.vars.len()].into_boxed_slice();
-
-    let mut inter_mem = vec![];
-    let mut bwd_nonlin = vec![];
-
-    let mut types = IndexSet::new();
-    let (t_unit, _) = types.insert_full(Ty::Unit);
+    let mut tp = Transpose {
+        f,
+        mapped_types: f
+            .types
+            .iter()
+            .enumerate()
+            .map(|(i, ty)| match ty {
+                Ty::Unit => Ty::Unit,
+                Ty::Bool => Ty::Bool,
+                Ty::F64 => {
+                    if !is_primitive(id::ty(i)) {
+                        panic!()
+                    }
+                    Ty::F64
+                }
+                &Ty::Fin { size } => Ty::Fin { size },
+                &Ty::Generic { id } => Ty::Generic { id },
+                &Ty::Ref { inner } => {
+                    if is_primitive(inner) {
+                        panic!()
+                    }
+                    Ty::Ref { inner }
+                }
+                &Ty::Array { index, elem } => {
+                    if is_primitive(elem) {
+                        panic!()
+                    }
+                    Ty::Array { index, elem }
+                }
+                Ty::Tuple { members } => {
+                    if members.iter().any(|&t| is_primitive(t)) {
+                        Ty::F64
+                    } else {
+                        Ty::Tuple {
+                            members: members.clone(),
+                        }
+                    }
+                }
+            })
+            .collect(),
+        types: indexset! { Ty::Unit },
+        unit: id::ty(f.types.len()),
+        fwd_vars: f.vars.to_vec(),
+        bwd_vars,
+        real_shape,
+        prims: vec![None; f.vars.len()].into(),
+        duals: vec![None; f.vars.len()].into(),
+        accums: vec![None; f.vars.len()].into(),
+        cotans: vec![None; f.vars.len()].into(),
+        stack: vec![],
+        block: Block {
+            fwd: vec![],
+            inter_tup,
+            inter_mem: vec![],
+            bwd_nonlin: vec![],
+            bwd_lin: vec![],
+        },
+    };
 
     let mut bwd_params: Vec<_> = f
         .params
         .iter()
         .map(|&param| {
             let t_cot = f.vars[param.var()];
-            let (i, _) = types.insert_full(Ty::Ref { inner: t_cot });
-            let t_acc = id::ty(f.types.len() + i);
-            bwd_nonlin.push(Instr {
-                var: param,
-                expr: Expr::Member {
-                    tuple: inter_tup,
-                    member: id::member(inter_mem.len()),
-                },
-            });
-            inter_mem.push(param);
-            let acc = id::var(bwd_vars.len());
-            bwd_vars.push(Some(t_acc));
-            if let Ty::F64 = mapped_types[t_cot.ty()] {
-                duals[param.var()] = Some((Src::Original, Src::Original));
+            let t_acc = tp.ty(Ty::Ref { inner: t_cot });
+            tp.keep(param);
+            let acc = tp.bwd_var(Some(t_acc));
+            if let Ty::F64 = tp.mapped_types[t_cot.ty()] {
+                tp.duals[param.var()] = Some((Src(None), Src(None)));
             }
-            accums[param.var()] = Some(acc);
+            tp.accums[param.var()] = Some(acc);
             acc
         })
         .collect();
 
-    let mut tp = Transpose {
-        f,
-        mapped_types,
-        types,
-        unit: id::ty(f.types.len() + t_unit),
-        fwd_vars: f.vars.to_vec(),
-        bwd_vars,
-        real_shape,
-        prims: vec![None; f.vars.len()].into(),
-        duals,
-        accums,
-        cotans: vec![None; f.vars.len()].into(),
-        block: Block {
-            fwd: vec![],
-            inter_tup,
-            inter_mem,
-            bwd_nonlin,
-            bwd_lin: vec![],
-        },
-    };
-
     let (t_intermediates, fwd_inter) = tp.block(&f.body);
     let fwd_ret = tp.get_re(f.ret);
-    let bwd_acc = tp.get_dual_accum(f.ret).unwrap();
+    let bwd_acc = tp.get_accum(f.ret);
 
     let mut all_types = tp.mapped_types;
     all_types.extend(tp.types.into_iter());
 
-    let t_bundle = id::ty(all_types.len());
-    all_types.push(Ty::Tuple {
-        members: vec![f.vars[f.ret.var()], t_intermediates].into(),
+    let mut fwd_types = all_types.clone();
+    let t_bundle = id::ty(fwd_types.len());
+    fwd_types.push(Ty::Tuple {
+        members: [f.vars[f.ret.var()], t_intermediates].into(),
     });
     let mut fwd_vars = tp.fwd_vars;
     let fwd_bundle = id::var(fwd_vars.len());
@@ -763,7 +785,7 @@ pub fn transpose(f: &Func) -> (Func, Func) {
     fwd_body.push(Instr {
         var: fwd_bundle,
         expr: Expr::Tuple {
-            members: vec![fwd_ret, fwd_inter].into(),
+            members: [fwd_ret, fwd_inter].into(),
         },
     });
 
@@ -779,22 +801,21 @@ pub fn transpose(f: &Func) -> (Func, Func) {
         expr: Expr::F64 { val: 0. },
     }];
     bwd_body.append(&mut tp.block.bwd_nonlin);
-    let mut bwd_linear = tp.block.bwd_lin;
-    bwd_linear.push(Instr {
+    bwd_body.push(Instr {
         var: bwd_unit,
         expr: Expr::Add {
             accum: bwd_acc,
             addend: bwd_cot,
         },
     });
-    bwd_linear.reverse();
-    bwd_body.append(&mut bwd_linear);
+    let mut bwd_lin = tp.block.bwd_lin;
+    bwd_lin.reverse();
+    bwd_body.append(&mut bwd_lin);
 
-    let types_boxed = all_types.into_boxed_slice();
     (
         Func {
             generics: f.generics.clone(),
-            types: types_boxed.clone(),
+            types: fwd_types.into(),
             vars: fwd_vars.into(),
             params: f.params.clone(),
             ret: fwd_bundle,
@@ -802,7 +823,7 @@ pub fn transpose(f: &Func) -> (Func, Func) {
         },
         Func {
             generics: f.generics.clone(),
-            types: types_boxed,
+            types: all_types.into(),
             vars: bwd_vars.into(),
             params: bwd_params.into(),
             ret: bwd_unit,
