@@ -711,22 +711,38 @@ impl<'a> Transpose<'a> {
             }
             &Expr::Select { cond, then, els } => {
                 let t = self.f.vars[var.var()];
+
+                self.block.fwd.push(Instr {
+                    var,
+                    expr: Expr::Select {
+                        cond,
+                        then: self.get_re(then),
+                        els: self.get_re(els),
+                    },
+                });
+
                 match &self.f.types[t.ty()] {
-                    &Ty::Ref { inner } => todo!(),
-                    _ => {
-                        self.block.fwd.push(Instr {
-                            var,
+                    &Ty::Ref { inner } => {
+                        let cot = self.bwd_var(Some(inner));
+                        self.block.bwd_nonlin.push(Instr {
+                            var: cot,
                             expr: Expr::Select {
                                 cond,
-                                then: self.get_re(then),
-                                els: self.get_re(els),
+                                then: self.get_cotan(then),
+                                els: self.get_cotan(els),
                             },
                         });
+                        self.cotans[var.var()] = Some(cot);
+                    }
+                    _ => {
                         self.keep(var);
                         let lin = self.accum(var);
                         let acc_then = self.get_accum(then);
                         let acc_els = self.get_accum(els);
-                        let acc = self.bwd_var(Some(self.f.vars[then.var()])); // `els` is fine too
+                        let t_acc = self.ty(Ty::Ref {
+                            inner: self.f.vars[var.var()],
+                        });
+                        let acc = self.bwd_var(Some(t_acc));
                         let unit = self.bwd_var(Some(self.unit));
                         self.block.bwd_lin.push(Instr {
                             var: unit,
@@ -744,10 +760,11 @@ impl<'a> Transpose<'a> {
                             },
                         });
                         self.resolve(lin);
-                        if let Ty::F64 = self.mapped_types[t.ty()] {
-                            self.duals[var.var()] = Some((Src(None), Src(None)));
-                        }
                     }
+                }
+
+                if let Ty::F64 = self.mapped_types[t.ty()] {
+                    self.duals[var.var()] = Some((Src(None), Src(None)));
                 }
             }
 

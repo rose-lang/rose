@@ -455,4 +455,19 @@ describe("valid", () => {
     const h = fn([Pair, Pair], Pair, (p, q) => vjp(g)(p).grad(q));
     expect(interp(h)({ x: 2, y: 3 }, { x: 5, y: 7 })).toEqual({ x: 7, y: 5 });
   });
+
+  test("VJP twice with select", () => {
+    const Stuff = { p: Bool, x: Real, y: Real, z: Real } as const;
+    const f = fn([Stuff], Real, ({ p, x, y, z }) =>
+      mul(z, select(p, Real, x, y)),
+    );
+    const g = fn([Stuff], Stuff, (p) => vjp(f)(p).grad(1));
+    const h = fn([Stuff, Stuff], Stuff, (p, q) => vjp(g)(p).grad(q));
+    expect(
+      interp(h)(
+        { p: true, x: 2, y: 3, z: 5 },
+        { p: false, x: 7, y: 11, z: 13 },
+      ),
+    ).toEqual({ p: true, x: 13, y: 0, z: 7 });
+  });
 });
