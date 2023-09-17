@@ -324,7 +324,16 @@ impl Func {
             Inner::Transparent { deps, def } => {
                 let (deps_fwd, deps_bwd): (Vec<_>, Vec<_>) =
                     deps.iter().map(|f| f.transpose_pair()).unzip();
-                let (def_fwd, def_bwd) = rose_transpose::transpose(def);
+                let dep_types: Box<_> = deps_fwd
+                    .iter()
+                    .map(|f| match &f.rc.as_ref().inner {
+                        Inner::Transparent { def, .. } => {
+                            (def.types.as_ref(), def.vars[def.ret.var()])
+                        }
+                        Inner::Opaque { types, ret, .. } => (types.as_ref(), *ret),
+                    })
+                    .collect();
+                let (def_fwd, def_bwd) = rose_transpose::transpose(def, &dep_types);
                 let structs_fwd = def_fwd
                     .types
                     .iter()

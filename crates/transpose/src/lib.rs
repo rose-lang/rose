@@ -73,6 +73,8 @@ struct Transpose<'a> {
     /// The function being transposed, which is usually a forward-mode derivative.
     f: &'a Func,
 
+    deps: &'a [(&'a [Ty], id::Ty)],
+
     /// Mapped versions of `f.types`.
     ///
     /// The only reason this is useful is to easily check whether a type is the dual number type by
@@ -155,6 +157,32 @@ struct Transpose<'a> {
 }
 
 impl<'a> Transpose<'a> {
+    /// Return the ID for `ty`, adding it to `types` if it isn't already there.
+    fn ty(&mut self, ty: Ty) -> id::Ty {
+        let (i, _) = self.types.insert_full(ty);
+        id::ty(self.f.types.len() + i)
+    }
+
+    fn translate(&mut self, generics: &[id::Ty], types: &[id::Ty], ty: &rose::Ty) -> id::Ty {
+        self.ty(match ty {
+            Ty::Unit => Ty::Unit,
+            Ty::Bool => Ty::Bool,
+            Ty::F64 => Ty::F64,
+            &Ty::Fin { size } => Ty::Fin { size },
+            Ty::Generic { id } => return generics[id.generic()],
+            Ty::Ref { inner } => Ty::Ref {
+                inner: types[inner.ty()],
+            },
+            Ty::Array { index, elem } => Ty::Array {
+                index: types[index.ty()],
+                elem: types[elem.ty()],
+            },
+            Ty::Tuple { members } => Ty::Tuple {
+                members: members.iter().map(|&member| types[member.ty()]).collect(),
+            },
+        })
+    }
+
     /// Return the source of a variable that is the nonlinear part of `x`.
     fn re(&self, x: id::Var) -> Src {
         let (src, _) = self.duals[x.var()].unwrap();
@@ -208,12 +236,6 @@ impl<'a> Transpose<'a> {
     /// Return the cotangent variable for the linear part of `x`, which has a non-primitive type.
     fn get_cotan(&self, x: id::Var) -> id::Var {
         self.cotans[self.get_du(x).var()].unwrap()
-    }
-
-    /// Return the ID for `ty`, adding it to `types` if it isn't already there.
-    fn ty(&mut self, ty: Ty) -> id::Ty {
-        let (i, _) = self.types.insert_full(ty);
-        id::ty(self.f.types.len() + i)
     }
 
     /// Return the ID for a new variable with type ID `t` in the forward pass.
@@ -671,7 +693,75 @@ impl<'a> Transpose<'a> {
                 }
             }
 
-            Expr::Call { id, generics, args } => todo!(),
+            Expr::Call { id, generics, args } => {
+                let (dep_types, t) = self.deps[id.func()];
+                let mut types = vec![];
+                for ty in dep_types {
+                    types.push(self.translate(generics, &types, ty));
+                }
+                let t_tup = types[t.ty()];
+
+                let t_bundle = self.ty(Ty::Tuple {
+                    members: [self.f.vars[var.var()], t_tup].into(),
+                });
+                let bundle = self.fwd_var(t_bundle);
+                self.block.fwd.push(Instr {
+                    var: bundle,
+                    expr: Expr::Call {
+                        id: *id,
+                        generics: generics.clone(),
+                        args: args.iter().map(|&arg| self.get_re(arg)).collect(),
+                    },
+                });
+
+                self.block.fwd.push(Instr {
+                    var,
+                    expr: Expr::Member {
+                        tuple: bundle,
+                        member: id::member(0),
+                    },
+                });
+                self.keep(var);
+
+                let inter_fwd = self.fwd_var(t_tup);
+                let inter_bwd = self.bwd_var(Some(t_tup));
+                self.block.fwd.push(Instr {
+                    var: inter_fwd,
+                    expr: Expr::Member {
+                        tuple: bundle,
+                        member: id::member(1),
+                    },
+                });
+                self.block.bwd_nonlin.push(Instr {
+                    var: inter_bwd,
+                    expr: Expr::Member {
+                        tuple: self.block.inter_tup,
+                        member: id::member(self.block.inter_mem.len()),
+                    },
+                });
+                self.block.inter_mem.push(inter_fwd);
+
+                let lin = self.accum(var);
+                let unit = self.bwd_var(Some(self.unit));
+                let mut args: Vec<_> = args
+                    .iter()
+                    .map(|&arg| match self.f.types[self.f.vars[arg.var()].ty()] {
+                        Ty::Ref { .. } => self.get_cotan(arg),
+                        _ => self.get_accum(arg),
+                    })
+                    .collect();
+                args.push(lin.cot);
+                args.push(inter_bwd);
+                self.block.bwd_lin.push(Instr {
+                    var: unit,
+                    expr: Expr::Call {
+                        id: *id,
+                        generics: generics.clone(),
+                        args: args.into(),
+                    },
+                });
+                self.resolve(lin);
+            }
             Expr::For { arg, body, ret } => {
                 let mut block = Block {
                     fwd: vec![],
@@ -727,7 +817,7 @@ impl<'a> Transpose<'a> {
 }
 
 /// Return the forward and backward pass for the transpose of `f`.
-pub fn transpose(f: &Func) -> (Func, Func) {
+pub fn transpose(f: &Func, deps: &[(&[Ty], id::Ty)]) -> (Func, Func) {
     let mut bwd_vars: Vec<_> = f.vars.iter().map(|&t| Some(t)).collect();
     let real_shape = id::var(bwd_vars.len());
     bwd_vars.push(Some(DUAL));
@@ -736,6 +826,7 @@ pub fn transpose(f: &Func) -> (Func, Func) {
 
     let mut tp = Transpose {
         f,
+        deps,
         mapped_types: f
             .types
             .iter()
@@ -822,10 +913,10 @@ pub fn transpose(f: &Func) -> (Func, Func) {
     let fwd_ret = tp.get_re(f.ret);
     let bwd_acc = tp.get_accum(f.ret);
 
-    let mut all_types = tp.mapped_types;
-    all_types.extend(tp.types.into_iter());
+    let mut bwd_types = tp.mapped_types;
+    bwd_types.extend(tp.types.into_iter());
 
-    let mut fwd_types = all_types.clone();
+    let mut fwd_types = bwd_types.clone();
     let t_bundle = id::ty(fwd_types.len());
     fwd_types.push(Ty::Tuple {
         members: [f.vars[f.ret.var()], t_intermediates].into(),
@@ -875,7 +966,7 @@ pub fn transpose(f: &Func) -> (Func, Func) {
         },
         Func {
             generics: f.generics.clone(),
-            types: all_types.into(),
+            types: bwd_types.into(),
             vars: bwd_vars.into(),
             params: bwd_params.into(),
             ret: bwd_unit,
