@@ -57,6 +57,7 @@ test-js: test-core
 
 # build
 core: npm wasm
+	cp README.md packages/core
 	npm run --workspace=rose build
 
 # test
