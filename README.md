@@ -7,16 +7,22 @@ Rose is an automatic differentiation engine for the web, inspired by [JAX][].
 
 ## Installation
 
-With npm:
+With [npm][]:
 
 ```sh
 npm i rose
 ```
 
-With Yarn:
+With [Yarn][]:
 
 ```sh
 yarn add rose
+```
+
+With [Bun][]:
+
+```sh
+bun add rose
 ```
 
 ## Usage
@@ -24,7 +30,7 @@ yarn add rose
 This example computes the output and gradient of a simple function that
 multiplies together the two components of a vector:
 
-```ts
+```js
 import { Real, Vec, fn, interp, mul, vjp } from "rose";
 
 const f = fn([Vec(2, Real)], Real, (v) => mul(v[0], v[1]));
@@ -43,4 +49,7 @@ console.log(interp(g)(2, 3)); // [6, 3, 2]
 See [`CONTRIBUTING.md`][].
 
 [`CONTRIBUTING.md`]: https://github.com/rose-lang/rose/blob/main/CONTRIBUTING.md
+[Bun]: https://bun.sh/
 [JAX]: http://jax.readthedocs.io/
+[npm]: https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
+[Yarn]: https://classic.yarnpkg.com/lang/en/docs/install/
