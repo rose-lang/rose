@@ -48,8 +48,13 @@ console.log(interp(g)(2, 3)); // [6, 3, 2]
 
 See [`CONTRIBUTING.md`][].
 
+## License
+
+This repository is licensed under the [MIT License][].
+
 [`CONTRIBUTING.md`]: https://github.com/rose-lang/rose/blob/main/CONTRIBUTING.md
 [Bun]: https://bun.sh/
 [JAX]: http://jax.readthedocs.io/
+[MIT License]: https://github.com/rose-lang/rose/blob/main/LICENSE
 [npm]: https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
 [Yarn]: https://classic.yarnpkg.com/lang/en/docs/install/
