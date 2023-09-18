@@ -163,21 +163,21 @@ dependencies = [
 
 [[package]]
 name = "rose"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "enumset",
 ]
 
 [[package]]
 name = "rose-autodiff"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "rose",
 ]
 
 [[package]]
 name = "rose-interp"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "enumset",
  "indexmap",
@@ -189,7 +189,7 @@ dependencies = [
 
 [[package]]
 name = "rose-transpose"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "enumset",
  "indexmap",
@@ -198,7 +198,7 @@ dependencies = [
 
 [[package]]
 name = "rose-web"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "console_error_panic_hook",
  "enumset",
