@@ -10,6 +10,11 @@ jobs:
     steps:
       - name: Clone repo
         uses: actions/checkout@v3
+      - name: Log in to npm registry
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+          registry-url: https://registry.npmjs.org
       - run: make all
       - name: Publish npm packages
         run: npm publish --workspaces
