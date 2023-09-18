@@ -364,6 +364,37 @@ describe("valid", () => {
     expect(interp(g)()).toEqual([6, 3, 2]);
   });
 
+  test("VJP with sharing in call graph", () => {
+    const iterate = (
+      n: number,
+      f: (x: Real) => Real,
+      g: (x: Real, y: Real) => Real,
+    ) => {
+      for (let i = 0; i < n; ++i) {
+        const f0 = f;
+        const g0 = g;
+        g = fn([Real, Real], Real, (x, y) => g0(f0(x), f0(y)));
+        const g1 = g;
+        f = fn([Real], Real, (x) => g1(x, x));
+      }
+      return f;
+    };
+
+    const f = iterate(
+      11,
+      (x) => sqrt(x),
+      (x, y) => add(x, y),
+    );
+    const g = vjp(fn([Real], Real, (x) => f(x)));
+    const h = fn([Real, Real], Vec(2, Real), (x, y) => {
+      const { ret, grad } = g(x);
+      return [ret, grad(y)];
+    });
+    expect(interp(h)(2, 3)).toEqual([
+      3.9999999999999996, 3.337610787761814e-308,
+    ]);
+  });
+
   test("VJP with struct and select", () => {
     const Stuff = { a: Null, b: Bool, c: Real } as const;
     const f = fn([Stuff], Real, ({ b, c }) => select(or(false, b), Real, c, 2));

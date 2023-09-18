@@ -841,6 +841,10 @@ impl<'a> Transpose<'a> {
                     },
                 });
                 self.resolve(lin);
+
+                if let Ty::F64 = self.mapped_types[self.f.vars[var.var()].ty()] {
+                    self.duals[var.var()] = Some((Src(None), Src(None)));
+                }
             }
             Expr::For { arg, body, ret } => {
                 let t_index = self.f.vars[arg.var()];
