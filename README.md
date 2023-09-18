@@ -50,7 +50,7 @@ See [`CONTRIBUTING.md`][].
 
 ## License
 
-This repository is licensed under the [MIT License][].
+Rose is licensed under the [MIT License][].
 
 [`CONTRIBUTING.md`]: https://github.com/rose-lang/rose/blob/main/CONTRIBUTING.md
 [Bun]: https://bun.sh/
