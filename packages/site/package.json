@@ -1,11 +1,11 @@
 {
   "name": "@rose-lang/site",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "dependencies": {
     "highlight.js": "^11",
-    "rose": "0.2.0"
+    "rose": "^0.2"
   },
   "scripts": {
     "build": "vite build",
