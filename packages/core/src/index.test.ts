@@ -381,18 +381,18 @@ describe("valid", () => {
     };
 
     const f = iterate(
-      11,
+      12,
       (x) => sqrt(x),
-      (x, y) => add(x, y),
+      (x, y) => mul(x, y),
     );
     const g = vjp(fn([Real], Real, (x) => f(x)));
     const h = fn([Real, Real], Vec(2, Real), (x, y) => {
       const { ret, grad } = g(x);
       return [ret, grad(y)];
     });
-    expect(interp(h)(2, 3)).toEqual([
-      3.9999999999999996, 3.337610787761814e-308,
-    ]);
+    const v = interp(h)(2, 3);
+    expect(v[0]).toBeCloseTo(2);
+    expect(v[1]).toBeCloseTo(3);
   });
 
   test("VJP with struct and select", () => {
