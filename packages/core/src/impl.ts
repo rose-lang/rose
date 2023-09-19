@@ -30,6 +30,7 @@ const strings = Symbol("strings");
 export interface Fn {
   [inner]: wasm.Func;
   [strings]: string[];
+  jvp: Fn;
 }
 
 /** Property key for a variable ID. */
@@ -64,6 +65,9 @@ export type Bool = boolean | Var;
 
 /** An abstract 64-bit floating point number. */
 export type Real = number | Var;
+
+/** An abstract 64-bit floating point tangent number. */
+export type Tan = number | Var;
 
 /** An abstract natural number, which can be used to index into a vector. */
 type Nat = number | symbol;
@@ -215,6 +219,9 @@ export const Bool = Symbol("Bool");
 /** The 64-bit floating-point type. */
 export const Real = Symbol("Real");
 
+/** The 64-bit floating-point tangent type. */
+export const Tan = Symbol("Tan");
+
 /** Representation of the null type. */
 type Nulls = typeof Null;
 
@@ -223,6 +230,9 @@ type Bools = typeof Bool;
 
 /** Representation of the 64-bit floating point type. */
 type Reals = typeof Real;
+
+/** Representation of the 64-bit floating point tangent type. */
+type Tans = typeof Tan;
 
 /** Representation of a bounded index type (it's just the upper bound). */
 type Nats = number;
@@ -243,6 +253,9 @@ interface Vecs<K, V> {
 export const Vec = <K, V>(index: K, elem: V): Vecs<K, V> => {
   return { [ind]: index, [elm]: elem };
 };
+
+/** The 128-bit floating-point dual number type. */
+export const Dual = { re: Real, du: Tan } as const;
 
 // TODO: make this locale-independent
 const compare = (a: string, b: string): number => a.localeCompare(b);
@@ -266,6 +279,7 @@ const tyId = (ctx: Context, ty: unknown): number => {
   if (ty === Null) return ctx.func.tyUnit();
   else if (ty === Bool) return ctx.func.tyBool();
   else if (ty === Real) return ctx.func.tyF64();
+  else if (ty === Tan) return ctx.func.tyT64();
   else if (typeof ty === "number") return ctx.func.tyFin(ty);
   else if (typeof ty === "object" && ty !== null) {
     if (ind in ty && elm in ty)
@@ -385,6 +399,8 @@ type ToSymbolic<T> = T extends Nulls
   ? Bool
   : T extends Reals
   ? Real
+  : T extends Tans
+  ? Tan
   : T extends Nats
   ? Nat
   : T extends Vecs<any, infer V>
@@ -404,6 +420,8 @@ type ToValue<T> = T extends Nulls
   ? Bool
   : T extends Reals
   ? Real
+  : T extends Tans
+  ? Tan
   : T extends Nats
   ? Nat
   : T extends Vecs<any, infer V>
@@ -472,7 +490,7 @@ export const fn = <const P extends readonly any[], const R>(
 };
 
 /** Construct an opaque function whose implementation runs `f`. */
-export const custom = <const P extends readonly Reals[], const R extends Reals>(
+export const opaque = <const P extends readonly Reals[], const R extends Reals>(
   params: P,
   ret: R,
   f: (...args: JsArgs<SymbolicParams<P>>) => ToJs<ToValue<R>>,
@@ -485,6 +503,11 @@ export const custom = <const P extends readonly Reals[], const R extends Reals>(
   funcs.register(g, func);
   g[inner] = func;
   g[strings] = []; // TODO: support tuples in opaque functions
+  Object.defineProperty(g, "jvp", {
+    set(h: Fn) {
+      func.setJvp(h[inner]);
+    },
+  });
   return g;
 };
 
@@ -603,8 +626,8 @@ export const vjp = <const A, const R>(
   const tp = g[inner].transpose();
   const fwdFunc = tp.fwd()!;
   const bwdFunc = tp.bwd()!;
-  const fwd: Fn = { [inner]: fwdFunc, [strings]: [...f[strings]] };
-  const bwd: Fn = { [inner]: bwdFunc, [strings]: [...f[strings]] };
+  const fwd: Fn = { [inner]: fwdFunc, [strings]: [...f[strings]] } as Fn;
+  const bwd: Fn = { [inner]: bwdFunc, [strings]: [...f[strings]] } as Fn;
   funcs.register(fwd, fwdFunc);
   funcs.register(bwd, bwdFunc);
   return (arg: A) => {
@@ -801,4 +824,37 @@ export const vec = <const I, const T>(
   }
   const id = block.vec(ctx.func, t, arg, body, out);
   return idVal(ctx, t, id) as Vec<ToSymbolic<T>>;
+};
+
+/** Return the variable ID for the abstract floating point tangent `x`. */
+const tanId = (ctx: Context, x: Tan): number => valId(ctx, ctx.func.tyT64(), x);
+
+/** Return the negative of the abstract tangent `x`. */
+export const negLin = (x: Tan): Tan => {
+  const ctx = getCtx();
+  return newVar(ctx.block.neg(ctx.func, tanId(ctx, x)));
+};
+
+/** Return the abstract tangent `x` plus the abstract tangent `y`. */
+export const addLin = (x: Tan, y: Tan): Tan => {
+  const ctx = getCtx();
+  return newVar(ctx.block.add(ctx.func, tanId(ctx, x), tanId(ctx, y)));
+};
+
+/** Return the abstract tangent `x` minus the abstract tangent `y`. */
+export const subLin = (x: Tan, y: Tan): Tan => {
+  const ctx = getCtx();
+  return newVar(ctx.block.sub(ctx.func, tanId(ctx, x), tanId(ctx, y)));
+};
+
+/** Return the abstract tangent `x` times the abstract number `y`. */
+export const mulLin = (x: Tan, y: Real): Tan => {
+  const ctx = getCtx();
+  return newVar(ctx.block.mul(ctx.func, tanId(ctx, x), realId(ctx, y)));
+};
+
+/** Return the abstract tangent `x` divided by the abstract number `y`. */
+export const divLin = (x: Tan, y: Real): Tan => {
+  const ctx = getCtx();
+  return newVar(ctx.block.div(ctx.func, tanId(ctx, x), realId(ctx, y)));
 };

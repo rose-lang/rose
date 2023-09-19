@@ -773,79 +773,93 @@ impl<'a> Transpose<'a> {
                 }
             }
 
-            Expr::Call { id, generics, args } => {
-                let (dep_types, t) = self.deps[id.func()];
-                let mut types = vec![];
-                for ty in dep_types {
-                    types.push(self.translate(generics, &types, ty));
+            Expr::Call { id, generics, args } => match self.f.vars[var.var()] {
+                REAL => {
+                    self.block.fwd.push(Instr {
+                        var,
+                        expr: Expr::Call {
+                            id: *id,
+                            generics: generics.clone(),
+                            args: args.iter().map(|&arg| self.get_prim(arg)).collect(),
+                        },
+                    });
+                    self.keep(var);
+                    self.prims[var.var()] = Some(Src(None));
                 }
-                let t_tup = types[t.ty()];
+                _ => {
+                    let (dep_types, t) = self.deps[id.func()];
+                    let mut types = vec![];
+                    for ty in dep_types {
+                        types.push(self.translate(generics, &types, ty));
+                    }
+                    let t_tup = types[t.ty()];
 
-                let t_bundle = self.ty(Ty::Tuple {
-                    members: [self.f.vars[var.var()], t_tup].into(),
-                });
-                let bundle = self.fwd_var(t_bundle);
-                self.block.fwd.push(Instr {
-                    var: bundle,
-                    expr: Expr::Call {
-                        id: *id,
-                        generics: generics.clone(),
-                        args: args.iter().map(|&arg| self.get_re(arg)).collect(),
-                    },
-                });
+                    let t_bundle = self.ty(Ty::Tuple {
+                        members: [self.f.vars[var.var()], t_tup].into(),
+                    });
+                    let bundle = self.fwd_var(t_bundle);
+                    self.block.fwd.push(Instr {
+                        var: bundle,
+                        expr: Expr::Call {
+                            id: *id,
+                            generics: generics.clone(),
+                            args: args.iter().map(|&arg| self.get_re(arg)).collect(),
+                        },
+                    });
 
-                self.block.fwd.push(Instr {
-                    var,
-                    expr: Expr::Member {
-                        tuple: bundle,
-                        member: id::member(0),
-                    },
-                });
-                self.keep(var);
+                    self.block.fwd.push(Instr {
+                        var,
+                        expr: Expr::Member {
+                            tuple: bundle,
+                            member: id::member(0),
+                        },
+                    });
+                    self.keep(var);
 
-                let inter_fwd = self.fwd_var(t_tup);
-                let inter_bwd = self.bwd_var(Some(t_tup));
-                self.block.fwd.push(Instr {
-                    var: inter_fwd,
-                    expr: Expr::Member {
-                        tuple: bundle,
-                        member: id::member(1),
-                    },
-                });
-                self.block.bwd_nonlin.push(Instr {
-                    var: inter_bwd,
-                    expr: Expr::Member {
-                        tuple: self.block.inter_tup,
-                        member: id::member(self.block.inter_mem.len()),
-                    },
-                });
-                self.block.inter_mem.push(inter_fwd);
+                    let inter_fwd = self.fwd_var(t_tup);
+                    let inter_bwd = self.bwd_var(Some(t_tup));
+                    self.block.fwd.push(Instr {
+                        var: inter_fwd,
+                        expr: Expr::Member {
+                            tuple: bundle,
+                            member: id::member(1),
+                        },
+                    });
+                    self.block.bwd_nonlin.push(Instr {
+                        var: inter_bwd,
+                        expr: Expr::Member {
+                            tuple: self.block.inter_tup,
+                            member: id::member(self.block.inter_mem.len()),
+                        },
+                    });
+                    self.block.inter_mem.push(inter_fwd);
 
-                let lin = self.accum(var);
-                let unit = self.bwd_var(Some(self.unit));
-                let mut args: Vec<_> = args
-                    .iter()
-                    .map(|&arg| match self.f.types[self.f.vars[arg.var()].ty()] {
-                        Ty::Ref { .. } => self.get_cotan(arg),
-                        _ => self.get_accum(arg),
-                    })
-                    .collect();
-                args.push(lin.cot);
-                args.push(inter_bwd);
-                self.block.bwd_lin.push(Instr {
-                    var: unit,
-                    expr: Expr::Call {
-                        id: *id,
-                        generics: generics.clone(),
-                        args: args.into(),
-                    },
-                });
-                self.resolve(lin);
+                    let lin = self.accum(var);
+                    let unit = self.bwd_var(Some(self.unit));
+                    let mut args: Vec<_> = args
+                        .iter()
+                        .map(|&arg| match self.f.types[self.f.vars[arg.var()].ty()] {
+                            Ty::Ref { .. } => self.get_cotan(arg),
+                            _ => self.get_accum(arg),
+                        })
+                        .collect();
+                    args.push(lin.cot);
+                    args.push(inter_bwd);
+                    self.block.bwd_lin.push(Instr {
+                        var: unit,
+                        expr: Expr::Call {
+                            id: *id,
+                            generics: generics.clone(),
+                            args: args.into(),
+                        },
+                    });
+                    self.resolve(lin);
 
-                if let Ty::F64 = self.mapped_types[self.f.vars[var.var()].ty()] {
-                    self.duals[var.var()] = Some((Src(None), Src(None)));
+                    if let Ty::F64 = self.mapped_types[self.f.vars[var.var()].ty()] {
+                        self.duals[var.var()] = Some((Src(None), Src(None)));
+                    }
                 }
-            }
+            },
             Expr::For { arg, body, ret } => {
                 let t_index = self.f.vars[arg.var()];
                 let t_elem = self.f.vars[ret.var()];

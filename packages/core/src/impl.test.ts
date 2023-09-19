@@ -57,9 +57,10 @@ describe("pprint", () => {
     expect(s).toBe(
       `
 T0 = F64
-T1 = Bool
+T1 = F64
+T2 = Bool
 (x0: T0, x1: T0) -> T0 {
-  x2: T1 = x0 < x1
+  x2: T2 = x0 < x1
   x3: T0 = x0 * x1
   x4: T0 = x1 - x0
   x5: T0 = x3 + x0
@@ -85,6 +86,7 @@ T1 = Bool
     expect(s).toBe(
       `
 T0 = F64
+T1 = F64
 (x0: T0) -> T0 {
   x1: T0 = f0<>(x0)
   x2: T0 = f1<>(x0)
@@ -108,10 +110,11 @@ T0 = F64
     expect(s).toBe(
       `
 T0 = F64
-T1 = Bool
+T1 = F64
+T2 = Bool
 (x0: T0) -> T0 {
-  x1: T1 = true
-  x2: T1 = not x1
+  x1: T2 = true
+  x2: T2 = not x1
   x3: T0 = -x0
   x4: T0 = |x3|
   x5: T0 = sign(x0)
@@ -143,24 +146,25 @@ T1 = Bool
     expect(s).toBe(
       `
 T0 = F64
-T1 = Bool
-(x0: T0, x1: T0) -> T1 {
-  x6: T1 = true
-  x7: T1 = false
+T1 = F64
+T2 = Bool
+(x0: T0, x1: T0) -> T2 {
+  x6: T2 = true
+  x7: T2 = false
   x2: T0 = x0 + x1
   x3: T0 = x0 - x1
   x4: T0 = x0 * x1
   x5: T0 = x0 / x1
-  x8: T1 = x6 and x7
-  x9: T1 = x6 or x7
-  x10: T1 = x6 iff x7
-  x11: T1 = x6 xor x7
-  x12: T1 = x0 != x1
-  x13: T1 = x0 < x1
-  x14: T1 = x0 <= x1
-  x15: T1 = x0 == x1
-  x16: T1 = x0 > x1
-  x17: T1 = x4 >= x5
+  x8: T2 = x6 and x7
+  x9: T2 = x6 or x7
+  x10: T2 = x6 iff x7
+  x11: T2 = x6 xor x7
+  x12: T2 = x0 != x1
+  x13: T2 = x0 < x1
+  x14: T2 = x0 <= x1
+  x15: T2 = x0 == x1
+  x16: T2 = x0 > x1
+  x17: T2 = x4 >= x5
   x17
 }
 `.trimStart(),
@@ -174,14 +178,15 @@ T1 = Bool
     const s = pprint(f);
     expect(s).toBe(
       `
-T0 = 3
+T0 = F64
 T1 = F64
-T2 = [T0]T1
-(x0: T2, x1: T2) -> T2 {
-  x6: T2 = for x2: T0 {
-    x3: T1 = x0[x2]
-    x4: T1 = x1[x2]
-    x5: T1 = x3 + x4
+T2 = 3
+T3 = [T2]T0
+(x0: T3, x1: T3) -> T3 {
+  x6: T3 = for x2: T2 {
+    x3: T0 = x0[x2]
+    x4: T0 = x1[x2]
+    x5: T0 = x3 + x4
     x5
   }
   x6
