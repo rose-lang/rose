@@ -1,6 +1,6 @@
 {
   "name": "rose",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "MIT",
   "repository": "rose-lang/rose",
   "type": "module",
@@ -10,7 +10,7 @@
     "src"
   ],
   "dependencies": {
-    "@rose-lang/wasm": "^0.3"
+    "@rose-lang/wasm": "0.3.1"
   },
   "scripts": {
     "build": "tsc",
