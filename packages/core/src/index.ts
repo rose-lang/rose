@@ -1,6 +1,7 @@
 export {
   Bool,
   Dual,
+  Fn,
   Null,
   Real,
   Tan,
