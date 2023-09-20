@@ -524,9 +524,12 @@ describe("valid", () => {
     expect(interp(f)(1)).toBeCloseTo(Math.cos(1));
     f = grad(f);
     expect(interp(f)(1)).toBeCloseTo(-Math.sin(1));
+
+    f = cos;
+    expect(interp(f)(1)).toBeCloseTo(Math.cos(1));
+    f = grad(f);
+    expect(interp(f)(1)).toBeCloseTo(-Math.sin(1));
     f = grad(f);
     expect(interp(f)(1)).toBeCloseTo(-Math.cos(1));
-    f = grad(f);
-    expect(interp(f)(1)).toBeCloseTo(Math.sin(1));
   });
 });
