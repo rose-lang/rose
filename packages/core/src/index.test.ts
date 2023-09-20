@@ -357,6 +357,17 @@ describe("valid", () => {
     expect(g({ re: 2, du: 3 })).toEqual({ re: 2097152, du: 3145728 });
   });
 
+  test("custom JVP", () => {
+    const max = fn([Real, Real], Real, (x, y) => select(gt(x, y), Real, x, y));
+    const f = fn([Real], Real, (x) => sqrt(x));
+    const epsilon = 1e-5;
+    f.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
+      const y = sqrt(x);
+      return { re: y, du: mulLin(dx, div(1 / 2, max(epsilon, y))) };
+    });
+    expect(interp(jvp(f))({ re: 0, du: 1 }).du).toBeCloseTo(50000);
+  });
+
   test("VJP", () => {
     const f = fn([Vec(2, Real)], Real, (v) => mul(v[0], v[1]));
     const g = fn([], Vec(3, Real), () => {

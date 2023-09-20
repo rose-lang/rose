@@ -26,12 +26,26 @@ export const inner = Symbol("inner");
 /** Property key for a `Fn`'s string array for resolving struct key names. */
 const strings = Symbol("strings");
 
-/** An abstract function. */
-export interface Fn {
+interface FnBase {
   [inner]: wasm.Func;
   [strings]: string[];
-  jvp: Fn;
 }
+
+/** An abstract function. */
+export interface Fn extends FnBase {
+  jvp?: Fn;
+}
+
+/** Adds `f` to the registry, mutates it into a full `Fn`, then returns it. */
+const makeFn = (f: FnBase): Fn => {
+  funcs.register(f, f[inner]);
+  Object.defineProperty(f, "jvp", {
+    set(g: Fn) {
+      f[inner].setJvp(g[inner]);
+    },
+  });
+  return f as Fn;
+};
 
 /** Property key for a variable ID. */
 const variable = Symbol("variable");
@@ -483,10 +497,9 @@ export const fn = <const P extends readonly any[], const R>(
   const g: any = (...args: any): any =>
     // TODO: support generics
     call(g, new Uint32Array(), args);
-  funcs.register(g, func);
   g[inner] = func;
   g[strings] = strs;
-  return g;
+  return makeFn(g) as any;
 };
 
 /** Construct an opaque function whose implementation runs `f`. */
@@ -500,15 +513,9 @@ export const opaque = <const P extends readonly Reals[], const R extends Reals>(
   const g: any = (...args: any): any =>
     // TODO: support generics
     call(g, new Uint32Array(), args);
-  funcs.register(g, func);
   g[inner] = func;
   g[strings] = []; // TODO: support tuples in opaque functions
-  Object.defineProperty(g, "jvp", {
-    set(h: Fn) {
-      func.setJvp(h[inner]);
-    },
-  });
-  return g;
+  return makeFn(g) as any;
 };
 
 /** A concrete value. */
@@ -612,10 +619,9 @@ export const jvp = <const A extends readonly any[], const R>(
   const g: any = (...args: any): any =>
     // TODO: support generics
     call(g, new Uint32Array(), args);
-  funcs.register(g, func);
   g[inner] = func;
   g[strings] = strs;
-  return g;
+  return makeFn(g) as any;
 };
 
 /** Construct a closure that computes the Jacobian-vector product of `f`. */
@@ -626,10 +632,8 @@ export const vjp = <const A, const R>(
   const tp = g[inner].transpose();
   const fwdFunc = tp.fwd()!;
   const bwdFunc = tp.bwd()!;
-  const fwd: Fn = { [inner]: fwdFunc, [strings]: [...f[strings]] } as Fn;
-  const bwd: Fn = { [inner]: bwdFunc, [strings]: [...f[strings]] } as Fn;
-  funcs.register(fwd, fwdFunc);
-  funcs.register(bwd, bwdFunc);
+  const fwd = makeFn({ [inner]: fwdFunc, [strings]: [...f[strings]] });
+  const bwd = makeFn({ [inner]: bwdFunc, [strings]: [...f[strings]] });
   return (arg: A) => {
     const ctx = getCtx();
     const strs = intern(ctx, fwd[strings]);
