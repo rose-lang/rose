@@ -196,6 +196,9 @@ pub enum Unop {
     Neg,
     Abs,
     Sign,
+    Ceil,
+    Floor,
+    Trunc,
     Sqrt,
 }
 

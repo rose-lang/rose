@@ -739,6 +739,24 @@ export const sign = (x: Real): Real => {
   return newVar(ctx.block.sign(ctx.func, realId(ctx, x)));
 };
 
+/** Return the ceiling of the abstract number `x`. */
+export const ceil = (x: Real): Real => {
+  const ctx = getCtx();
+  return newVar(ctx.block.ceil(ctx.func, realId(ctx, x)));
+};
+
+/** Return the floor of the abstract number `x`. */
+export const floor = (x: Real): Real => {
+  const ctx = getCtx();
+  return newVar(ctx.block.floor(ctx.func, realId(ctx, x)));
+};
+
+/** Return the truncation of the abstract number `x`. */
+export const trunc = (x: Real): Real => {
+  const ctx = getCtx();
+  return newVar(ctx.block.trunc(ctx.func, realId(ctx, x)));
+};
+
 /** Return the square root of the abstract number `x`. */
 export const sqrt = (x: Real): Real => {
   const ctx = getCtx();

@@ -571,7 +571,13 @@ impl<'a> Transpose<'a> {
             &Expr::Unary { op, arg } => {
                 match self.f.vars[var.var()] {
                     DUAL => match op {
-                        Unop::Not | Unop::Abs | Unop::Sign | Unop::Sqrt => panic!(),
+                        Unop::Not
+                        | Unop::Abs
+                        | Unop::Sign
+                        | Unop::Ceil
+                        | Unop::Floor
+                        | Unop::Trunc
+                        | Unop::Sqrt => panic!(),
                         Unop::Neg => {
                             let lin = self.calc(var);
                             let res = self.bwd_var(Some(DUAL));

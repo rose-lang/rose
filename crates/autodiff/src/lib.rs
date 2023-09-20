@@ -213,12 +213,9 @@ impl Autodiff<'_> {
                     });
                     self.pack(var, y, dy)
                 }
-                Unop::Sign => {
+                Unop::Sign | Unop::Ceil | Unop::Floor | Unop::Trunc => {
                     let (x, _) = self.get(arg);
-                    let y = self.real(Expr::Unary {
-                        op: Unop::Sign,
-                        arg: x,
-                    });
+                    let y = self.real(Expr::Unary { op, arg: x });
                     let dy = self.dual_zero;
                     self.pack(var, y, dy)
                 }

@@ -5,8 +5,11 @@ import {
   Null,
   Real,
   Vec,
+  abs,
   add,
+  ceil,
   div,
+  floor,
   fn,
   gt,
   interp,
@@ -14,12 +17,14 @@ import {
   mul,
   mulLin,
   neg,
+  not,
   opaque,
   or,
   select,
   sign,
   sqrt,
   sub,
+  trunc,
   vec,
   vjp,
 } from "./index.js";
@@ -106,6 +111,13 @@ describe("valid", () => {
     expect(g(null)).toBe(null);
   });
 
+  test("not", () => {
+    const f = fn([Bool], Bool, (p) => not(p));
+    const g = interp(f);
+    expect(g(true)).toBe(false);
+    expect(g(false)).toBe(true);
+  });
+
   test("2 + 2 = 4", () => {
     const f = fn([Real, Real], Real, (x, y) => add(x, y));
     const g = interp(f);
@@ -118,6 +130,15 @@ describe("valid", () => {
     expect(g()).toBe(6);
   });
 
+  test("absolute value", () => {
+    const f = fn([Real], Real, (x) => abs(x));
+    const g = interp(f);
+    expect(g(-2)).toBe(2);
+    expect(g(-0)).toBe(0);
+    expect(g(0)).toBe(0);
+    expect(g(2)).toBe(2);
+  });
+
   test("signum", () => {
     const f = fn([Real], Real, (x) => sign(x));
     const g = interp(f);
@@ -125,6 +146,45 @@ describe("valid", () => {
     expect(g(-0)).toBe(-1);
     expect(g(0)).toBe(1);
     expect(g(2)).toBe(1);
+  });
+
+  test("ceiling", () => {
+    const f = fn([Real], Real, (x) => ceil(x));
+    const g = interp(f);
+    expect(g(-1.5)).toBe(-1);
+    expect(g(-1)).toBe(-1);
+    expect(g(-0.5)).toBe(-0);
+    expect(g(-0)).toBe(-0);
+    expect(g(0)).toBe(0);
+    expect(g(0.5)).toBe(1);
+    expect(g(1)).toBe(1);
+    expect(g(1.5)).toBe(2);
+  });
+
+  test("floor", () => {
+    const f = fn([Real], Real, (x) => floor(x));
+    const g = interp(f);
+    expect(g(-1.5)).toBe(-2);
+    expect(g(-1)).toBe(-1);
+    expect(g(-0.5)).toBe(-1);
+    expect(g(-0)).toBe(-0);
+    expect(g(0)).toBe(0);
+    expect(g(0.5)).toBe(0);
+    expect(g(1)).toBe(1);
+    expect(g(1.5)).toBe(1);
+  });
+
+  test("truncate", () => {
+    const f = fn([Real], Real, (x) => trunc(x));
+    const g = interp(f);
+    expect(g(-1.5)).toBe(-1);
+    expect(g(-1)).toBe(-1);
+    expect(g(-0.5)).toBe(-0);
+    expect(g(-0)).toBe(-0);
+    expect(g(0)).toBe(0);
+    expect(g(0.5)).toBe(0);
+    expect(g(1)).toBe(1);
+    expect(g(1.5)).toBe(1);
   });
 
   test("square root", () => {

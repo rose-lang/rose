@@ -471,6 +471,9 @@ pub fn pprint(f: &Func) -> Result<String, JsError> {
                 rose::Unop::Neg => writeln!(&mut s, "-x{}", arg.var())?,
                 rose::Unop::Abs => writeln!(&mut s, "|x{}|", arg.var())?,
                 rose::Unop::Sign => writeln!(&mut s, "sign(x{})", arg.var())?,
+                rose::Unop::Ceil => writeln!(&mut s, "ceil(x{})", arg.var())?,
+                rose::Unop::Floor => writeln!(&mut s, "floor(x{})", arg.var())?,
+                rose::Unop::Trunc => writeln!(&mut s, "trunc(x{})", arg.var())?,
                 rose::Unop::Sqrt => writeln!(&mut s, "sqrt(x{})", arg.var())?,
             },
             rose::Expr::Binary { op, left, right } => match op {
@@ -1294,6 +1297,42 @@ impl Block {
         let t = id::ty(f.ty_f64());
         let expr = rose::Expr::Unary {
             op: rose::Unop::Sign,
+            arg: id::var(arg),
+        };
+        self.instr(f, t, expr)
+    }
+
+    /// Return the variable ID for a new ceiling instruction on `arg`.
+    ///
+    /// Assumes `arg` is defined, in scope, and has 64-bit floating point type.
+    pub fn ceil(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
+        let t = id::ty(f.ty_f64());
+        let expr = rose::Expr::Unary {
+            op: rose::Unop::Ceil,
+            arg: id::var(arg),
+        };
+        self.instr(f, t, expr)
+    }
+
+    /// Return the variable ID for a new floor instruction on `arg`.
+    ///
+    /// Assumes `arg` is defined, in scope, and has 64-bit floating point type.
+    pub fn floor(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
+        let t = id::ty(f.ty_f64());
+        let expr = rose::Expr::Unary {
+            op: rose::Unop::Floor,
+            arg: id::var(arg),
+        };
+        self.instr(f, t, expr)
+    }
+
+    /// Return the variable ID for a new truncate instruction on `arg`.
+    ///
+    /// Assumes `arg` is defined, in scope, and has 64-bit floating point type.
+    pub fn trunc(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
+        let t = id::ty(f.ty_f64());
+        let expr = rose::Expr::Unary {
+            op: rose::Unop::Trunc,
             arg: id::var(arg),
         };
         self.instr(f, t, expr)
