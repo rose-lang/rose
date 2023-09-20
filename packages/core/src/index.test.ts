@@ -1,17 +1,20 @@
 import { describe, expect, test } from "vitest";
 import {
   Bool,
+  Dual,
   Null,
   Real,
   Vec,
   add,
-  custom,
   div,
   fn,
   gt,
   interp,
   jvp,
   mul,
+  mulLin,
+  neg,
+  opaque,
   or,
   select,
   sign,
@@ -326,14 +329,14 @@ describe("valid", () => {
     expect(g({ x: 42 })).toBe(42);
   });
 
-  test("custom unary function", () => {
-    const log = custom([Real], Real, Math.log);
+  test("opaque unary function", () => {
+    const log = opaque([Real], Real, Math.log);
     const f = interp(log);
     expect(f(Math.PI)).toBe(1.1447298858494002);
   });
 
-  test("custom binary function", () => {
-    const pow = custom([Real, Real], Real, Math.pow);
+  test("opaque binary function", () => {
+    const pow = opaque([Real, Real], Real, Math.pow);
     const f = interp(pow);
     expect(f(Math.E, Math.PI)).toBe(23.140692632779263);
   });
@@ -352,6 +355,17 @@ describe("valid", () => {
     }
     const g = interp(jvp(f));
     expect(g({ re: 2, du: 3 })).toEqual({ re: 2097152, du: 3145728 });
+  });
+
+  test("custom JVP", () => {
+    const max = fn([Real, Real], Real, (x, y) => select(gt(x, y), Real, x, y));
+    const f = fn([Real], Real, (x) => sqrt(x));
+    const epsilon = 1e-5;
+    f.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
+      const y = sqrt(x);
+      return { re: y, du: mulLin(dx, div(1 / 2, max(epsilon, y))) };
+    });
+    expect(interp(jvp(f))({ re: 0, du: 1 }).du).toBeCloseTo(50000);
   });
 
   test("VJP", () => {
@@ -500,5 +514,33 @@ describe("valid", () => {
         { p: false, x: 7, y: 11, z: 13 },
       ),
     ).toEqual({ p: true, x: 13, y: 0, z: 7 });
+  });
+
+  test("opaque functions with derivatives", () => {
+    const grad = (f: any) => fn([Real], Real, (x) => vjp(f)(x).grad(1) as Real);
+
+    const sin = opaque([Real], Real, Math.sin);
+    const cos = opaque([Real], Real, Math.cos);
+
+    sin.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
+      return { re: sin(x), du: mulLin(dx, cos(x)) };
+    });
+    cos.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
+      return { re: cos(x), du: mulLin(dx, neg(sin(x))) };
+    });
+
+    let f = sin;
+    expect(interp(f)(1)).toBeCloseTo(Math.sin(1));
+    f = grad(f);
+    expect(interp(f)(1)).toBeCloseTo(Math.cos(1));
+    f = grad(f);
+    expect(interp(f)(1)).toBeCloseTo(-Math.sin(1));
+
+    f = cos;
+    expect(interp(f)(1)).toBeCloseTo(Math.cos(1));
+    f = grad(f);
+    expect(interp(f)(1)).toBeCloseTo(-Math.sin(1));
+    f = grad(f);
+    expect(interp(f)(1)).toBeCloseTo(-Math.cos(1));
   });
 });

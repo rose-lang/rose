@@ -125,7 +125,7 @@ struct Pointee {
     structs: Box<[Option<Box<[usize]>>]>,
 
     /// Jacobian-vector product.
-    jvp: RefCell<Option<Weak<Pointee>>>,
+    jvp: RefCell<Option<Rc<Pointee>>>,
 
     /// Forward pass of the vector-Jacobian product.
     fwd: RefCell<Option<Weak<Pointee>>>,
@@ -262,6 +262,11 @@ impl Func {
         Ok(to_js_value(&ret)?)
     }
 
+    #[wasm_bindgen(js_name = "setJvp")]
+    pub fn set_jvp(&self, f: &Func) {
+        self.rc.as_ref().jvp.replace(Some(Rc::clone(&f.rc)));
+    }
+
     /// Return a function that computes the Jacobian-vector product of this function.
     ///
     /// `re` must be the string ID for the string `"re"` not just in this function, but in every
@@ -274,7 +279,7 @@ impl Func {
             ..
         } = self.rc.as_ref();
         let mut cache = jvp.borrow_mut();
-        if let Some(rc) = cache.as_ref().and_then(|weak| weak.upgrade()) {
+        if let Some(rc) = cache.as_ref().map(Rc::clone) {
             return Self { rc };
         }
         let rc =
@@ -301,9 +306,9 @@ impl Func {
                         bwd: RefCell::new(None),
                     })
                 }
-                Inner::Opaque { .. } => todo!(),
+                Inner::Opaque { .. } => panic!("no JVP provided for opaque function"),
             };
-        *cache = Some(Rc::downgrade(&rc));
+        *cache = Some(Rc::clone(&rc));
         Self { rc }
     }
 
@@ -379,7 +384,7 @@ impl Func {
                     }),
                 )
             }
-            Inner::Opaque { .. } => panic!(),
+            Inner::Opaque { .. } => (Rc::clone(&self.rc), (Rc::clone(&self.rc))),
         };
         *cache_fwd = Some(Rc::downgrade(&rc_fwd));
         *cache_bwd = Some(Rc::downgrade(&rc_bwd));
@@ -611,6 +616,7 @@ enum Ty {
     Unit,
     Bool,
     F64,
+    T64,
     Fin {
         size: usize,
     },
@@ -639,6 +645,7 @@ impl Ty {
             Ty::Unit => (rose::Ty::Unit, None),
             Ty::Bool => (rose::Ty::Bool, None),
             Ty::F64 => (rose::Ty::F64, None),
+            Ty::T64 => (rose::Ty::F64, None),
             Ty::Fin { size } => (rose::Ty::Fin { size }, None),
             Ty::Ref { inner } => (rose::Ty::Ref { inner }, None),
             Ty::Array { index, elem } => (rose::Ty::Array { index, elem }, None),
@@ -694,10 +701,13 @@ impl FuncBuilder {
     /// Start building a function with the given number of `generics`, all constrained as `Index`.
     #[wasm_bindgen(constructor)]
     pub fn new(generics: usize) -> Self {
+        let mut types = IndexMap::new();
+        types.insert(Ty::F64, EnumSet::only(rose::Constraint::Value));
+        types.insert(Ty::T64, EnumSet::only(rose::Constraint::Value));
         Self {
             functions: vec![],
             generics: vec![EnumSet::only(rose::Constraint::Index); generics].into(),
-            types: IndexMap::new(),
+            types,
             vars: vec![],
             params: vec![],
             constants: vec![],
@@ -906,7 +916,13 @@ impl FuncBuilder {
     /// Return the ID for the 64-bit floating-point type, creating if needed.
     #[wasm_bindgen(js_name = "tyF64")]
     pub fn ty_f64(&mut self) -> usize {
-        self.newtype(Ty::F64, EnumSet::only(rose::Constraint::Value))
+        0
+    }
+
+    /// Return the ID for the 64-bit floating-point tangent type, creating if needed.
+    #[wasm_bindgen(js_name = "tyT64")]
+    pub fn ty_t64(&mut self) -> usize {
+        1
     }
 
     /// Return the ID for the type of nonnegative integers less than `size`, creating if needed.
@@ -1251,7 +1267,7 @@ impl Block {
     ///
     /// Assumes `arg` is defined, in scope, and has 64-bit floating point type.
     pub fn neg(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
-        let t = id::ty(f.ty_f64());
+        let t = f.vars[arg].t;
         let expr = rose::Expr::Unary {
             op: rose::Unop::Neg,
             arg: id::var(arg),
@@ -1433,7 +1449,7 @@ impl Block {
     ///
     /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn add(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
-        let t = id::ty(f.ty_f64());
+        let t = f.vars[left].t;
         let expr = rose::Expr::Binary {
             op: rose::Binop::Add,
             left: id::var(left),
@@ -1446,7 +1462,7 @@ impl Block {
     ///
     /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn sub(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
-        let t = id::ty(f.ty_f64());
+        let t = f.vars[left].t;
         let expr = rose::Expr::Binary {
             op: rose::Binop::Sub,
             left: id::var(left),
@@ -1459,7 +1475,7 @@ impl Block {
     ///
     /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn mul(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
-        let t = id::ty(f.ty_f64());
+        let t = f.vars[left].t;
         let expr = rose::Expr::Binary {
             op: rose::Binop::Mul,
             left: id::var(left),
@@ -1472,7 +1488,7 @@ impl Block {
     ///
     /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
     pub fn div(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
-        let t = id::ty(f.ty_f64());
+        let t = f.vars[left].t;
         let expr = rose::Expr::Binary {
             op: rose::Binop::Div,
             left: id::var(left),
