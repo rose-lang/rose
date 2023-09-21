@@ -209,7 +209,7 @@ const valId = (ctx: Context, t: number, x: unknown): number => {
         }
       }
     }
-  } else throw Error("invalid value");
+  } else throw Error(`invalid value: ${x}`);
 
   map.set(x, id);
   return id;
@@ -540,7 +540,7 @@ const pack = (f: Fn, t: number, x: unknown): RawVal => {
       }
       return { Tuple: vals };
     }
-  } else throw Error("invalid value");
+  } else throw Error(`invalid value: ${x}`);
 };
 
 /** Translate a concrete value from the interpreter's raw format. */
