@@ -747,30 +747,34 @@ impl<'a> Transpose<'a> {
                     }
                     _ => {
                         self.keep(var);
-                        let lin = self.accum(var);
-                        let acc_then = self.get_accum(then);
-                        let acc_els = self.get_accum(els);
-                        let t_acc = self.ty(Ty::Ref {
-                            inner: self.f.vars[var.var()],
-                        });
-                        let acc = self.bwd_var(Some(t_acc));
-                        let unit = self.bwd_var(Some(self.unit));
-                        self.block.bwd_lin.push(Instr {
-                            var: unit,
-                            expr: Expr::Add {
-                                accum: acc,
-                                addend: lin.cot,
-                            },
-                        });
-                        self.block.bwd_lin.push(Instr {
-                            var: acc,
-                            expr: Expr::Select {
-                                cond,
-                                then: acc_then,
-                                els: acc_els,
-                            },
-                        });
-                        self.resolve(lin);
+                        if t == REAL {
+                            self.prims[var.var()] = Some(Src(None));
+                        } else {
+                            let lin = self.accum(var);
+                            let acc_then = self.get_accum(then);
+                            let acc_els = self.get_accum(els);
+                            let t_acc = self.ty(Ty::Ref {
+                                inner: self.f.vars[var.var()],
+                            });
+                            let acc = self.bwd_var(Some(t_acc));
+                            let unit = self.bwd_var(Some(self.unit));
+                            self.block.bwd_lin.push(Instr {
+                                var: unit,
+                                expr: Expr::Add {
+                                    accum: acc,
+                                    addend: lin.cot,
+                                },
+                            });
+                            self.block.bwd_lin.push(Instr {
+                                var: acc,
+                                expr: Expr::Select {
+                                    cond,
+                                    then: acc_then,
+                                    els: acc_els,
+                                },
+                            });
+                            self.resolve(lin);
+                        }
                     }
                 }
 

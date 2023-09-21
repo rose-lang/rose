@@ -422,10 +422,11 @@ describe("valid", () => {
     const f = fn([Real], Real, (x) => sqrt(x));
     const epsilon = 1e-5;
     f.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
-      const y = sqrt(x);
+      const y = f(x);
       return { re: y, du: mulLin(dx, div(1 / 2, max(epsilon, y))) };
     });
-    expect(interp(jvp(f))({ re: 0, du: 1 }).du).toBeCloseTo(50000);
+    const g = fn([Real, Real], Real, (x, y) => vjp(f)(x).grad(y));
+    expect(interp(g)(0, 1)).toBeCloseTo(50000);
   });
 
   test("VJP", () => {

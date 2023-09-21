@@ -328,6 +328,9 @@ impl Func {
         }
         let (rc_fwd, rc_bwd) = match inner {
             Inner::Transparent { deps, def } => {
+                if let rose::Ty::F64 = def.types[def.vars[def.ret.var()].ty()] {
+                    return (self.clone(), self.clone());
+                }
                 let (deps_fwd, deps_bwd): (Vec<_>, Vec<_>) =
                     deps.iter().map(|f| f.transpose_pair()).unzip();
                 let dep_types: Box<_> = deps_bwd
