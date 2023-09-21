@@ -278,8 +278,7 @@ impl Func {
             jvp,
             ..
         } = self.rc.as_ref();
-        let mut cache = jvp.borrow_mut();
-        if let Some(rc) = cache.as_ref().map(Rc::clone) {
+        if let Some(rc) = jvp.borrow().as_ref().map(Rc::clone) {
             return Self { rc };
         }
         let rc =
@@ -308,7 +307,7 @@ impl Func {
                 }
                 Inner::Opaque { .. } => panic!("no JVP provided for opaque function"),
             };
-        *cache = Some(Rc::clone(&rc));
+        jvp.replace(Some(Rc::clone(&rc)));
         Self { rc }
     }
 
@@ -321,11 +320,9 @@ impl Func {
             bwd,
             ..
         } = self.rc.as_ref();
-        let mut cache_fwd = fwd.borrow_mut();
-        let mut cache_bwd = bwd.borrow_mut();
         if let (Some(rc_fwd), Some(rc_bwd)) = (
-            cache_fwd.as_ref().and_then(|weak| weak.upgrade()),
-            cache_bwd.as_ref().and_then(|weak| weak.upgrade()),
+            fwd.borrow().as_ref().and_then(|weak| weak.upgrade()),
+            bwd.borrow().as_ref().and_then(|weak| weak.upgrade()),
         ) {
             return (Self { rc: rc_fwd }, Self { rc: rc_bwd });
         }
@@ -386,8 +383,8 @@ impl Func {
             }
             Inner::Opaque { .. } => (Rc::clone(&self.rc), (Rc::clone(&self.rc))),
         };
-        *cache_fwd = Some(Rc::downgrade(&rc_fwd));
-        *cache_bwd = Some(Rc::downgrade(&rc_bwd));
+        fwd.replace(Some(Rc::downgrade(&rc_fwd)));
+        bwd.replace(Some(Rc::downgrade(&rc_bwd)));
         (Self { rc: rc_fwd }, Self { rc: rc_bwd })
     }
 
