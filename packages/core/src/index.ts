@@ -11,6 +11,7 @@ export {
   addLin,
   and,
   ceil,
+  compile,
   div,
   divLin,
   eq,

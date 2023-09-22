@@ -582,7 +582,7 @@ type JsArgs<T> = {
   [K in keyof T]: ToJs<T[K]>;
 };
 
-/** Concretize the nullary abstract function `f` using the interpreter. */
+/** Concretize the abstract function `f` using the interpreter. */
 export const interp =
   <const A extends readonly any[], const R>(
     f: Fn & ((...args: A) => R),
@@ -594,6 +594,17 @@ export const interp =
     const vals = args.map((x, i) => pack(f, params[i], x));
     return unpack(f, func.retType(), func.interp(vals)) as ToJs<R>;
   };
+
+/** Concretize the abstract function `f` using the compiler. */
+export const compile = async <const A extends readonly any[], const R>(
+  f: Fn & ((...args: A) => R),
+): Promise<(...args: JsArgs<A>) => ToJs<R>> => {
+  const bytes = f[inner].compile();
+  const instance = await WebAssembly.instantiate(
+    await WebAssembly.compile(bytes),
+  );
+  return instance.exports[""] as any;
+};
 
 // https://www.typescriptlang.org/docs/handbook/2/conditional-types.html
 type ToJvp<T> = [T] extends [Null]

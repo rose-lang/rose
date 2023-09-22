@@ -1,3 +1,4 @@
+use by_address::ByAddress;
 use enumset::EnumSet;
 use indexmap::{IndexMap, IndexSet};
 use rose::id;
@@ -53,8 +54,9 @@ fn val_to_js(x: &rose_interp::Val) -> JsValue {
 }
 
 /// Reference to an opaque function that just points to a JavaScript function as its implementation.
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 struct Opaque<'a> {
-    f: &'a js_sys::Function,
+    f: ByAddress<&'a js_sys::Function>,
 }
 
 impl rose_interp::Opaque for Opaque<'_> {
@@ -182,7 +184,7 @@ impl Func {
                 types,
                 params,
                 ret: *ret,
-                def: Opaque { f: def },
+                def: Opaque { f: ByAddress(def) },
             },
         }
     }
@@ -260,6 +262,10 @@ impl Func {
         let vals: Vec<rose_interp::Val> = serde_wasm_bindgen::from_value(args)?;
         let ret = rose_interp::interp(self.node(), IndexSet::new(), &[], vals.into_iter())?;
         Ok(to_js_value(&ret)?)
+    }
+
+    pub fn compile(&self) -> Vec<u8> {
+        rose_wasm::compile(self.node())
     }
 
     #[wasm_bindgen(js_name = "setJvp")]

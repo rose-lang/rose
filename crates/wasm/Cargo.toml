@@ -1,0 +1,11 @@
+[package]
+name = "rose-wasm"
+version = "0.3.2"
+publish = false
+edition = "2021"
+
+[dependencies]
+by_address = "1"
+indexmap = "2"
+rose = { path = "../core" }
+wasm-encoder = "0.33"

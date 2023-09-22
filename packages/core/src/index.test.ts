@@ -8,6 +8,7 @@ import {
   abs,
   add,
   ceil,
+  compile,
   div,
   floor,
   fn,
@@ -603,5 +604,11 @@ describe("valid", () => {
     expect(interp(f)(1)).toBeCloseTo(-Math.sin(1));
     f = grad(f);
     expect(interp(f)(1)).toBeCloseTo(-Math.cos(1));
+  });
+
+  test("compile", async () => {
+    const f = fn([Real, Real], Real, (x, y) => add(x, y));
+    const g = await compile(f);
+    expect(g(2, 2)).toBe(4);
   });
 });

@@ -67,7 +67,6 @@ pub trait Refs<'a> {
 }
 
 /// A node in a graph of functions.
-#[derive(Clone, Debug, Copy)]
 pub enum Node<'a, O, T: Refs<'a, Opaque = O>> {
     /// A function with an explicit body.
     Transparent {
