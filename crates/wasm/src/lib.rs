@@ -375,11 +375,12 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                         Binop::Div => self.wasm.instruction(&Instruction::F64Div),
                     };
                 }
-                &Expr::Select {
-                    cond: _,
-                    then: _,
-                    els: _,
-                } => todo!(),
+                &Expr::Select { cond, then, els } => {
+                    self.get(then);
+                    self.get(els);
+                    self.get(cond);
+                    self.wasm.instruction(&Instruction::Select);
+                }
                 Expr::Call { id, generics, args } => {
                     let gens = generics
                         .iter()

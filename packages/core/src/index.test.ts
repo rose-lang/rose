@@ -660,4 +660,11 @@ describe("valid", () => {
     const h = await compile(g);
     expect(h(2, 3)).toBe(6);
   });
+
+  test("compile select", async () => {
+    const f = fn([Bool, Real, Real], Real, (p, x, y) => select(p, Real, x, y));
+    const g = await compile(f);
+    expect(g(true, 2, 3)).toBe(2);
+    expect(g(false, 5, 7)).toBe(7);
+  });
 });
