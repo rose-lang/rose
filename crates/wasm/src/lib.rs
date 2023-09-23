@@ -31,20 +31,13 @@ fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty
     id::ty(i)
 }
 
-#[derive(Eq, Hash, PartialEq)]
-struct Import<O: Hash + Eq> {
-    params: Box<[id::Ty]>,
-    ret: id::Ty,
-    def: O,
-    generics: Box<[id::Ty]>,
-}
-
-type Transparent<'a> = (ByAddress<&'a Func>, Box<[id::Ty]>);
+type Imports<O> = IndexMap<(O, Box<[id::Ty]>), (Box<[id::Ty]>, id::Ty)>;
+type Funcs<'a, T> = IndexMap<(ByAddress<&'a Func>, Box<[id::Ty]>), (T, Box<[id::Ty]>)>;
 
 struct Topsort<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> {
     types: IndexSet<Ty>,
-    imports: IndexSet<Import<O>>,
-    funcs: IndexMap<Transparent<'a>, (T, Box<[id::Ty]>)>,
+    imports: Imports<O>,
+    funcs: Funcs<'a, T>,
 }
 
 impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
@@ -81,12 +74,13 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
                             }
                         }
                         Node::Opaque { def, .. } => {
-                            self.imports.insert(Import {
-                                params: args.iter().map(|x| types[f.vars[x.var()].ty()]).collect(),
-                                ret: types[f.vars[instr.var.var()].ty()],
-                                def,
-                                generics: gens,
-                            });
+                            self.imports.insert(
+                                (def, gens),
+                                (
+                                    args.iter().map(|x| types[f.vars[x.var()].ty()]).collect(),
+                                    types[f.vars[instr.var.var()].ty()],
+                                ),
+                            );
                         }
                     }
                 }
@@ -117,8 +111,8 @@ fn val_type(ty: &Ty) -> ValType {
 }
 
 struct Codegen<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> {
-    imports: &'b IndexSet<Import<O>>,
-    funcs: &'b IndexMap<Transparent<'a>, (T, Box<[id::Ty]>)>,
+    imports: &'b Imports<O>,
+    funcs: &'b Funcs<'a, T>,
     refs: &'b T,
     def: &'b Func,
     types: &'b [id::Ty],
@@ -208,15 +202,7 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
                         Node::Transparent { def, .. } => {
                             self.funcs.get_index_of(&(ByAddress(def), gens))
                         }
-                        Node::Opaque { def, .. } => self.imports.get_index_of(&Import {
-                            params: args
-                                .iter()
-                                .map(|x| self.types[self.def.vars[x.var()].ty()])
-                                .collect(),
-                            ret: self.types[self.def.vars[instr.var.var()].ty()],
-                            def,
-                            generics: gens,
-                        }),
+                        Node::Opaque { def, .. } => self.imports.get_index_of(&(def, gens)),
                     };
                     for &arg in args.iter() {
                         self.get(arg);
@@ -242,16 +228,39 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
     }
 }
 
-pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> Vec<u8> {
+pub struct Wasm<O> {
+    pub bytes: Vec<u8>,
+    pub imports: Imports<O>,
+}
+
+pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> Wasm<O> {
     let mut topsort = Topsort {
         types: IndexSet::new(),
-        imports: IndexSet::new(),
+        imports: IndexMap::new(),
         funcs: IndexMap::new(),
     };
     match f {
-        Node::Opaque { .. } => todo!(),
         Node::Transparent { refs, def } => {
             topsort.func(refs, def, [].into());
+        }
+        Node::Opaque {
+            types,
+            params,
+            ret,
+            def,
+            ..
+        } => {
+            let mut def_types = vec![];
+            for ty in types.iter() {
+                def_types.push(resolve(&mut topsort.types, &[], &def_types, ty));
+            }
+            topsort.imports.insert(
+                (def, [].into()),
+                (
+                    params.iter().map(|t| def_types[t.ty()]).collect(),
+                    def_types[ret.ty()],
+                ),
+            );
         }
     }
     let Topsort {
@@ -263,17 +272,16 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
     let mut func_types: IndexSet<(Box<[ValType]>, ValType)> = IndexSet::new();
 
     let mut import_section = ImportSection::new();
-    for import in imports.iter() {
+    for (i, (params, ret)) in imports.values().enumerate() {
         let (type_index, _) = func_types.insert_full((
-            import
-                .params
-                .iter()
-                .map(|t| val_type(&types[t.ty()]))
-                .collect(),
-            val_type(&types[import.ret.ty()]),
+            params.iter().map(|t| val_type(&types[t.ty()])).collect(),
+            val_type(&types[ret.ty()]),
         ));
-        // TODO: use unique import names
-        import_section.import("", "", EntityType::Function(type_index.try_into().unwrap()));
+        import_section.import(
+            "",
+            &i.to_string(),
+            EntityType::Function(type_index.try_into().unwrap()),
+        );
     }
 
     let mut function_section = FunctionSection::new();
@@ -348,5 +356,8 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
     module.section(&function_section);
     module.section(&export_section);
     module.section(&code_section);
-    module.finish()
+    Wasm {
+        bytes: module.finish(),
+        imports,
+    }
 }

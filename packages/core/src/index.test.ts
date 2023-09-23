@@ -614,4 +614,10 @@ describe("valid", () => {
     const g = await compile(f);
     expect(g(2, 3)).toBeCloseTo(-0.7785390719815313);
   });
+
+  test("compile opaque function", async () => {
+    const f = opaque([Real], Real, Math.sin);
+    const g = await compile(f);
+    expect(g(1)).toBeCloseTo(Math.sin(1));
+  });
 });

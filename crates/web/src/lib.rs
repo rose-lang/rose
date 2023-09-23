@@ -264,8 +264,17 @@ impl Func {
         Ok(to_js_value(&ret)?)
     }
 
-    pub fn compile(&self) -> Vec<u8> {
-        rose_wasm::compile(self.node())
+    pub fn compile(&self) -> Wasm {
+        let rose_wasm::Wasm { bytes, imports } = rose_wasm::compile(self.node());
+        Wasm {
+            bytes: Some(bytes),
+            imports: Some(
+                imports
+                    .into_keys()
+                    .map(|(Opaque { f }, _)| (*f).clone())
+                    .collect(),
+            ),
+        }
     }
 
     #[wasm_bindgen(js_name = "setJvp")]
@@ -406,6 +415,26 @@ impl Func {
             fwd: Some(fwd),
             bwd: Some(bwd),
         }
+    }
+}
+
+// A temporary object to hold a generated WebAssembly module and its imports.
+#[wasm_bindgen]
+pub struct Wasm {
+    bytes: Option<Vec<u8>>,
+    imports: Option<Vec<js_sys::Function>>,
+}
+
+#[wasm_bindgen]
+impl Wasm {
+    /// Return the module binary.
+    pub fn bytes(&mut self) -> Option<Vec<u8>> {
+        self.bytes.take()
+    }
+
+    /// Return the imports.
+    pub fn imports(&mut self) -> Option<Vec<js_sys::Function>> {
+        self.imports.take()
     }
 }
 

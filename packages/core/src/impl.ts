@@ -599,9 +599,13 @@ export const interp =
 export const compile = async <const A extends readonly any[], const R>(
   f: Fn & ((...args: A) => R),
 ): Promise<(...args: JsArgs<A>) => ToJs<R>> => {
-  const bytes = f[inner].compile();
+  const res = f[inner].compile();
+  const bytes = res.bytes()!;
+  const imports = res.imports()!;
+  res.free();
   const instance = await WebAssembly.instantiate(
     await WebAssembly.compile(bytes),
+    { "": Object.fromEntries(imports.map((g, i) => [i.toString(), g])) },
   );
   return instance.exports[""] as any;
 };
@@ -643,6 +647,7 @@ export const vjp = <const A, const R>(
   const tp = g[inner].transpose();
   const fwdFunc = tp.fwd()!;
   const bwdFunc = tp.bwd()!;
+  tp.free();
   const fwd = makeFn({ [inner]: fwdFunc, [strings]: [...f[strings]] });
   const bwd = makeFn({ [inner]: bwdFunc, [strings]: [...f[strings]] });
   return (arg: A) => {
