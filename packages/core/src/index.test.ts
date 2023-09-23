@@ -643,4 +643,14 @@ describe("valid", () => {
     const h = await compile(g);
     expect(h(2, 3)).toBe(6);
   });
+
+  test("compile null array", async () => {
+    const f = fn([Vec(2, Null)], Null, (v) => v[1]);
+    const g = fn([], Real, () => {
+      f([null, null]);
+      return 42;
+    });
+    const h = await compile(g);
+    expect(h()).toBe(42);
+  });
 });

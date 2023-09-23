@@ -145,62 +145,6 @@ impl Layout {
             Layout::F64 => 8,
         }
     }
-
-    fn load<'a>(self, offset: Size) -> Instruction<'a> {
-        let offset = offset.into();
-        match self {
-            Layout::Unit => Instruction::Drop,
-            Layout::U8 => Instruction::I32Load8U(MemArg {
-                offset,
-                align: 0,
-                memory_index: 0,
-            }),
-            Layout::U16 => Instruction::I32Load16U(MemArg {
-                offset,
-                align: 1,
-                memory_index: 0,
-            }),
-            Layout::U32 => Instruction::I32Load(MemArg {
-                offset,
-                align: 2,
-                memory_index: 0,
-            }),
-            Layout::F64 => Instruction::F64Load(MemArg {
-                offset,
-                align: 3,
-                memory_index: 0,
-            }),
-            Layout::Ref => unreachable!(),
-        }
-    }
-
-    fn store<'a>(self, offset: Size) -> Instruction<'a> {
-        let offset = offset.into();
-        match self {
-            Layout::Unit => Instruction::Drop,
-            Layout::U8 => Instruction::I32Store8(MemArg {
-                offset,
-                align: 0,
-                memory_index: 0,
-            }),
-            Layout::U16 => Instruction::I32Store16(MemArg {
-                offset,
-                align: 1,
-                memory_index: 0,
-            }),
-            Layout::U32 => Instruction::I32Store(MemArg {
-                offset,
-                align: 2,
-                memory_index: 0,
-            }),
-            Layout::F64 => Instruction::F64Store(MemArg {
-                offset,
-                align: 3,
-                memory_index: 0,
-            }),
-            Layout::Ref => unreachable!(),
-        }
-    }
 }
 
 type Local = u32;
@@ -247,6 +191,84 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
         self.offset += aligned;
     }
 
+    fn load(&mut self, layout: Layout, offset: Size) {
+        let offset = offset.into();
+        match layout {
+            Layout::Unit => {
+                self.wasm.instruction(&Instruction::Drop);
+                self.wasm.instruction(&Instruction::I32Const(0));
+            }
+            Layout::U8 => {
+                self.wasm.instruction(&Instruction::I32Load8U(MemArg {
+                    offset,
+                    align: 0,
+                    memory_index: 0,
+                }));
+            }
+            Layout::U16 => {
+                self.wasm.instruction(&Instruction::I32Load16U(MemArg {
+                    offset,
+                    align: 1,
+                    memory_index: 0,
+                }));
+            }
+            Layout::U32 => {
+                self.wasm.instruction(&Instruction::I32Load(MemArg {
+                    offset,
+                    align: 2,
+                    memory_index: 0,
+                }));
+            }
+            Layout::F64 => {
+                self.wasm.instruction(&Instruction::F64Load(MemArg {
+                    offset,
+                    align: 3,
+                    memory_index: 0,
+                }));
+            }
+            Layout::Ref => unreachable!(),
+        }
+    }
+
+    fn store(&mut self, layout: Layout, offset: Size) {
+        let offset = offset.into();
+        match layout {
+            Layout::Unit => {
+                self.wasm.instruction(&Instruction::Drop);
+                self.wasm.instruction(&Instruction::Drop);
+            }
+            Layout::U8 => {
+                self.wasm.instruction(&Instruction::I32Store8(MemArg {
+                    offset,
+                    align: 0,
+                    memory_index: 0,
+                }));
+            }
+            Layout::U16 => {
+                self.wasm.instruction(&Instruction::I32Store16(MemArg {
+                    offset,
+                    align: 1,
+                    memory_index: 0,
+                }));
+            }
+            Layout::U32 => {
+                self.wasm.instruction(&Instruction::I32Store(MemArg {
+                    offset,
+                    align: 2,
+                    memory_index: 0,
+                }));
+            }
+            Layout::F64 => {
+                self.wasm.instruction(&Instruction::F64Store(MemArg {
+                    offset,
+                    align: 3,
+                    memory_index: 0,
+                }));
+            }
+            Layout::Ref => unreachable!(),
+        }
+    }
+
     fn block(&mut self, block: &[Instr]) {
         for instr in block.iter() {
             match &instr.expr {
@@ -274,7 +296,7 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
                     for (i, &elem) in elems.iter().enumerate() {
                         self.pointer();
                         self.get(elem);
-                        self.wasm.instruction(&layout.store(size * u_size(i)));
+                        self.store(layout, size * u_size(i));
                     }
                     self.pointer();
                     self.bump(size * u_size(elems.len()));
@@ -288,7 +310,7 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
                     self.u32_const(size);
                     self.wasm.instruction(&Instruction::I32Mul);
                     self.wasm.instruction(&Instruction::I32Add);
-                    self.wasm.instruction(&layout.load(0));
+                    self.load(layout, 0);
                 }
                 &Expr::Member {
                     tuple: _,
