@@ -74,6 +74,7 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
                             }
                         }
                         Node::Opaque { def, .. } => {
+                            // TODO: check that the value matches if the key is already present
                             self.imports.insert(
                                 (def, gens),
                                 (
@@ -94,8 +95,10 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
             types.push(resolve(&mut self.types, &generics, &types, ty));
         }
         self.block(&refs, def, &types, &def.body);
-        self.funcs
+        let prev = self
+            .funcs
             .insert((ByAddress(def), generics), (refs, types.into()));
+        assert!(prev.is_none());
     }
 }
 
