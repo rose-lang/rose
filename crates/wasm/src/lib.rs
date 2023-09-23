@@ -136,21 +136,26 @@ enum Layout {
 }
 
 impl Layout {
-    fn size(self) -> Size {
+    fn size_align(self) -> (Size, Size) {
         match self {
-            Layout::Unit => 0,
-            Layout::U8 => 1,
-            Layout::U16 => 2,
-            Layout::U32 | Layout::Ref => 4,
-            Layout::F64 => 8,
+            Layout::Unit => (0, 1),
+            Layout::U8 => (1, 1),
+            Layout::U16 => (2, 2),
+            Layout::U32 | Layout::Ref => (4, 4),
+            Layout::F64 => (8, 8),
         }
+    }
+
+    fn size(self) -> Size {
+        let (size, _) = self.size_align();
+        size
     }
 }
 
 type Local = u32;
 
 struct Codegen<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> {
-    layouts: &'b [Layout],
+    layouts: &'b [(Layout, Option<Box<[Size]>>)],
     imports: &'b Imports<O>,
     funcs: &'b Funcs<'a, T>,
     costs: &'b [Size],
@@ -162,9 +167,10 @@ struct Codegen<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> {
     wasm: Function,
 }
 
-impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
-    fn layout(&self, t: id::Ty) -> Layout {
-        self.layouts[self.types[t.ty()].ty()]
+impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
+    fn layout(&self, t: id::Ty) -> (Layout, Option<&'b [Size]>) {
+        let (layout, members) = &self.layouts[self.types[t.ty()].ty()];
+        (*layout, members.as_ref().map(|x| &x[..]))
     }
 
     fn get(&mut self, x: id::Var) {
@@ -287,7 +293,7 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
                         .instruction(&Instruction::I32Const(val.try_into().unwrap()));
                 }
                 Expr::Array { elems } => {
-                    let layout =
+                    let (layout, _) =
                         self.layout(match self.def.types[self.def.vars[instr.var.var()].ty()] {
                             Ty::Array { elem, .. } => elem,
                             _ => unreachable!(),
@@ -301,9 +307,21 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
                     self.pointer();
                     self.bump(size * u_size(elems.len()));
                 }
-                Expr::Tuple { members: _ } => todo!(),
+                Expr::Tuple { members } => {
+                    let mut size = 0;
+                    let (_, mems) = self.layout(self.def.vars[instr.var.var()]);
+                    for (&member, &offset) in members.iter().zip(mems.unwrap().iter()) {
+                        let (layout, _) = self.layout(self.def.vars[member.var()]);
+                        self.pointer();
+                        self.get(member);
+                        self.store(layout, offset);
+                        size = size.max(offset + layout.size());
+                    }
+                    self.pointer();
+                    self.bump(size);
+                }
                 &Expr::Index { array, index } => {
-                    let layout = self.layout(self.def.vars[instr.var.var()]);
+                    let (layout, _) = self.layout(self.def.vars[instr.var.var()]);
                     let size = layout.size();
                     self.get(array);
                     self.get(index);
@@ -312,10 +330,13 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
                     self.wasm.instruction(&Instruction::I32Add);
                     self.load(layout, 0);
                 }
-                &Expr::Member {
-                    tuple: _,
-                    member: _,
-                } => todo!(),
+                &Expr::Member { tuple, member } => {
+                    let (_, members) = self.layout(self.def.vars[tuple.var()]);
+                    let offset = members.unwrap()[member.member()];
+                    let (layout, _) = self.layout(self.def.vars[instr.var.var()]);
+                    self.get(tuple);
+                    self.load(layout, offset);
+                }
                 &Expr::Slice { array: _, index: _ } => todo!(),
                 &Expr::Field {
                     tuple: _,
@@ -440,26 +461,48 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
         funcs,
     } = topsort;
 
-    let layouts: Box<_> = types
-        .iter()
-        .map(|ty| match ty {
-            Ty::Unit => Layout::Unit,
-            Ty::Bool => Layout::U8,
-            Ty::F64 => Layout::F64,
-            &Ty::Fin { size } => {
+    let mut layouts: Vec<(Layout, Option<Box<[Size]>>)> = vec![];
+    for ty in types.iter() {
+        let (layout, members) = match ty {
+            Ty::Unit => (Layout::Unit, None),
+            Ty::Bool => (Layout::U8, None),
+            Ty::F64 => (Layout::F64, None),
+            &Ty::Fin { size } => (
                 if size <= 256 {
                     Layout::U8
                 } else if size <= 65536 {
                     Layout::U16
                 } else {
                     Layout::U32
-                }
-            }
+                },
+                None,
+            ),
             Ty::Generic { .. } => unreachable!(),
-            Ty::Ref { .. } => Layout::Ref,
-            Ty::Array { .. } | Ty::Tuple { .. } => Layout::U32,
-        })
-        .collect();
+            Ty::Ref { .. } => (Layout::Ref, None),
+            Ty::Array { .. } => (Layout::U32, None),
+            Ty::Tuple { members } => {
+                let mut mems: Vec<_> = members
+                    .iter()
+                    .enumerate()
+                    .map(|(i, t)| {
+                        let (layout, _) = layouts[t.ty()];
+                        let (size, align) = layout.size_align();
+                        (i, size, align)
+                    })
+                    .collect();
+                mems.sort_unstable_by_key(|&(_, _, align)| align);
+                let mut offsets = vec![0; members.len()];
+                let mut offset = 0;
+                for (i, s, a) in mems {
+                    offset = align(offset, a);
+                    offsets[i] = offset;
+                    offset += s;
+                }
+                (Layout::U32, Some(offsets.into()))
+            }
+        };
+        layouts.push((layout, members));
+    }
 
     let mut func_types: IndexSet<(Box<[ValType]>, ValType)> = IndexSet::new();
 

@@ -653,4 +653,11 @@ describe("valid", () => {
     const h = await compile(g);
     expect(h()).toBe(42);
   });
+
+  test("compile struct", async () => {
+    const f = fn([{ x: Real, y: Real }], Real, ({ x, y }) => mul(x, y));
+    const g = fn([Real, Real], Real, (x, y) => f({ x, y }));
+    const h = await compile(g);
+    expect(h(2, 3)).toBe(6);
+  });
 });
