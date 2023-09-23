@@ -200,15 +200,18 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
                         .collect();
                     let i = match self.refs.get(*id).unwrap() {
                         Node::Transparent { def, .. } => {
-                            self.funcs.get_index_of(&(ByAddress(def), gens))
+                            self.imports.len()
+                                + self.funcs.get_index_of(&(ByAddress(def), gens)).unwrap()
                         }
-                        Node::Opaque { def, .. } => self.imports.get_index_of(&(def, gens)),
+                        Node::Opaque { def, .. } => {
+                            self.imports.get_index_of(&(def, gens)).unwrap()
+                        }
                     };
                     for &arg in args.iter() {
                         self.get(arg);
                     }
                     self.wasm
-                        .instruction(&Instruction::Call(i.unwrap().try_into().unwrap()));
+                        .instruction(&Instruction::Call(i.try_into().unwrap()));
                 }
                 Expr::For {
                     arg: _,

@@ -624,8 +624,16 @@ describe("valid", () => {
   test("compile calls to multiple opaque functions", async () => {
     const sin = opaque([Real], Real, Math.sin);
     const cos = opaque([Real], Real, Math.cos);
-    const f = fn([Real], Real, (x) => add(sin(x), cos(x)));
+    const f = fn([Real], Real, (x) => sub(sin(x), cos(x)));
     const g = await compile(f);
-    expect(g(1)).toBeCloseTo(Math.sin(1) + Math.cos(1));
+    expect(g(1)).toBeCloseTo(Math.sin(1) - Math.cos(1));
+  });
+
+  test("compile opaque and transparent calls together", async () => {
+    const log = opaque([Real], Real, Math.log);
+    const f = fn([Real], Real, (x) => add(log(x), sqrt(x)));
+    const g = fn([Real], Real, (x) => add(f(x), x));
+    const h = await compile(g);
+    expect(h(1)).toBeCloseTo(Math.log(1) + Math.sqrt(1) + 1);
   });
 });
