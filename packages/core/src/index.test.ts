@@ -476,14 +476,16 @@ describe("valid", () => {
 
   test("VJP with struct and select", () => {
     const Stuff = { a: Null, b: Bool, c: Real } as const;
-    const f = fn([Stuff], Real, ({ b, c }) => select(or(false, b), Real, c, 2));
+    const f = fn([Stuff], Real, ({ b, c }) =>
+      select(or(false, not(b)), Real, c, 2),
+    );
     const g = fn([Bool, Real], { x: Real, stuff: Stuff }, (b, c) => {
       const { ret: x, grad } = vjp(f)({ a: null, b, c });
       return { x, stuff: grad(3) };
     });
     const h = interp(g);
-    expect(h(true, 5)).toEqual({ x: 5, stuff: { a: null, b: true, c: 3 } });
-    expect(h(false, 7)).toEqual({ x: 2, stuff: { a: null, b: false, c: 0 } });
+    expect(h(true, 5)).toEqual({ x: 2, stuff: { a: null, b: true, c: 0 } });
+    expect(h(false, 7)).toEqual({ x: 7, stuff: { a: null, b: false, c: 3 } });
   });
 
   test("VJP with select on null", () => {
