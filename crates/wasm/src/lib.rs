@@ -4,7 +4,7 @@ use rose::{id, Binop, Expr, Func, Instr, Node, Refs, Ty, Unop};
 use std::hash::Hash;
 use wasm_encoder::{
     CodeSection, EntityType, ExportSection, Function, FunctionSection, ImportSection, Instruction,
-    Module, TypeSection, ValType,
+    MemArg, MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
 fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty: &Ty) -> id::Ty {
@@ -104,29 +104,147 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
 
 fn val_type(ty: &Ty) -> ValType {
     match ty {
-        Ty::Unit | Ty::Bool | Ty::Fin { .. } => ValType::I32,
+        Ty::Unit
+        | Ty::Bool
+        | Ty::Fin { .. }
+        | Ty::Ref { .. }
+        | Ty::Array { .. }
+        | Ty::Tuple { .. } => ValType::I32,
         Ty::F64 => ValType::F64,
         Ty::Generic { .. } => unreachable!(),
-        Ty::Ref { inner: _ } => todo!(),
-        Ty::Array { index: _, elem: _ } => todo!(),
-        Ty::Tuple { members: _ } => todo!(),
     }
 }
 
+type Size = u32;
+
+fn u_size(x: usize) -> Size {
+    x.try_into().unwrap()
+}
+
+fn align(size: Size, align: Size) -> Size {
+    (size + align - 1) & !(align - 1)
+}
+
+#[derive(Clone, Copy)]
+enum Layout {
+    Unit,
+    U8,
+    U16,
+    U32,
+    F64,
+    Ref,
+}
+
+impl Layout {
+    fn size(self) -> Size {
+        match self {
+            Layout::Unit => 0,
+            Layout::U8 => 1,
+            Layout::U16 => 2,
+            Layout::U32 | Layout::Ref => 4,
+            Layout::F64 => 8,
+        }
+    }
+
+    fn load<'a>(self, offset: Size) -> Instruction<'a> {
+        let offset = offset.into();
+        match self {
+            Layout::Unit => Instruction::Drop,
+            Layout::U8 => Instruction::I32Load8U(MemArg {
+                offset,
+                align: 0,
+                memory_index: 0,
+            }),
+            Layout::U16 => Instruction::I32Load16U(MemArg {
+                offset,
+                align: 1,
+                memory_index: 0,
+            }),
+            Layout::U32 => Instruction::I32Load(MemArg {
+                offset,
+                align: 2,
+                memory_index: 0,
+            }),
+            Layout::F64 => Instruction::F64Load(MemArg {
+                offset,
+                align: 3,
+                memory_index: 0,
+            }),
+            Layout::Ref => unreachable!(),
+        }
+    }
+
+    fn store<'a>(self, offset: Size) -> Instruction<'a> {
+        let offset = offset.into();
+        match self {
+            Layout::Unit => Instruction::Drop,
+            Layout::U8 => Instruction::I32Store8(MemArg {
+                offset,
+                align: 0,
+                memory_index: 0,
+            }),
+            Layout::U16 => Instruction::I32Store16(MemArg {
+                offset,
+                align: 1,
+                memory_index: 0,
+            }),
+            Layout::U32 => Instruction::I32Store(MemArg {
+                offset,
+                align: 2,
+                memory_index: 0,
+            }),
+            Layout::F64 => Instruction::F64Store(MemArg {
+                offset,
+                align: 3,
+                memory_index: 0,
+            }),
+            Layout::Ref => unreachable!(),
+        }
+    }
+}
+
+type Local = u32;
+
 struct Codegen<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> {
+    layouts: &'b [Layout],
     imports: &'b Imports<O>,
     funcs: &'b Funcs<'a, T>,
+    costs: &'b [Size],
     refs: &'b T,
     def: &'b Func,
     types: &'b [id::Ty],
-    locals: &'b [u32],
+    locals: &'b [Local],
+    offset: Size,
     wasm: Function,
 }
 
 impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
+    fn layout(&self, t: id::Ty) -> Layout {
+        self.layouts[self.types[t.ty()].ty()]
+    }
+
     fn get(&mut self, x: id::Var) {
         self.wasm
             .instruction(&Instruction::LocalGet(self.locals[x.var()]));
+    }
+
+    fn pointer(&mut self) {
+        self.wasm
+            .instruction(&Instruction::LocalGet(u_size(self.def.params.len())));
+    }
+
+    fn u32_const(&mut self, x: u32) {
+        self.wasm.instruction(&Instruction::I32Const(x as i32));
+    }
+
+    fn bump(&mut self, size: Size) {
+        let aligned = align(size, 8);
+        self.pointer();
+        self.u32_const(aligned);
+        self.wasm.instruction(&Instruction::I32Add);
+        self.wasm
+            .instruction(&Instruction::LocalSet(u_size(self.def.params.len())));
+        self.offset += aligned;
     }
 
     fn block(&mut self, block: &[Instr]) {
@@ -146,9 +264,32 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
                     self.wasm
                         .instruction(&Instruction::I32Const(val.try_into().unwrap()));
                 }
-                Expr::Array { elems: _ } => todo!(),
+                Expr::Array { elems } => {
+                    let layout =
+                        self.layout(match self.def.types[self.def.vars[instr.var.var()].ty()] {
+                            Ty::Array { elem, .. } => elem,
+                            _ => unreachable!(),
+                        });
+                    let size = layout.size();
+                    for (i, &elem) in elems.iter().enumerate() {
+                        self.pointer();
+                        self.get(elem);
+                        self.wasm.instruction(&layout.store(size * u_size(i)));
+                    }
+                    self.pointer();
+                    self.bump(size * u_size(elems.len()));
+                }
                 Expr::Tuple { members: _ } => todo!(),
-                &Expr::Index { array: _, index: _ } => todo!(),
+                &Expr::Index { array, index } => {
+                    let layout = self.layout(self.def.vars[instr.var.var()]);
+                    let size = layout.size();
+                    self.get(array);
+                    self.get(index);
+                    self.u32_const(size);
+                    self.wasm.instruction(&Instruction::I32Mul);
+                    self.wasm.instruction(&Instruction::I32Add);
+                    self.wasm.instruction(&layout.load(0));
+                }
                 &Expr::Member {
                     tuple: _,
                     member: _,
@@ -201,18 +342,20 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
                         .iter()
                         .map(|t| self.types[self.def.vars[t.ty()].ty()])
                         .collect();
+                    for &arg in args.iter() {
+                        self.get(arg);
+                    }
                     let i = match self.refs.get(*id).unwrap() {
                         Node::Transparent { def, .. } => {
-                            self.imports.len()
-                                + self.funcs.get_index_of(&(ByAddress(def), gens)).unwrap()
+                            self.pointer();
+                            let j = self.funcs.get_index_of(&(ByAddress(def), gens)).unwrap();
+                            self.bump(self.costs[j]);
+                            self.imports.len() + j
                         }
                         Node::Opaque { def, .. } => {
                             self.imports.get_index_of(&(def, gens)).unwrap()
                         }
                     };
-                    for &arg in args.iter() {
-                        self.get(arg);
-                    }
                     self.wasm
                         .instruction(&Instruction::Call(i.try_into().unwrap()));
                 }
@@ -275,6 +418,27 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
         funcs,
     } = topsort;
 
+    let layouts: Box<_> = types
+        .iter()
+        .map(|ty| match ty {
+            Ty::Unit => Layout::Unit,
+            Ty::Bool => Layout::U8,
+            Ty::F64 => Layout::F64,
+            &Ty::Fin { size } => {
+                if size <= 256 {
+                    Layout::U8
+                } else if size <= 65536 {
+                    Layout::U16
+                } else {
+                    Layout::U32
+                }
+            }
+            Ty::Generic { .. } => unreachable!(),
+            Ty::Ref { .. } => Layout::Ref,
+            Ty::Array { .. } | Ty::Tuple { .. } => Layout::U32,
+        })
+        .collect();
+
     let mut func_types: IndexSet<(Box<[ValType]>, ValType)> = IndexSet::new();
 
     let mut import_section = ImportSection::new();
@@ -290,11 +454,13 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
         );
     }
 
+    let mut costs = vec![];
+
     let mut function_section = FunctionSection::new();
     let mut code_section = CodeSection::new();
     for ((def, _), (refs, def_types)) in funcs.iter() {
         let vt = |t: id::Ty| val_type(&types[def_types[t.ty()].ty()]);
-        let params: u32 = def.params.len().try_into().unwrap();
+        let params: Local = (def.params.len() + 1).try_into().unwrap();
         let mut locals = vec![None; def.vars.len()];
 
         let (type_index, _) = func_types.insert_full((
@@ -305,6 +471,7 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
                     locals[param.var()] = Some(i.try_into().unwrap());
                     vt(def.vars[param.var()])
                 })
+                .chain([ValType::I32])
                 .collect(),
             vt(def.vars[def.ret.var()]),
         ));
@@ -330,24 +497,37 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
 
         let locals = locals.into_iter().map(Option::unwrap).collect::<Box<_>>();
         let mut codegen = Codegen {
+            layouts: &layouts,
             imports: &imports,
             funcs: &funcs,
+            costs: &costs,
             refs,
             def,
             types: def_types,
             locals: &locals,
+            offset: 0,
             wasm: Function::new([(i32s, ValType::I32), (f64s, ValType::F64)]),
         };
         codegen.block(&def.body);
         codegen.get(def.ret);
         codegen.wasm.instruction(&Instruction::End);
         code_section.function(&codegen.wasm);
+        costs.push(codegen.offset);
     }
 
     let mut type_section = TypeSection::new();
     for (params, ret) in func_types {
         type_section.function(params.into_vec(), [ret]);
     }
+
+    let mut memory_section = MemorySection::new();
+    memory_section.memory(MemoryType {
+        // TODO: calculate the number of memory pages
+        minimum: 1,
+        maximum: Some(1),
+        memory64: false,
+        shared: false,
+    });
 
     let mut export_section = ExportSection::new();
     export_section.export(
@@ -360,6 +540,7 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
     module.section(&type_section);
     module.section(&import_section);
     module.section(&function_section);
+    module.section(&memory_section);
     module.section(&export_section);
     module.section(&code_section);
     Wasm {

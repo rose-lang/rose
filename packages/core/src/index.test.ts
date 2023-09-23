@@ -636,4 +636,11 @@ describe("valid", () => {
     const h = await compile(g);
     expect(h(1)).toBeCloseTo(Math.log(1) + Math.sqrt(1) + 1);
   });
+
+  test("compile array", async () => {
+    const f = fn([Vec(2, Real)], Real, (v) => mul(v[0], v[1]));
+    const g = fn([Real, Real], Real, (x, y) => f([x, y]));
+    const h = await compile(g);
+    expect(h(2, 3)).toBe(6);
+  });
 });
