@@ -607,8 +607,11 @@ describe("valid", () => {
   });
 
   test("compile", async () => {
-    const f = fn([Real, Real], Real, (x, y) => add(x, y));
+    const f1 = fn([Real], Real, (x) => sqrt(x));
+    const f2 = fn([Real, Real], Real, (x, y) => mul(x, f1(y)));
+    const f3 = fn([Real, Real], Real, (x, y) => mul(f1(x), y));
+    const f = fn([Real, Real], Real, (x, y) => sub(f2(x, y), f3(x, y)));
     const g = await compile(f);
-    expect(g(2, 2)).toBe(4);
+    expect(g(2, 3)).toBeCloseTo(-0.7785390719815313);
   });
 });
