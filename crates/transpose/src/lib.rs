@@ -600,12 +600,19 @@ impl<'a> Transpose<'a> {
                         }
                     },
                     _ => {
+                        let x = match op {
+                            Unop::Not => arg,
+                            Unop::Neg
+                            | Unop::Abs
+                            | Unop::Sign
+                            | Unop::Ceil
+                            | Unop::Floor
+                            | Unop::Trunc
+                            | Unop::Sqrt => self.get_prim(arg),
+                        };
                         self.block.fwd.push(Instr {
                             var,
-                            expr: Expr::Unary {
-                                op,
-                                arg: self.get_prim(arg),
-                            },
+                            expr: Expr::Unary { op, arg: x },
                         });
                         self.keep(var);
                     }
