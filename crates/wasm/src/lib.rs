@@ -1,10 +1,13 @@
 use by_address::ByAddress;
 use indexmap::{IndexMap, IndexSet};
 use rose::{id, Binop, Expr, Func, Instr, Node, Refs, Ty, Unop};
-use std::hash::Hash;
+use std::{
+    hash::Hash,
+    mem::{swap, take},
+};
 use wasm_encoder::{
-    CodeSection, EntityType, ExportSection, Function, FunctionSection, ImportSection, Instruction,
-    MemArg, MemorySection, MemoryType, Module, TypeSection, ValType,
+    BlockType, CodeSection, EntityType, ExportSection, Function, FunctionSection, ImportSection,
+    Instruction, MemArg, MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
 fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty: &Ty) -> id::Ty {
@@ -176,6 +179,16 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
     fn get(&mut self, x: id::Var) {
         self.wasm
             .instruction(&Instruction::LocalGet(self.locals[x.var()]));
+    }
+
+    fn set(&mut self, x: id::Var) {
+        self.wasm
+            .instruction(&Instruction::LocalSet(self.locals[x.var()]));
+    }
+
+    fn tee(&mut self, x: id::Var) {
+        self.wasm
+            .instruction(&Instruction::LocalTee(self.locals[x.var()]));
     }
 
     fn pointer(&mut self) {
@@ -425,11 +438,49 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                     self.wasm
                         .instruction(&Instruction::Call(i.try_into().unwrap()));
                 }
-                Expr::For {
-                    arg: _,
-                    body: _,
-                    ret: _,
-                } => todo!(),
+                Expr::For { arg, body, ret } => {
+                    let n = u_size(match self.def.types[self.def.vars[arg.var()].ty()] {
+                        Ty::Fin { size } => size,
+                        _ => unreachable!(),
+                    });
+                    let (layout, _) = self.layout(self.def.vars[ret.var()]);
+                    let size = layout.size();
+
+                    self.pointer();
+                    self.set(instr.var);
+
+                    if n > 0 {
+                        let mut offset = take(&mut self.offset);
+
+                        self.wasm.instruction(&Instruction::I32Const(0));
+                        self.set(*arg);
+                        self.wasm.instruction(&Instruction::Loop(BlockType::Empty));
+
+                        self.block(body);
+
+                        self.get(instr.var);
+                        self.get(*arg);
+                        self.u32_const(size);
+                        self.wasm.instruction(&Instruction::I32Mul);
+                        self.wasm.instruction(&Instruction::I32Add);
+                        self.get(*ret);
+                        self.store(layout, 0);
+
+                        self.get(*arg);
+                        self.wasm.instruction(&Instruction::I32Const(1));
+                        self.wasm.instruction(&Instruction::I32Add);
+                        self.tee(*arg);
+                        self.u32_const(n);
+                        self.wasm.instruction(&Instruction::I32LtU);
+                        self.wasm.instruction(&Instruction::BrIf(0));
+                        self.wasm.instruction(&Instruction::End);
+
+                        swap(&mut offset, &mut self.offset);
+                        self.bump(offset * n);
+                    }
+
+                    continue;
+                }
                 &Expr::Accum { shape: _ } => todo!(),
                 &Expr::Add {
                     accum: _,
@@ -437,8 +488,7 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                 } => todo!(),
                 &Expr::Resolve { var: _ } => todo!(),
             }
-            self.wasm
-                .instruction(&Instruction::LocalSet(self.locals[instr.var.var()]));
+            self.set(instr.var);
         }
     }
 }

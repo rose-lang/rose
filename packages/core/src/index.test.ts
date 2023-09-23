@@ -710,4 +710,16 @@ describe("valid", () => {
     expect(g(true, 2, 3)).toBe(2);
     expect(g(false, 5, 7)).toBe(7);
   });
+
+  test("compile vector comprehension", async () => {
+    const f = fn([Real, Vec(3, Real)], Vec(3, Real), (c, v) =>
+      vec(3, Real, (i) => mul(c, v[i])),
+    );
+    const g = fn([Real, Real, Real, Real], Real, (c, x, y, z) => {
+      const v = f(c, [x, y, z]);
+      return add(add(v[0], v[1]), v[2]);
+    });
+    const h = await compile(g);
+    expect(h(2, 3, 5, 7)).toBe(30);
+  });
 });
