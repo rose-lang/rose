@@ -722,4 +722,18 @@ describe("valid", () => {
     const h = await compile(g);
     expect(h(2, 3, 5, 7)).toBe(30);
   });
+
+  test("compile empty vector comprehension", async () => {
+    let i = 0;
+    const f = opaque([], Real, () => {
+      ++i;
+      return i;
+    });
+    const g = fn([], Real, () => {
+      vec(0, Real, () => f());
+      return 0;
+    });
+    (await compile(g))();
+    expect(i).toEqual(0);
+  });
 });
