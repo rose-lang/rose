@@ -7,12 +7,14 @@ import {
   Vec,
   abs,
   add,
+  and,
   ceil,
   compile,
   div,
   floor,
   fn,
   gt,
+  iff,
   interp,
   jvp,
   mul,
@@ -28,6 +30,7 @@ import {
   trunc,
   vec,
   vjp,
+  xor,
 } from "./index.js";
 
 describe("invalid", () => {
@@ -659,6 +662,36 @@ describe("valid", () => {
     const g = fn([Real, Real], Real, (x, y) => f({ x, y }));
     const h = await compile(g);
     expect(h(2, 3)).toBe(6);
+  });
+
+  test("compile logic", async () => {
+    const f = fn([Vec(3, Bool)], Bool, (v) => {
+      const p = v[0];
+      const q = v[1];
+      const r = v[2];
+      return iff(and(or(p, not(q)), xor(r, q)), or(not(p), and(q, r)));
+    });
+    const g = fn([Bool, Bool, Bool], Real, (p, q, r) =>
+      select(f([p, q, r]), Real, -1, -2),
+    );
+    const h = await compile(g);
+    expect(h(true, true, true)).toBe(-2);
+    expect(h(true, true, false)).toBe(-2);
+    expect(h(true, false, true)).toBe(-2);
+    expect(h(true, false, false)).toBe(-1);
+    expect(h(false, true, true)).toBe(-2);
+    expect(h(false, true, false)).toBe(-2);
+    expect(h(false, false, true)).toBe(-1);
+    expect(h(false, false, false)).toBe(-2);
+  });
+
+  test("compile signum", async () => {
+    const f = fn([Real], Real, (x) => sign(x));
+    const g = await compile(f);
+    expect(g(-2)).toBe(-1);
+    expect(g(-0)).toBe(-1);
+    expect(g(0)).toBe(1);
+    expect(g(2)).toBe(1);
   });
 
   test("compile select", async () => {

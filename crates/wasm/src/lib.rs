@@ -342,37 +342,87 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                     tuple: _,
                     member: _,
                 } => todo!(),
-                &Expr::Unary { op, arg } => {
-                    self.get(arg);
-                    match op {
-                        Unop::Not => todo!(),
-                        Unop::Neg => self.wasm.instruction(&Instruction::F64Neg),
-                        Unop::Abs => self.wasm.instruction(&Instruction::F64Abs),
-                        Unop::Sign => todo!(),
-                        Unop::Ceil => self.wasm.instruction(&Instruction::F64Ceil),
-                        Unop::Floor => self.wasm.instruction(&Instruction::F64Floor),
-                        Unop::Trunc => self.wasm.instruction(&Instruction::F64Trunc),
-                        Unop::Sqrt => self.wasm.instruction(&Instruction::F64Sqrt),
-                    };
-                }
+                &Expr::Unary { op, arg } => match op {
+                    Unop::Not => {
+                        self.get(arg);
+                        self.wasm.instruction(&Instruction::I32Eqz);
+                    }
+                    Unop::Neg => {
+                        self.get(arg);
+                        self.wasm.instruction(&Instruction::F64Neg);
+                    }
+                    Unop::Abs => {
+                        self.get(arg);
+                        self.wasm.instruction(&Instruction::F64Abs);
+                    }
+                    Unop::Sign => {
+                        self.wasm.instruction(&Instruction::F64Const(1.));
+                        self.get(arg);
+                        self.wasm.instruction(&Instruction::F64Copysign);
+                    }
+                    Unop::Ceil => {
+                        self.get(arg);
+                        self.wasm.instruction(&Instruction::F64Ceil);
+                    }
+                    Unop::Floor => {
+                        self.get(arg);
+                        self.wasm.instruction(&Instruction::F64Floor);
+                    }
+                    Unop::Trunc => {
+                        self.get(arg);
+                        self.wasm.instruction(&Instruction::F64Trunc);
+                    }
+                    Unop::Sqrt => {
+                        self.get(arg);
+                        self.wasm.instruction(&Instruction::F64Sqrt);
+                    }
+                },
                 &Expr::Binary { op, left, right } => {
                     self.get(left);
                     self.get(right);
                     match op {
-                        Binop::And => todo!(),
-                        Binop::Or => todo!(),
-                        Binop::Iff => todo!(),
-                        Binop::Xor => todo!(),
-                        Binop::Neq => self.wasm.instruction(&Instruction::F64Ne),
-                        Binop::Lt => self.wasm.instruction(&Instruction::F64Lt),
-                        Binop::Leq => self.wasm.instruction(&Instruction::F64Le),
-                        Binop::Eq => self.wasm.instruction(&Instruction::F64Eq),
-                        Binop::Gt => self.wasm.instruction(&Instruction::F64Gt),
-                        Binop::Geq => self.wasm.instruction(&Instruction::F64Ge),
-                        Binop::Add => self.wasm.instruction(&Instruction::F64Add),
-                        Binop::Sub => self.wasm.instruction(&Instruction::F64Sub),
-                        Binop::Mul => self.wasm.instruction(&Instruction::F64Mul),
-                        Binop::Div => self.wasm.instruction(&Instruction::F64Div),
+                        Binop::And => {
+                            self.wasm.instruction(&Instruction::I32And);
+                        }
+                        Binop::Or => {
+                            self.wasm.instruction(&Instruction::I32Or);
+                        }
+                        Binop::Iff => {
+                            self.wasm.instruction(&Instruction::I32Eq);
+                        }
+                        Binop::Xor => {
+                            self.wasm.instruction(&Instruction::I32Xor);
+                        }
+                        Binop::Neq => {
+                            self.wasm.instruction(&Instruction::F64Ne);
+                        }
+                        Binop::Lt => {
+                            self.wasm.instruction(&Instruction::F64Lt);
+                        }
+                        Binop::Leq => {
+                            self.wasm.instruction(&Instruction::F64Le);
+                        }
+                        Binop::Eq => {
+                            self.wasm.instruction(&Instruction::F64Eq);
+                        }
+                        Binop::Gt => {
+                            self.wasm.instruction(&Instruction::F64Gt);
+                        }
+                        Binop::Geq => {
+                            self.wasm.instruction(&Instruction::F64Ge);
+                        }
+                        Binop::Add => {
+                            self.wasm.instruction(&Instruction::F64Add);
+                        }
+                        Binop::Sub => {
+                            self.wasm.instruction(&Instruction::F64Sub);
+                        }
+                        Binop::Mul => {
+                            self.wasm.instruction(&Instruction::F64Mul);
+                        }
+                        Binop::Div => {
+                            self.wasm.instruction(&Instruction::F64Div);
+                        }
                     };
                 }
                 &Expr::Select { cond, then, els } => {
