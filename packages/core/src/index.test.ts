@@ -620,4 +620,12 @@ describe("valid", () => {
     const g = await compile(f);
     expect(g(1)).toBeCloseTo(Math.sin(1));
   });
+
+  test("compile calls to multiple opaque functions", async () => {
+    const sin = opaque([Real], Real, Math.sin);
+    const cos = opaque([Real], Real, Math.cos);
+    const f = fn([Real], Real, (x) => add(sin(x), cos(x)));
+    const g = await compile(f);
+    expect(g(1)).toBeCloseTo(Math.sin(1) + Math.cos(1));
+  });
 });

@@ -159,12 +159,12 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
                     self.get(arg);
                     match op {
                         Unop::Not => todo!(),
-                        Unop::Neg => todo!(),
-                        Unop::Abs => todo!(),
+                        Unop::Neg => self.wasm.instruction(&Instruction::F64Neg),
+                        Unop::Abs => self.wasm.instruction(&Instruction::F64Abs),
                         Unop::Sign => todo!(),
-                        Unop::Ceil => todo!(),
-                        Unop::Floor => todo!(),
-                        Unop::Trunc => todo!(),
+                        Unop::Ceil => self.wasm.instruction(&Instruction::F64Ceil),
+                        Unop::Floor => self.wasm.instruction(&Instruction::F64Floor),
+                        Unop::Trunc => self.wasm.instruction(&Instruction::F64Trunc),
                         Unop::Sqrt => self.wasm.instruction(&Instruction::F64Sqrt),
                     };
                 }
@@ -176,16 +176,16 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, '_, O, T> {
                         Binop::Or => todo!(),
                         Binop::Iff => todo!(),
                         Binop::Xor => todo!(),
-                        Binop::Neq => todo!(),
-                        Binop::Lt => todo!(),
-                        Binop::Leq => todo!(),
-                        Binop::Eq => todo!(),
-                        Binop::Gt => todo!(),
-                        Binop::Geq => todo!(),
-                        Binop::Add => todo!(),
+                        Binop::Neq => self.wasm.instruction(&Instruction::F64Ne),
+                        Binop::Lt => self.wasm.instruction(&Instruction::F64Lt),
+                        Binop::Leq => self.wasm.instruction(&Instruction::F64Le),
+                        Binop::Eq => self.wasm.instruction(&Instruction::F64Eq),
+                        Binop::Gt => self.wasm.instruction(&Instruction::F64Gt),
+                        Binop::Geq => self.wasm.instruction(&Instruction::F64Ge),
+                        Binop::Add => self.wasm.instruction(&Instruction::F64Add),
                         Binop::Sub => self.wasm.instruction(&Instruction::F64Sub),
                         Binop::Mul => self.wasm.instruction(&Instruction::F64Mul),
-                        Binop::Div => todo!(),
+                        Binop::Div => self.wasm.instruction(&Instruction::F64Div),
                     };
                 }
                 &Expr::Select {
