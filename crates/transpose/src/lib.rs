@@ -615,6 +615,8 @@ impl<'a> Transpose<'a> {
                             expr: Expr::Unary { op, arg: x },
                         });
                         self.keep(var);
+                        let lin = self.accum(var);
+                        self.resolve(lin);
                     }
                 }
                 self.prims[var.var()] = Some(Src(None));
@@ -723,6 +725,8 @@ impl<'a> Transpose<'a> {
                             },
                         });
                         self.keep(var);
+                        let lin = self.accum(var);
+                        self.resolve(lin);
                     }
                 }
                 self.prims[var.var()] = Some(Src(None));

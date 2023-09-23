@@ -488,6 +488,14 @@ describe("valid", () => {
     expect(h(false, 7)).toEqual({ x: 7, stuff: { a: null, b: false, c: 3 } });
   });
 
+  test("VJP with logic", () => {
+    const f = fn([Bool], Bool, (p) => not(p));
+    const g = fn([Bool], Bool, (p) => vjp(f)(p).ret);
+    const h = interp(g);
+    expect(h(true)).toBe(false);
+    expect(h(false)).toBe(true);
+  });
+
   test("VJP with select on null", () => {
     const f = fn([Null], Null, () => select(true, Null, null, null));
     const g = fn([], Null, () => vjp(f)(null).ret);
