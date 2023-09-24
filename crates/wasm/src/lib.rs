@@ -667,10 +667,11 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
 
     let mut export_section = ExportSection::new();
     export_section.export(
-        "",
+        "f",
         wasm_encoder::ExportKind::Func,
         (imports.len() + funcs.len() - 1).try_into().unwrap(),
     );
+    export_section.export("m", wasm_encoder::ExportKind::Memory, 0);
 
     let mut module = Module::new();
     module.section(&type_section);

@@ -607,7 +607,7 @@ export const compile = async <const A extends readonly any[], const R>(
     await WebAssembly.compile(bytes),
     { "": Object.fromEntries(imports.map((g, i) => [i.toString(), g])) },
   );
-  return instance.exports[""] as any;
+  return instance.exports["f"] as any;
 };
 
 // https://www.typescriptlang.org/docs/handbook/2/conditional-types.html
