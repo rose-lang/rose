@@ -1,10 +1,7 @@
 use by_address::ByAddress;
 use indexmap::{IndexMap, IndexSet};
 use rose::{id, Binop, Expr, Func, Instr, Node, Refs, Ty, Unop};
-use std::{
-    hash::Hash,
-    mem::{swap, take},
-};
+use std::{hash::Hash, mem::take};
 use wasm_encoder::{
     BlockType, CodeSection, EntityType, ExportSection, Function, FunctionSection, ImportSection,
     Instruction, MemArg, MemorySection, MemoryType, Module, TypeSection, ValType,
@@ -450,7 +447,8 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                     self.set(instr.var);
 
                     if n > 0 {
-                        let mut offset = take(&mut self.offset);
+                        self.bump(size * n);
+                        let offset = take(&mut self.offset);
 
                         self.wasm.instruction(&Instruction::I32Const(0));
                         self.set(*arg);
@@ -475,8 +473,7 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                         self.wasm.instruction(&Instruction::BrIf(0));
                         self.wasm.instruction(&Instruction::End);
 
-                        swap(&mut offset, &mut self.offset);
-                        self.bump(offset * n);
+                        self.offset = offset + self.offset * n;
                     }
 
                     continue;
@@ -659,10 +656,11 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
     }
 
     let mut memory_section = MemorySection::new();
+    let page_size = 65536;
+    let pages: u64 = ((costs.last().unwrap() + page_size - 1) / page_size).into();
     memory_section.memory(MemoryType {
-        // TODO: calculate the number of memory pages
-        minimum: 1,
-        maximum: Some(1),
+        minimum: pages,
+        maximum: Some(pages),
         memory64: false,
         shared: false,
     });
