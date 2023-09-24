@@ -418,7 +418,7 @@ impl Func {
     }
 }
 
-// A temporary object to hold a generated WebAssembly module and its imports.
+/// A temporary object to hold a generated WebAssembly module and its imports.
 #[wasm_bindgen]
 pub struct Wasm {
     bytes: Option<Vec<u8>>,
