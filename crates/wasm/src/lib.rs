@@ -657,7 +657,7 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
 
     let mut memory_section = MemorySection::new();
     let page_size = 65536;
-    let pages: u64 = ((costs.last().unwrap() + page_size - 1) / page_size).into();
+    let pages: u64 = ((costs.last().unwrap_or(&0) + page_size - 1) / page_size).into();
     memory_section.memory(MemoryType {
         minimum: pages,
         maximum: Some(pages),
