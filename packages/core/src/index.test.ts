@@ -736,4 +736,36 @@ describe("valid", () => {
     (await compile(g))();
     expect(i).toEqual(0);
   });
+
+  test("compile VJP", async () => {
+    const f = fn(
+      [Vec(2, { p: Bool, x: Real } as const)],
+      { p: Vec(2, Bool), x: Vec(2, Real) },
+      (v) => ({
+        p: vec(2, Bool, (i) => not(v[i].p)),
+        x: vec(2, Real, (i) => {
+          const { p, x } = v[i];
+          return select(p, Real, mul(x, x), x);
+        }),
+      }),
+    );
+    const g = fn([Bool, Real, Bool, Real], Real, (p1, x1, q1, y1) => {
+      const { ret, grad } = vjp(f)([
+        { p: p1, x: x1 },
+        { p: q1, x: y1 },
+      ]);
+      const { x } = ret;
+      const x2 = x[0];
+      const y2 = x[1];
+      const v = grad({ p: [true, false] as any, x: [2, 3] as any });
+      const { x: x3 } = v[0];
+      const { x: y3 } = v[1];
+      return mul(sub(x3, y2), sub(y3, x2));
+    });
+    const h = await compile(g);
+    expect(h(true, 2, true, 3)).toBe(-14);
+    expect(h(true, 5, false, 7)).toBe(-286);
+    expect(h(false, 11, true, 13)).toBe(-11189);
+    expect(h(false, 17, false, 19)).toBe(238);
+  });
 });
