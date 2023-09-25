@@ -494,7 +494,7 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                             self.pointer();
                             let j = self.funcs.get_index_of(&(ByAddress(def), gens)).unwrap();
                             self.bump(self.costs[j]);
-                            self.imports.len() + self.extras + j
+                            self.extras + j
                         }
                         Node::Opaque { def, .. } => {
                             self.imports.get_index_of(&(def, gens)).unwrap()
@@ -662,7 +662,7 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
     let mut code_section = CodeSection::new();
 
     let mut metas: Vec<Meta> = vec![];
-    let mut extras: usize = 0;
+    let mut extras: usize = imports.len();
     for ty in types.into_iter() {
         let (layout, cost, members) = match &ty {
             Ty::Unit => (Layout::Unit, None, None),
@@ -976,9 +976,7 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
     export_section.export(
         "f",
         wasm_encoder::ExportKind::Func,
-        (imports.len() + extras + funcs.len() - 1)
-            .try_into()
-            .unwrap(),
+        (extras + funcs.len() - 1).try_into().unwrap(),
     );
     export_section.export("m", wasm_encoder::ExportKind::Memory, 0);
 

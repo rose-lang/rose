@@ -776,6 +776,17 @@ describe("valid", () => {
     expect((await compile(h))(1)).toBe(1);
   });
 
+  test.only("compile VJP with opaque call", async () => {
+    const exp = opaque([Real], Real, Math.exp);
+    exp.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
+      const y = exp(x);
+      return { re: y, du: mulLin(dx, y) };
+    });
+    const g = fn([Real], Real, (x) => exp(x));
+    const h = fn([Real], Real, (x) => vjp(g)(x).ret);
+    expect((await compile(h))(1)).toBeCloseTo(Math.E);
+  });
+
   test("compile nulls in signature", async () => {
     const f = fn([Null], Null, (x) => x);
     const g = await compile(f);
