@@ -776,7 +776,7 @@ describe("valid", () => {
     expect((await compile(h))(1)).toBe(1);
   });
 
-  test.only("compile VJP with opaque call", async () => {
+  test("compile VJP with opaque call", async () => {
     const exp = opaque([Real], Real, Math.exp);
     exp.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
       const y = exp(x);
