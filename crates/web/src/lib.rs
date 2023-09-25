@@ -391,7 +391,7 @@ impl Func {
                 }
                 let (deps_fwd, deps_bwd): (Vec<_>, Vec<_>) =
                     deps.iter().map(|f| f.transpose_pair()).unzip();
-                let dep_types: Box<_> = deps_bwd
+                let dep_types: Box<_> = deps_fwd
                     .iter()
                     .map(|f| match &f.rc.as_ref().inner {
                         Inner::Transparent { def, .. } => {

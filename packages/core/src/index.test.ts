@@ -769,6 +769,13 @@ describe("valid", () => {
     expect(h(false, 17, false, 19)).toBe(238);
   });
 
+  test.only("compile VJP with call", async () => {
+    const f = fn([Real], Real, (x) => x);
+    const g = fn([Real], Real, (x) => f(x));
+    const h = fn([Real], Real, (x) => vjp(g)(x).ret);
+    expect((await compile(h))(1)).toBe(1);
+  });
+
   test("compile nulls in signature", async () => {
     const f = fn([Null], Null, (x) => x);
     const g = await compile(f);
