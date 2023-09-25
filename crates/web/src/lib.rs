@@ -211,6 +211,7 @@ impl Func {
         }
     }
 
+    /// Return the number of types defined in this function.
     #[wasm_bindgen(js_name = "numTypes")]
     pub fn num_types(&self) -> usize {
         match &self.rc.as_ref().inner {
@@ -219,6 +220,7 @@ impl Func {
         }
     }
 
+    /// Return the type with ID `t`, if it exists.
     fn ty(&self, t: usize) -> Option<&rose::Ty> {
         match &self.rc.as_ref().inner {
             Inner::Transparent { def, .. } => def.types.get(t),
@@ -262,6 +264,7 @@ impl Func {
         self.rc.as_ref().structs[t].is_some()
     }
 
+    /// Return the size of the finite integer type with ID `t`.
     pub fn size(&self, t: usize) -> usize {
         match self.ty(t).unwrap() {
             &rose::Ty::Fin { size } => size,
@@ -269,6 +272,7 @@ impl Func {
         }
     }
 
+    /// Return the ID of the index type for the array type with ID `t`.
     pub fn index(&self, t: usize) -> usize {
         match self.ty(t).unwrap() {
             rose::Ty::Array { index, elem: _ } => index.ty(),
@@ -307,6 +311,7 @@ impl Func {
         Ok(to_js_value(&ret)?)
     }
 
+    /// Compile the call graph subtended by this function to WebAssembly.
     pub fn compile(&self) -> Wasm {
         let rose_wasm::Wasm { bytes, imports } = rose_wasm::compile(self.node());
         Wasm {
@@ -320,6 +325,7 @@ impl Func {
         }
     }
 
+    /// Set the JVP of this function to `f`.
     #[wasm_bindgen(js_name = "setJvp")]
     pub fn set_jvp(&self, f: &Func) {
         self.rc.as_ref().jvp.replace(Some(Rc::clone(&f.rc)));

@@ -595,6 +595,8 @@ export const interp =
     return unpack(f, func.retType(), func.interp(vals)) as ToJs<R>;
   };
 
+// https://github.com/rose-lang/rose/issues/116
+
 // TODO: use something more like an enum
 interface Layout {
   size: number;
