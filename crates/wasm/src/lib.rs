@@ -670,7 +670,9 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
             Ty::Bool => (Layout::U8, None, None),
             Ty::F64 => (Layout::F64, None, None),
             &Ty::Fin { size } => (
-                if size <= 256 {
+                if size <= 1 {
+                    Layout::Unit
+                } else if size <= 256 {
                     Layout::U8
                 } else if size <= 65536 {
                     Layout::U16
