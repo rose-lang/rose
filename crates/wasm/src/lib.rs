@@ -658,8 +658,6 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
         );
     }
 
-    let mut costs = vec![];
-
     let mut function_section = FunctionSection::new();
     let mut code_section = CodeSection::new();
 
@@ -892,6 +890,7 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
         });
     }
 
+    let mut costs = vec![];
     for ((def, _), (refs, def_types)) in funcs.iter() {
         let vt = |t: id::Ty| val_type(&metas[def_types[t.ty()].ty()].ty);
         let params: Local = (def.params.len() + 1).try_into().unwrap();
@@ -958,8 +957,14 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
 
     let mut memory_section = MemorySection::new();
     let page_size = 65536;
-    // TODO: include param costs
-    let pages: u64 = ((costs.last().unwrap_or(&0) + page_size - 1) / page_size).into();
+    let cost = funcs.last().map_or(0, |((def, _), (_, def_types))| {
+        def.params
+            .iter()
+            .filter_map(|param| metas[def_types[def.vars[param.var()].ty()].ty()].accum)
+            .map(|accum| accum.cost)
+            .sum()
+    }) + costs.last().unwrap_or(&0);
+    let pages = ((cost + page_size - 1) / page_size).into();
     memory_section.memory(MemoryType {
         minimum: pages,
         maximum: Some(pages),
