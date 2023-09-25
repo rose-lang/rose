@@ -211,44 +211,87 @@ impl Func {
         }
     }
 
-    /// Return true iff `t` is the ID of a finite integer type.
-    #[wasm_bindgen(js_name = "isFin")]
-    pub fn is_fin(&mut self, t: usize) -> bool {
-        let Pointee { inner, .. } = self.rc.as_ref();
-        let ty = match inner {
+    #[wasm_bindgen(js_name = "numTypes")]
+    pub fn num_types(&self) -> usize {
+        match &self.rc.as_ref().inner {
+            Inner::Transparent { def, .. } => def.types.len(),
+            Inner::Opaque { types, .. } => types.len(),
+        }
+    }
+
+    fn ty(&self, t: usize) -> Option<&rose::Ty> {
+        match &self.rc.as_ref().inner {
             Inner::Transparent { def, .. } => def.types.get(t),
             Inner::Opaque { types, .. } => types.get(t),
-        };
-        matches!(ty, Some(rose::Ty::Fin { .. }))
+        }
+    }
+
+    /// Return true iff `t` is the ID of a unit type.
+    #[wasm_bindgen(js_name = "isUnit")]
+    pub fn is_unit(&self, t: usize) -> bool {
+        matches!(self.ty(t), Some(rose::Ty::Unit))
+    }
+
+    /// Return true iff `t` is the ID of a boolean type.
+    #[wasm_bindgen(js_name = "isBool")]
+    pub fn is_bool(&self, t: usize) -> bool {
+        matches!(self.ty(t), Some(rose::Ty::Bool))
+    }
+
+    /// Return true iff `t` is the ID of a 64-bit floating-point type.
+    #[wasm_bindgen(js_name = "isF64")]
+    pub fn is_f64(&self, t: usize) -> bool {
+        matches!(self.ty(t), Some(rose::Ty::F64))
+    }
+
+    /// Return true iff `t` is the ID of a finite integer type.
+    #[wasm_bindgen(js_name = "isFin")]
+    pub fn is_fin(&self, t: usize) -> bool {
+        matches!(self.ty(t), Some(rose::Ty::Fin { .. }))
+    }
+
+    /// Return true iff `t` is the ID of an array type.
+    #[wasm_bindgen(js_name = "isArray")]
+    pub fn is_array(&self, t: usize) -> bool {
+        matches!(self.ty(t), Some(rose::Ty::Array { .. }))
+    }
+
+    /// Return true iff `t` is the ID of a struct type.
+    #[wasm_bindgen(js_name = "isStruct")]
+    pub fn is_struct(&self, t: usize) -> bool {
+        self.rc.as_ref().structs[t].is_some()
+    }
+
+    pub fn size(&self, t: usize) -> usize {
+        match self.ty(t).unwrap() {
+            &rose::Ty::Fin { size } => size,
+            _ => panic!("not a finite integer"),
+        }
+    }
+
+    pub fn index(&self, t: usize) -> usize {
+        match self.ty(t).unwrap() {
+            rose::Ty::Array { index, elem: _ } => index.ty(),
+            _ => panic!("not an array"),
+        }
     }
 
     /// Return the ID of the element type for the array type with ID `t`.
     pub fn elem(&self, t: usize) -> usize {
-        let Pointee { inner, .. } = self.rc.as_ref();
-        match inner {
-            Inner::Transparent { def, .. } => match def.types[t] {
-                rose::Ty::Array { index: _, elem } => elem.ty(),
-                _ => panic!("not an array"),
-            },
-            Inner::Opaque { .. } => panic!(),
+        match self.ty(t).unwrap() {
+            rose::Ty::Array { index: _, elem } => elem.ty(),
+            _ => panic!("not an array"),
         }
     }
 
     /// Return the string IDs for the struct type with ID `t`.
     pub fn keys(&self, t: usize) -> Box<[usize]> {
-        let Pointee { structs, .. } = self.rc.as_ref();
-        structs[t].as_ref().unwrap().clone()
+        self.rc.as_ref().structs[t].as_ref().unwrap().clone()
     }
 
     /// Return the member type IDs for the struct type with ID `t`.
     pub fn mems(&self, t: usize) -> Box<[usize]> {
-        let Pointee { inner, .. } = self.rc.as_ref();
-        let ty = match inner {
-            Inner::Transparent { def, .. } => def.types.get(t),
-            Inner::Opaque { types, .. } => types.get(t),
-        }
-        .unwrap();
-        match ty {
+        match self.ty(t).unwrap() {
             rose::Ty::Tuple { members } => members.iter().map(|m| m.ty()).collect(),
             _ => panic!("not a struct"),
         }

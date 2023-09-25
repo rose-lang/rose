@@ -125,6 +125,7 @@ fn u_size(x: usize) -> Size {
     x.try_into().unwrap()
 }
 
+// TODO: is this function overused?
 fn align(size: Size, align: Size) -> Size {
     (size + align - 1) & !(align - 1)
 }
@@ -693,7 +694,7 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
                 let size = meta.layout.aligned();
 
                 let mut zero = Function::new([(2, ValType::I32)]);
-                let mut total = size * n;
+                let mut total = align(size * n, 8);
                 let mut add = Function::new([(1, ValType::I32)]);
 
                 if n > 0 {
@@ -957,6 +958,7 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
 
     let mut memory_section = MemorySection::new();
     let page_size = 65536;
+    // TODO: include param costs
     let pages: u64 = ((costs.last().unwrap_or(&0) + page_size - 1) / page_size).into();
     memory_section.memory(MemoryType {
         minimum: pages,
