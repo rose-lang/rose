@@ -1,5 +1,5 @@
 use by_address::ByAddress;
-use indexmap::{IndexMap, IndexSet};
+use indexmap::{map::Entry, IndexMap, IndexSet};
 use rose::{id, Binop, Expr, Func, Instr, Node, Refs, Ty, Unop};
 use std::{hash::Hash, mem::take};
 use wasm_encoder::{
@@ -74,14 +74,18 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
                             }
                         }
                         Node::Opaque { def, .. } => {
-                            // TODO: check that the value matches if the key is already present
-                            self.imports.insert(
-                                (def, gens),
-                                (
-                                    args.iter().map(|x| types[f.vars[x.var()].ty()]).collect(),
-                                    types[f.vars[instr.var.var()].ty()],
-                                ),
+                            let resolved = (
+                                args.iter().map(|x| types[f.vars[x.var()].ty()]).collect(),
+                                types[f.vars[instr.var.var()].ty()],
                             );
+                            match self.imports.entry((def, gens)) {
+                                Entry::Occupied(entry) => {
+                                    assert_eq!(entry.get(), &resolved);
+                                }
+                                Entry::Vacant(entry) => {
+                                    entry.insert(resolved);
+                                }
+                            }
                         }
                     }
                 }
