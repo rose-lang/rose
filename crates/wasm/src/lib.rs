@@ -138,18 +138,96 @@ enum Layout {
 impl Layout {
     fn size_align(self) -> (Size, Size) {
         match self {
-            Layout::Unit => (0, 1),
-            Layout::U8 => (1, 1),
-            Layout::U16 => (2, 2),
-            Layout::U32 => (4, 4),
-            Layout::F64 => (8, 8),
-            Layout::Ref => unreachable!(),
+            Self::Unit => (0, 1),
+            Self::U8 => (1, 1),
+            Self::U16 => (2, 2),
+            Self::U32 => (4, 4),
+            Self::F64 => (8, 8),
+            Self::Ref => unreachable!(),
         }
     }
 
     fn aligned(self) -> Size {
         let (s, a) = self.size_align();
         align(s, a)
+    }
+
+    fn load(self, function: &mut Function, offset: Size) {
+        let offset = offset.into();
+        match self {
+            Self::Unit => {
+                function.instruction(&Instruction::Drop);
+                function.instruction(&Instruction::I32Const(0));
+            }
+            Self::U8 => {
+                function.instruction(&Instruction::I32Load8U(MemArg {
+                    offset,
+                    align: 0,
+                    memory_index: 0,
+                }));
+            }
+            Self::U16 => {
+                function.instruction(&Instruction::I32Load16U(MemArg {
+                    offset,
+                    align: 1,
+                    memory_index: 0,
+                }));
+            }
+            Self::U32 => {
+                function.instruction(&Instruction::I32Load(MemArg {
+                    offset,
+                    align: 2,
+                    memory_index: 0,
+                }));
+            }
+            Self::F64 => {
+                function.instruction(&Instruction::F64Load(MemArg {
+                    offset,
+                    align: 3,
+                    memory_index: 0,
+                }));
+            }
+            Self::Ref => unreachable!(),
+        }
+    }
+
+    fn store(self, function: &mut Function, offset: Size) {
+        let offset = offset.into();
+        match self {
+            Self::Unit => {
+                function.instruction(&Instruction::Drop);
+                function.instruction(&Instruction::Drop);
+            }
+            Self::U8 => {
+                function.instruction(&Instruction::I32Store8(MemArg {
+                    offset,
+                    align: 0,
+                    memory_index: 0,
+                }));
+            }
+            Self::U16 => {
+                function.instruction(&Instruction::I32Store16(MemArg {
+                    offset,
+                    align: 1,
+                    memory_index: 0,
+                }));
+            }
+            Self::U32 => {
+                function.instruction(&Instruction::I32Store(MemArg {
+                    offset,
+                    align: 2,
+                    memory_index: 0,
+                }));
+            }
+            Self::F64 => {
+                function.instruction(&Instruction::F64Store(MemArg {
+                    offset,
+                    align: 3,
+                    memory_index: 0,
+                }));
+            }
+            Self::Ref => unreachable!(),
+        }
     }
 }
 
@@ -228,81 +306,11 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
     }
 
     fn load(&mut self, layout: Layout, offset: Size) {
-        let offset = offset.into();
-        match layout {
-            Layout::Unit => {
-                self.wasm.instruction(&Instruction::Drop);
-                self.wasm.instruction(&Instruction::I32Const(0));
-            }
-            Layout::U8 => {
-                self.wasm.instruction(&Instruction::I32Load8U(MemArg {
-                    offset,
-                    align: 0,
-                    memory_index: 0,
-                }));
-            }
-            Layout::U16 => {
-                self.wasm.instruction(&Instruction::I32Load16U(MemArg {
-                    offset,
-                    align: 1,
-                    memory_index: 0,
-                }));
-            }
-            Layout::U32 => {
-                self.wasm.instruction(&Instruction::I32Load(MemArg {
-                    offset,
-                    align: 2,
-                    memory_index: 0,
-                }));
-            }
-            Layout::F64 => {
-                self.wasm.instruction(&Instruction::F64Load(MemArg {
-                    offset,
-                    align: 3,
-                    memory_index: 0,
-                }));
-            }
-            Layout::Ref => unreachable!(),
-        }
+        layout.load(&mut self.wasm, offset)
     }
 
     fn store(&mut self, layout: Layout, offset: Size) {
-        let offset = offset.into();
-        match layout {
-            Layout::Unit => {
-                self.wasm.instruction(&Instruction::Drop);
-                self.wasm.instruction(&Instruction::Drop);
-            }
-            Layout::U8 => {
-                self.wasm.instruction(&Instruction::I32Store8(MemArg {
-                    offset,
-                    align: 0,
-                    memory_index: 0,
-                }));
-            }
-            Layout::U16 => {
-                self.wasm.instruction(&Instruction::I32Store16(MemArg {
-                    offset,
-                    align: 1,
-                    memory_index: 0,
-                }));
-            }
-            Layout::U32 => {
-                self.wasm.instruction(&Instruction::I32Store(MemArg {
-                    offset,
-                    align: 2,
-                    memory_index: 0,
-                }));
-            }
-            Layout::F64 => {
-                self.wasm.instruction(&Instruction::F64Store(MemArg {
-                    offset,
-                    align: 3,
-                    memory_index: 0,
-                }));
-            }
-            Layout::Ref => unreachable!(),
-        }
+        layout.store(&mut self.wasm, offset)
     }
 
     fn block(&mut self, block: &[Instr]) {
@@ -367,11 +375,46 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                     self.get(tuple);
                     self.load(layout, offset);
                 }
-                &Expr::Slice { array: _, index: _ } => todo!(),
-                &Expr::Field {
-                    tuple: _,
-                    member: _,
-                } => todo!(),
+                &Expr::Slice { array, index } => {
+                    let meta =
+                        self.meta(match self.def.types[self.def.vars[instr.var.var()].ty()] {
+                            Ty::Ref { inner } => inner,
+                            _ => unreachable!(),
+                        });
+                    let size = meta.layout.aligned();
+                    self.get(array);
+                    self.get(index);
+                    self.u32_const(size);
+                    self.wasm.instruction(&Instruction::I32Mul);
+                    self.wasm.instruction(&Instruction::I32Add);
+                    if let Ty::Array { .. } | Ty::Tuple { .. } = &meta.ty {
+                        self.load(meta.layout, 0);
+                    }
+                }
+                &Expr::Field { tuple, member } => {
+                    let Meta { members, .. } =
+                        self.meta(match self.def.types[self.def.vars[tuple.var()].ty()] {
+                            Ty::Ref { inner } => inner,
+                            _ => unreachable!(),
+                        });
+                    let offset = members.as_ref().unwrap()[member.member()];
+                    let meta =
+                        self.meta(match self.def.types[self.def.vars[instr.var.var()].ty()] {
+                            Ty::Ref { inner } => inner,
+                            _ => unreachable!(),
+                        });
+                    self.get(tuple);
+                    match &meta.ty {
+                        Ty::Unit | Ty::Bool | Ty::F64 | Ty::Fin { .. } => {
+                            self.u32_const(offset);
+                            self.wasm.instruction(&Instruction::I32Add);
+                        }
+                        Ty::Generic { .. } | Ty::Ref { .. } => unreachable!(),
+                        Ty::Array { .. } | Ty::Tuple { .. } => {
+                            self.load(meta.layout, offset);
+                        }
+                    }
+                }
                 &Expr::Unary { op, arg } => match op {
                     Unop::Not => {
                         self.get(arg);
@@ -544,7 +587,7 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                 }
                 &Expr::Resolve { var } => {
                     self.get(var);
-                    if let Ty::F64 = &self.meta(self.def.vars[var.var()]).ty {
+                    if let Ty::F64 = &self.meta(self.def.vars[instr.var.var()]).ty {
                         self.load(Layout::F64, 0);
                     }
                 }
@@ -636,19 +679,18 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
             Ty::Generic { .. } => unreachable!(),
             Ty::Ref { .. } => (Layout::Ref, None, None),
             Ty::Array { index, elem } => {
-                let n = match metas[index.ty()].ty {
+                let n = u_size(match metas[index.ty()].ty {
                     Ty::Fin { size } => size,
                     _ => unreachable!(),
-                };
+                });
                 let meta = &metas[elem.ty()];
                 let size = meta.layout.aligned();
 
                 let mut zero = Function::new([(2, ValType::I32)]);
+                let mut total = size * n;
                 let mut add = Function::new([(1, ValType::I32)]);
 
                 if n > 0 {
-                    let total = size * u_size(n);
-
                     zero.instruction(&Instruction::LocalGet(0));
                     zero.instruction(&Instruction::I32Const(total.try_into().unwrap()));
                     zero.instruction(&Instruction::I32Add);
@@ -664,18 +706,56 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
 
                     match &meta.ty {
                         Ty::Unit => {}
-                        Ty::Bool | Ty::Fin { .. } => todo!(),
+                        Ty::Bool | Ty::Fin { .. } => {
+                            zero.instruction(&Instruction::LocalGet(0));
+                            zero.instruction(&Instruction::LocalGet(1));
+                            meta.layout.load(&mut zero, 0);
+                            meta.layout.store(&mut zero, 0);
+                        }
                         Ty::F64 => {
                             zero.instruction(&Instruction::LocalGet(0));
                             zero.instruction(&Instruction::F64Const(0.));
-                            todo!()
+                            meta.layout.store(&mut zero, 0);
+
+                            add.instruction(&Instruction::LocalGet(0));
+                            add.instruction(&Instruction::LocalGet(0));
+                            meta.layout.load(&mut add, 0);
+                            add.instruction(&Instruction::LocalGet(1));
+                            meta.layout.load(&mut add, 0);
+                            add.instruction(&Instruction::F64Add);
+                            meta.layout.store(&mut add, 0);
                         }
-                        Ty::Generic { id } => todo!(),
-                        Ty::Ref { inner } => todo!(),
-                        Ty::Array { index, elem } => todo!(),
-                        Ty::Tuple { members } => todo!(),
+                        Ty::Generic { .. } | Ty::Ref { .. } => unreachable!(),
+                        Ty::Array { .. } | Ty::Tuple { .. } => {
+                            let accum = meta.accum.unwrap();
+                            let cost = accum.cost;
+
+                            zero.instruction(&Instruction::LocalGet(0));
+                            zero.instruction(&Instruction::LocalGet(3));
+                            meta.layout.store(&mut zero, 0);
+                            zero.instruction(&Instruction::LocalGet(3));
+                            zero.instruction(&Instruction::LocalGet(1));
+                            meta.layout.load(&mut zero, 0);
+                            zero.instruction(&Instruction::Call(accum.zero));
+                            zero.instruction(&Instruction::LocalGet(3));
+                            zero.instruction(&Instruction::I32Const(cost.try_into().unwrap()));
+                            zero.instruction(&Instruction::I32Add);
+                            zero.instruction(&Instruction::LocalSet(3));
+
+                            total += cost * n;
+
+                            add.instruction(&Instruction::LocalGet(0));
+                            meta.layout.load(&mut add, 0);
+                            add.instruction(&Instruction::LocalGet(1));
+                            meta.layout.load(&mut add, 0);
+                            add.instruction(&Instruction::Call(accum.add));
+                        }
                     }
 
+                    zero.instruction(&Instruction::LocalGet(1));
+                    zero.instruction(&Instruction::I32Const(size.try_into().unwrap()));
+                    zero.instruction(&Instruction::I32Add);
+                    zero.instruction(&Instruction::LocalSet(1));
                     zero.instruction(&Instruction::LocalGet(0));
                     zero.instruction(&Instruction::I32Const(size.try_into().unwrap()));
                     zero.instruction(&Instruction::I32Add);
@@ -685,6 +765,10 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
                     zero.instruction(&Instruction::BrIf(0));
                     zero.instruction(&Instruction::End);
 
+                    add.instruction(&Instruction::LocalGet(1));
+                    add.instruction(&Instruction::I32Const(size.try_into().unwrap()));
+                    add.instruction(&Instruction::I32Add);
+                    add.instruction(&Instruction::LocalSet(1));
                     add.instruction(&Instruction::LocalGet(0));
                     add.instruction(&Instruction::I32Const(size.try_into().unwrap()));
                     add.instruction(&Instruction::I32Add);
@@ -695,13 +779,13 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
                     add.instruction(&Instruction::End);
                 }
 
+                zero.instruction(&Instruction::End);
                 code_section.function(&zero);
+
+                add.instruction(&Instruction::End);
                 code_section.function(&add);
-                (
-                    Layout::U32,
-                    Some((size + meta.accum.map_or(0, |acc| acc.cost)) * u_size(n)),
-                    None,
-                )
+
+                (Layout::U32, Some(total), None)
             }
             Ty::Tuple { members } => {
                 let mut mems: Vec<_> = members
@@ -722,13 +806,68 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
                     offset += s;
                 }
 
-                let mut zero = Function::new([]);
-
+                let mut zero = Function::new([(1, ValType::I32)]);
+                let mut total = align(offset, 8);
                 let mut add = Function::new([]);
 
+                for (member, &offset) in members.iter().zip(offsets.iter()) {
+                    let meta = &metas[member.ty()];
+
+                    match &meta.ty {
+                        Ty::Unit => {}
+                        Ty::Bool | Ty::Fin { .. } => {
+                            zero.instruction(&Instruction::LocalGet(0));
+                            zero.instruction(&Instruction::LocalGet(1));
+                            meta.layout.load(&mut zero, offset);
+                            meta.layout.store(&mut zero, offset);
+                        }
+                        Ty::F64 => {
+                            zero.instruction(&Instruction::LocalGet(0));
+                            zero.instruction(&Instruction::F64Const(0.));
+                            meta.layout.store(&mut zero, offset);
+
+                            add.instruction(&Instruction::LocalGet(0));
+                            add.instruction(&Instruction::LocalGet(0));
+                            meta.layout.load(&mut add, offset);
+                            add.instruction(&Instruction::LocalGet(1));
+                            meta.layout.load(&mut add, offset);
+                            add.instruction(&Instruction::F64Add);
+                            meta.layout.store(&mut add, offset);
+                        }
+                        Ty::Generic { .. } | Ty::Ref { .. } => unreachable!(),
+                        Ty::Array { .. } | Ty::Tuple { .. } => {
+                            let accum = meta.accum.unwrap();
+                            let cost = accum.cost;
+
+                            zero.instruction(&Instruction::LocalGet(0));
+                            zero.instruction(&Instruction::LocalGet(0));
+                            zero.instruction(&Instruction::I32Const(total.try_into().unwrap()));
+                            zero.instruction(&Instruction::I32Add);
+                            zero.instruction(&Instruction::LocalTee(2));
+                            meta.layout.store(&mut zero, offset);
+                            zero.instruction(&Instruction::LocalGet(2));
+                            zero.instruction(&Instruction::LocalGet(1));
+                            meta.layout.load(&mut zero, offset);
+                            zero.instruction(&Instruction::Call(accum.zero));
+
+                            total += cost;
+
+                            add.instruction(&Instruction::LocalGet(0));
+                            meta.layout.load(&mut add, offset);
+                            add.instruction(&Instruction::LocalGet(1));
+                            meta.layout.load(&mut add, offset);
+                            add.instruction(&Instruction::Call(accum.add));
+                        }
+                    }
+                }
+
+                zero.instruction(&Instruction::End);
                 code_section.function(&zero);
+
+                add.instruction(&Instruction::End);
                 code_section.function(&add);
-                (Layout::U32, Some(todo!()), Some(offsets.into()))
+
+                (Layout::U32, Some(total), Some(offsets.into()))
             }
         };
         metas.push(Meta {
