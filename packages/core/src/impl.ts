@@ -603,9 +603,11 @@ interface Layout {
   align: number;
 }
 
+/** Round up `size` to the nearest multiple of `align`.  */
 const aligned = ({ size, align }: Layout): number =>
   (size + align - 1) & ~(align - 1);
 
+/** An aligned `ArrayBuffer` view, or `undefined` for zero-sized types. */
 type View = undefined | Uint8Array | Uint16Array | Uint32Array | Float64Array;
 
 const getView = (buffer: ArrayBuffer, layout: Layout, offset: number): View => {
@@ -619,13 +621,34 @@ const getView = (buffer: ArrayBuffer, layout: Layout, offset: number): View => {
   else throw Error("unknown layout");
 };
 
+/** Memory representation for a type. */
 interface Meta {
+  /** Layout of an individual value of this type in memory. */
   layout: Layout;
+
+  /**
+   * Return the Wasm representation of the JS value `x`.
+   *
+   * The given byte offset is only used for pointer types.
+   */
   encode: (x: unknown, offset: number) => number;
+
+  /** Total memory cost of an object of this type, including sub-allocations. */
   cost: number;
+
+  /** Return a JS value represented by the Wasm value `x`. */
   decode: (x: number) => unknown;
 }
 
+/**
+ * Return enough information to encode and decode Wasm values with type ID `t`.
+ *
+ * The given function `f` must have already been compiled to WebAssembly,
+ * yielding the given `buffer` of sufficient size. The `metas` array should hold
+ * encoding/decoding information for all types with IDs less than `t`, or
+ * `undefined` for reference types and non-struct tuple types since those cannot
+ * appear in user-facing function signatures.
+ */
 const getMeta = (
   f: Fn,
   buffer: ArrayBuffer,
@@ -730,6 +753,11 @@ const getMeta = (
       layout: { size: 4, align: 4 },
       encode: (x, offset) => {
         for (const { key, meta, view, child } of mems) {
+          // instead of mutating each element of `mems` above to add more data
+          // and then still having an `if` statement in here, it would be nicer
+          // to just map over `mems` above to produce an array of closures that
+          // can be called directly, with the condition on `view === undefined`
+          // being handled once rather than in every call to `encode` here
           if (view !== undefined) {
             view[offset / aligned(meta.layout)] = meta.encode(
               (x as any)[key],
