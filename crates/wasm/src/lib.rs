@@ -7,6 +7,11 @@ use wasm_encoder::{
     Instruction, MemArg, MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
+/// Resolve `ty` via `generics` and `types`, then return its ID in `typemap`, inserting if need be.
+///
+/// This is meant to be used to pull all the types from a callee into a broader context. The
+/// `generics` are the IDs of all the types provided as generic type parameters for the callee. The
+/// `types are the IDs of all the types that have been pulled in so far.
 fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty: &Ty) -> id::Ty {
     let resolved = match ty {
         Ty::Generic { id } => return generics[id.generic()],
@@ -31,16 +36,37 @@ fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty
     id::ty(i)
 }
 
+/// An index of opaque functions.
+///
+/// Each key holds the opaque function itself followed by the generic parameters used for this
+/// particular instance. The value is the resolved type signature of the function according to a
+/// global type index.
 type Imports<O> = IndexMap<(O, Box<[id::Ty]>), (Box<[id::Ty]>, id::Ty)>;
+
+/// An index of transparent functions.
+///
+/// Each key holds a reference to the function itself followed by the generic parameters used for
+/// this particular instance. The value holds the function's immediate callees (see `rose::Refs`)
+/// followed by a mapping from the function's own type indices to resolved type indices in a
+/// global type index.
 type Funcs<'a, T> = IndexMap<(ByAddress<&'a Func>, Box<[id::Ty]>), (T, Box<[id::Ty]>)>;
 
+/// Computes a topological sort of a call graph via depth-first search.
 struct Topsort<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> {
+    /// All types seen so far.
     types: IndexSet<Ty>,
+
+    /// All opaque functions seen so far.
     imports: Imports<O>,
+
+    /// All transparent functions seen so far, in topological sorted order.
     funcs: Funcs<'a, T>,
 }
 
 impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
+    /// Search in the given `block` of `f`, using `refs` to resolve immediate function calls.
+    ///
+    /// The `types` argument is the resolved type ID for each of `f.types` in `self.types`.
     fn block(&mut self, refs: &T, f: &'a Func, types: &[id::Ty], block: &[Instr]) {
         for instr in block.iter() {
             match &instr.expr {
@@ -69,7 +95,7 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
                         Node::Transparent { refs, def } => {
                             let key = (ByAddress(def), gens);
                             if !self.funcs.contains_key(&key) {
-                                let (_, gens) = key;
+                                let (_, gens) = key; // get back `gens` to please the borrow checker
                                 self.func(refs, def, gens);
                             }
                         }
@@ -80,6 +106,9 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
                             );
                             match self.imports.entry((def, gens)) {
                                 Entry::Occupied(entry) => {
+                                    // we should never see the same exact opaque function with the
+                                    // same generic type parameters but multiple different type
+                                    // signatures
                                     assert_eq!(entry.get(), &resolved);
                                 }
                                 Entry::Vacant(entry) => {
@@ -93,6 +122,7 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
         }
     }
 
+    /// Search from `def` with the given `generics`, using `refs` to resolve immediate calls.
     fn func(&mut self, refs: T, def: &'a Func, generics: Box<[id::Ty]>) {
         let mut types = vec![];
         for ty in def.types.iter() {
@@ -102,10 +132,13 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
         let prev = self
             .funcs
             .insert((ByAddress(def), generics), (refs, types.into()));
+        // we're doing depth-first search on a DAG, so even if we wait until this last moment to
+        // mark the node as visited, we still can't have seen it already
         assert!(prev.is_none());
     }
 }
 
+/// Return the WebAssembly value type used to represent a local of type `ty`.
 fn val_type(ty: &Ty) -> ValType {
     match ty {
         Ty::Unit
@@ -119,28 +152,45 @@ fn val_type(ty: &Ty) -> ValType {
     }
 }
 
+/// A WebAssembly memory offset or size.
 type Size = u32;
 
+/// Convert a `usize` to a `Size`.
+///
+/// This will always succeed if the compiler itself is running inside WebAssembly.
 fn u_size(x: usize) -> Size {
     x.try_into().unwrap()
 }
 
-// TODO: is this function overused?
-fn align(size: Size, align: Size) -> Size {
+/// Round up `size` to the nearest multiple of `align`.
+fn aligned(size: Size, align: Size) -> Size {
     (size + align - 1) & !(align - 1)
 }
 
+/// The layout of a type in memory.
 #[derive(Clone, Copy)]
 enum Layout {
+    /// The unit type. Zero-sized.
     Unit,
+
+    /// An unsigned 8-bit integer.
     U8,
+
+    /// An unsigned 16-bit integer.
     U16,
+
+    /// An unsigned 32-bit integer.
     U32,
+
+    /// A 64-bit floating-point number.
     F64,
+
+    /// `Ty::Ref` cannot be stored in memory.
     Ref,
 }
 
 impl Layout {
+    /// Return the size and alignment of this `Layout`, in bytes.
     fn size_align(self) -> (Size, Size) {
         match self {
             Self::Unit => (0, 1),
@@ -152,11 +202,13 @@ impl Layout {
         }
     }
 
-    fn aligned(self) -> Size {
-        let (s, a) = self.size_align();
-        align(s, a)
+    /// Return the size of this `Layout`, which is always aligned.
+    fn size(self) -> Size {
+        let (size, _) = self.size_align();
+        size // no need to use alignment, because every possible `Layout` size is already aligned
     }
 
+    /// Emit a load instruction for this layout with the given byte offset.
     fn load(self, function: &mut Function, offset: Size) {
         let offset = offset.into();
         match self {
@@ -196,6 +248,7 @@ impl Layout {
         }
     }
 
+    /// Emit a store instruction for this layout with the given byte offset.
     fn store(self, function: &mut Function, offset: Size) {
         let offset = offset.into();
         match self {
@@ -236,8 +289,10 @@ impl Layout {
     }
 }
 
+/// The index of a WebAssembly local.
 type Local = u32;
 
+/// Information about a type that has functions for accumulation.
 #[derive(Clone, Copy)]
 struct Accum {
     /// The ID of the zero function.
@@ -250,58 +305,100 @@ struct Accum {
     add: u32,
 }
 
+/// Information about a type that is necessary for code generation.
 struct Meta {
+    /// The type.
     ty: Ty,
+
+    /// The layout of the type.
     layout: Layout,
+
+    /// Zero and add functions for accumulation, if this type is an array or tuple.
     accum: Option<Accum>,
+
+    /// Offsets of each member of a tuple.
     members: Option<Box<[Size]>>,
 }
 
+/// Generates WebAssembly code for a function.
 struct Codegen<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> {
+    /// Metadata about all the types in the global type index.
     metas: &'b [Meta],
+
+    /// All opaque functions.
     imports: &'b Imports<O>,
+
+    /// The number of opaque functions plus the number of accumulation functions (zeros and adds).
     extras: usize,
+
+    /// All transparent functions.
     funcs: &'b Funcs<'a, T>,
+
+    /// The allocation cost of each transparent function.
     costs: &'b [Size],
+
+    /// To resolve calls.
     refs: &'b T,
+
+    /// The definition of the particular function we're generating code for.
     def: &'b Func,
+
+    /// Mapping from this function's type indices to type indices in the global type index.
     types: &'b [id::Ty],
+
+    /// The WebAssembly local assigned to each variable in this function.
     locals: &'b [Local],
+
+    /// The amount of memory allocated so far in the current block.
+    ///
+    /// This is for the block and not the entire function, because for instance, a loop's total
+    /// allocation cost depends both on its block's allocation cost and on the number of iterations.
     offset: Size,
+
+    /// The WebAssembly function under construction.
     wasm: Function,
 }
 
 impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
+    /// Return metadata for the type ID `t` in the current function.
+    ///
+    /// Do not use this if your type ID is already resolved to refer to the global type index.
     fn meta(&self, t: id::Ty) -> &'b Meta {
         &self.metas[self.types[t.ty()].ty()]
     }
 
+    /// Emit an instruction to push the value of `x` onto the stack.
     fn get(&mut self, x: id::Var) {
         self.wasm
             .instruction(&Instruction::LocalGet(self.locals[x.var()]));
     }
 
+    /// Emit an instruction to pop the top of the stack and store it in `x`.
     fn set(&mut self, x: id::Var) {
         self.wasm
             .instruction(&Instruction::LocalSet(self.locals[x.var()]));
     }
 
+    /// Emit an instruction to store the stack top in `x` without popping it.
     fn tee(&mut self, x: id::Var) {
         self.wasm
             .instruction(&Instruction::LocalTee(self.locals[x.var()]));
     }
 
+    /// Emit an instruction to push the current memory allocation pointer onto the stack.
     fn pointer(&mut self) {
         self.wasm
             .instruction(&Instruction::LocalGet(u_size(self.def.params.len())));
     }
 
+    /// Emit an instruction to push the constant integer value `x` onto the stack.
     fn u32_const(&mut self, x: u32) {
         self.wasm.instruction(&Instruction::I32Const(x as i32));
     }
 
+    /// Emit instructions to increase the memory allocation pointer by `size` bytes.
     fn bump(&mut self, size: Size) {
-        let aligned = align(size, 8);
+        let aligned = aligned(size, 8);
         self.pointer();
         self.u32_const(aligned);
         self.wasm.instruction(&Instruction::I32Add);
@@ -310,14 +407,17 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
         self.offset += aligned;
     }
 
+    /// Emit instruction(s) to load a value with the given `layout` and `offset`.
     fn load(&mut self, layout: Layout, offset: Size) {
         layout.load(&mut self.wasm, offset)
     }
 
+    /// Emit instruction(s) to store a value with the given `layout` and `offset`.
     fn store(&mut self, layout: Layout, offset: Size) {
         layout.store(&mut self.wasm, offset)
     }
 
+    /// Generate code for the given `block`.
     fn block(&mut self, block: &[Instr]) {
         for instr in block.iter() {
             match &instr.expr {
@@ -325,8 +425,7 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                     self.wasm.instruction(&Instruction::I32Const(0));
                 }
                 &Expr::Bool { val } => {
-                    self.wasm
-                        .instruction(&Instruction::I32Const(if val { 1 } else { 0 }));
+                    self.wasm.instruction(&Instruction::I32Const(val.into()));
                 }
                 &Expr::F64 { val } => {
                     self.wasm.instruction(&Instruction::F64Const(val));
@@ -341,7 +440,7 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                             Ty::Array { elem, .. } => elem,
                             _ => unreachable!(),
                         });
-                    let size = layout.aligned();
+                    let size = layout.size();
                     for (i, &elem) in elems.iter().enumerate() {
                         self.pointer();
                         self.get(elem);
@@ -351,21 +450,21 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                     self.bump(size * u_size(elems.len()));
                 }
                 Expr::Tuple { members } => {
-                    let mut size = 0;
                     let Meta { members: mems, .. } = self.meta(self.def.vars[instr.var.var()]);
+                    let mut size = 0;
                     for (&member, &offset) in members.iter().zip(mems.as_ref().unwrap().iter()) {
                         let &Meta { layout, .. } = self.meta(self.def.vars[member.var()]);
                         self.pointer();
                         self.get(member);
                         self.store(layout, offset);
-                        size = size.max(offset + layout.aligned());
+                        size = size.max(offset + layout.size());
                     }
                     self.pointer();
                     self.bump(size);
                 }
                 &Expr::Index { array, index } => {
                     let &Meta { layout, .. } = self.meta(self.def.vars[instr.var.var()]);
-                    let size = layout.aligned();
+                    let size = layout.size();
                     self.get(array);
                     self.get(index);
                     self.u32_const(size);
@@ -386,13 +485,17 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                             Ty::Ref { inner } => inner,
                             _ => unreachable!(),
                         });
-                    let size = meta.layout.aligned();
+                    let size = meta.layout.size();
                     self.get(array);
                     self.get(index);
                     self.u32_const(size);
                     self.wasm.instruction(&Instruction::I32Mul);
                     self.wasm.instruction(&Instruction::I32Add);
                     if let Ty::Array { .. } | Ty::Tuple { .. } = &meta.ty {
+                        // if this array holds primitives then we just want a pointer to the
+                        // element, but if it's actually another composite value then it's already a
+                        // pointer, so we need to do a load because otherwise we'd have a pointer to
+                        // a pointer instead of just one direct pointer
                         self.load(meta.layout, 0);
                     }
                 }
@@ -411,11 +514,16 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                     self.get(tuple);
                     match &meta.ty {
                         Ty::Unit | Ty::Bool | Ty::F64 | Ty::Fin { .. } => {
+                            // if this array holds primitives then we just want a pointer to the
+                            // element
                             self.u32_const(offset);
                             self.wasm.instruction(&Instruction::I32Add);
                         }
                         Ty::Generic { .. } | Ty::Ref { .. } => unreachable!(),
                         Ty::Array { .. } | Ty::Tuple { .. } => {
+                            // if this array holds other composite values then each element is
+                            // already a pointer, so we need to do a load because otherwise we'd
+                            // have a pointer to a pointer instead of just one direct pointer
                             self.load(meta.layout, offset);
                         }
                     }
@@ -434,6 +542,8 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                         self.wasm.instruction(&Instruction::F64Abs);
                     }
                     Unop::Sign => {
+                        // TODO: `f64.const` instructions are always 8 bytes, much larger than most
+                        // instructions; maybe we should just keep this constant in a local
                         self.wasm.instruction(&Instruction::F64Const(1.));
                         self.get(arg);
                         self.wasm.instruction(&Instruction::F64Copysign);
@@ -509,11 +619,17 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                         _ => unreachable!(),
                     });
                     let &Meta { layout, .. } = self.meta(self.def.vars[ret.var()]);
-                    let size = layout.aligned();
+                    let size = layout.size();
 
+                    // we need to set the local now rather than later, because we're going to bump
+                    // the pointer for the array itself and possibly in the loop body, but we still
+                    // need to know this pointer so we can use it to store each element of the array
                     self.pointer();
                     self.set(instr.var);
 
+                    // we put the bounds check at the end of the loop, so if it's going to execute
+                    // zero times then we need to make sure not to enter it at all; easiest way is
+                    // to just not emit the loop instructions at all
                     if n > 0 {
                         self.bump(size * n);
                         let offset = take(&mut self.offset);
@@ -549,10 +665,23 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                 &Expr::Accum { shape } => {
                     let meta = self.meta(self.def.vars[shape.var()]);
                     match &meta.ty {
+                        // this is a bit subtle: usually a `Ref` variable is a pointer, and that is
+                        // also true for `Ref` variables to values of these three discrete
+                        // continuous types if they come from an `Expr::Slice` or `Expr::Field`;
+                        // but, if we're directly starting an accumulator for a discrete primitive
+                        // value, then its value can't be modified, so we can just store it directly
+                        // instead of allocating extra memory; this works because the WebAssembly
+                        // value types for all these discrete primitive types are the same as for
+                        // pointers, and it's OK to have the representation be different depending
+                        // on whether it's directly introduced by `Expr::Accum` or not, because
+                        // those are the only ones on which we can use `Expr::Resolve`, and `Ref`s
+                        // cannot be directly read before they're resolved anyway
                         Ty::Unit | Ty::Bool | Ty::Fin { .. } => self.get(shape),
                         Ty::F64 => {
                             self.pointer();
                             self.pointer();
+                            // TODO: `f64.const` instructions are always 8 bytes, much larger than
+                            // most instructions; maybe we should just keep this constant in a local
                             self.wasm.instruction(&Instruction::F64Const(0.));
                             self.store(Layout::F64, 0);
                             self.bump(8);
@@ -593,6 +722,11 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                 &Expr::Resolve { var } => {
                     self.get(var);
                     if let Ty::F64 = &self.meta(self.def.vars[instr.var.var()]).ty {
+                        // as explained above, if the `inner` value is a discrete primitive type
+                        // then we cheated and stored it directly in the local so there's nothing to
+                        // do, and if it's a pointer then we still just need a pointer so there's
+                        // also nothing to do; but if it's a continuous primitive type then we
+                        // introduced an extra layer of indirection so we need to loads
                         self.load(Layout::F64, 0);
                     }
                 }
@@ -602,11 +736,28 @@ impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
     }
 }
 
+/// A WebAssembly module for a graph of functions.
+///
+/// The module exports its memory with name `"m"` and its entrypoint function with name `"f"`. The
+/// function takes one parameter in addition to its original parameters, which must be an
+/// 8-byte-aligned pointer to the start of the memory region it can use for allocation. The memory
+/// is the exact number of pages necessary to accommodate the function's own memory allocation as
+/// well as memory allocation for all of its parameters, with each node in each parameter's memory
+/// allocation tree being 8-byte aligned. That is, the function's last argument should be just large
+/// enough to accommodate those allocations for all the parameters; in that case, no memory will be
+/// incorrectly overwritten and no out-of-bounds memory accesses will occur.
 pub struct Wasm<O> {
+    /// The bytes of the WebAssembly module binary.
     pub bytes: Vec<u8>,
+
+    /// All the opaque functions that the WebAssembly module must import, in order.
+    ///
+    /// The module name for each import is the empty string, and the field name is the base-ten
+    /// representation of its index in this collection.
     pub imports: Imports<O>,
 }
 
+/// Compile `f` and all its direct and indirect callees to a WebAssembly module.
 pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> Wasm<O> {
     let mut topsort = Topsort {
         types: IndexSet::new(),
@@ -624,6 +775,7 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
             def,
             ..
         } => {
+            // if `f` itself is an opaque function then the graph of all callees has only one node
             let mut def_types = vec![];
             for ty in types.iter() {
                 def_types.push(resolve(&mut topsort.types, &[], &def_types, ty));
@@ -643,6 +795,9 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
         funcs,
     } = topsort;
 
+    // we add to this lazily as we generate our imports, functions, and code, after which we'll
+    // generate the actual function types section right near the end; it doesn't matter as long as
+    // the order we actually add the sections to the module itself is correct
     let mut func_types: IndexSet<(Box<[ValType]>, ValType)> = IndexSet::new();
 
     let mut import_section = ImportSection::new();
@@ -651,6 +806,9 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
             params.iter().map(|t| val_type(&types[t.ty()])).collect(),
             val_type(&types[ret.ty()]),
         ));
+        // we reserve type index zero for the type with two `i32` params and no results, which we
+        // use for accumulation zero and add functions; we don't include that in the `func_types`
+        // index itself, because that index only holds function types with exactly one result
         import_section.import(
             "",
             &i.to_string(),
@@ -689,10 +847,20 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
                     _ => unreachable!(),
                 });
                 let meta = &metas[elem.ty()];
-                let size = meta.layout.aligned();
+                let size = meta.layout.size();
 
+                // for both the zero function and the add function, the first parameter is a pointer
+                // to the accumulator value, and the second parameter is the pointer to the other
+                // value (the shape for zero, or the addend for add)
+
+                // the first local is a pointer to the end of the accumulator array, used for bounds
+                // checking; the second local is a memory allocation pointer, used as the
+                // accumulator pointer for calls to the zero function for elements if this array
+                // stores composite values
                 let mut zero = Function::new([(2, ValType::I32)]);
-                let mut total = align(size * n, 8);
+                let mut total = aligned(size * n, 8);
+                // same as zero, the local is a pointer to the end of the accumulator array, used
+                // for bounds checking
                 let mut add = Function::new([(1, ValType::I32)]);
 
                 if n > 0 {
@@ -719,6 +887,8 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
                         }
                         Ty::F64 => {
                             zero.instruction(&Instruction::LocalGet(0));
+                            // TODO: `f64.const` instructions are always 8 bytes, much larger than
+                            // most instructions; maybe we should just keep this constant in a local
                             zero.instruction(&Instruction::F64Const(0.));
                             meta.layout.store(&mut zero, 0);
 
@@ -806,13 +976,15 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
                 let mut offsets = vec![0; members.len()];
                 let mut offset = 0;
                 for (i, s, a) in mems {
-                    offset = align(offset, a);
+                    offset = aligned(offset, a);
                     offsets[i] = offset;
                     offset += s;
                 }
 
+                // the local is a memory allocation pointer, used as the accumulator pointer for
+                // calls to the zero function for composite elements of the tuple
                 let mut zero = Function::new([(1, ValType::I32)]);
-                let mut total = align(offset, 8);
+                let mut total = aligned(offset, 8);
                 let mut add = Function::new([]);
 
                 for (member, &offset) in members.iter().zip(offsets.iter()) {
@@ -828,6 +1000,8 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
                         }
                         Ty::F64 => {
                             zero.instruction(&Instruction::LocalGet(0));
+                            // TODO: `f64.const` instructions are always 8 bytes, much larger than
+                            // most instructions; maybe we should just keep this constant in a local
                             zero.instruction(&Instruction::F64Const(0.));
                             meta.layout.store(&mut zero, offset);
 
@@ -890,10 +1064,10 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
         });
     }
 
-    let mut costs = vec![];
+    let mut costs = vec![]; // allocation cost of each function, in bytes
     for ((def, _), (refs, def_types)) in funcs.iter() {
-        let vt = |t: id::Ty| val_type(&metas[def_types[t.ty()].ty()].ty);
-        let params: Local = (def.params.len() + 1).try_into().unwrap();
+        let vt = |t: id::Ty| val_type(&metas[def_types[t.ty()].ty()].ty); // short for `ValType`
+        let params: Local = (def.params.len() + 1).try_into().unwrap(); // extra pointer parameter
         let mut locals = vec![None; def.vars.len()];
 
         let (type_index, _) = func_types.insert_full((
@@ -904,7 +1078,7 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
                     locals[param.var()] = Some(i.try_into().unwrap());
                     vt(def.vars[param.var()])
                 })
-                .chain([ValType::I32])
+                .chain([ValType::I32]) // extra pointer parameter
                 .collect(),
             vt(def.vars[def.ret.var()]),
         ));
@@ -928,7 +1102,7 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
             }
         }
 
-        let locals = locals.into_iter().map(Option::unwrap).collect::<Box<_>>();
+        let locals: Box<_> = locals.into_iter().map(Option::unwrap).collect();
         let mut codegen = Codegen {
             metas: &metas,
             imports: &imports,
@@ -950,13 +1124,13 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
     }
 
     let mut type_section = TypeSection::new();
-    type_section.function([ValType::I32, ValType::I32], []);
+    type_section.function([ValType::I32, ValType::I32], []); // for accumulation functions
     for (params, ret) in func_types {
         type_section.function(params.into_vec(), [ret]);
     }
 
     let mut memory_section = MemorySection::new();
-    let page_size = 65536;
+    let page_size = 65536; // https://webassembly.github.io/spec/core/exec/runtime.html#page-size
     let cost = funcs.last().map_or(0, |((def, _), (_, def_types))| {
         def.params
             .iter()
@@ -964,7 +1138,7 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
             .map(|accum| accum.cost)
             .sum()
     }) + costs.last().unwrap_or(&0);
-    let pages = ((cost + page_size - 1) / page_size).into();
+    let pages = ((cost + page_size - 1) / page_size).into(); // round up to a whole number of pages
     memory_section.memory(MemoryType {
         minimum: pages,
         maximum: Some(pages),
