@@ -1,6 +1,6 @@
 {
   "name": "@rose-lang/wasm",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "license": "MIT",
   "repository": "rose-lang/rose",
   "type": "module",
