@@ -1,3 +1,4 @@
+use by_address::ByAddress;
 use enumset::EnumSet;
 use indexmap::{IndexMap, IndexSet};
 use rose::id;
@@ -53,8 +54,9 @@ fn val_to_js(x: &rose_interp::Val) -> JsValue {
 }
 
 /// Reference to an opaque function that just points to a JavaScript function as its implementation.
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 struct Opaque<'a> {
-    f: &'a js_sys::Function,
+    f: ByAddress<&'a js_sys::Function>,
 }
 
 impl rose_interp::Opaque for Opaque<'_> {
@@ -182,7 +184,7 @@ impl Func {
                 types,
                 params,
                 ret: *ret,
-                def: Opaque { f: def },
+                def: Opaque { f: ByAddress(def) },
             },
         }
     }
@@ -209,44 +211,91 @@ impl Func {
         }
     }
 
-    /// Return true iff `t` is the ID of a finite integer type.
-    #[wasm_bindgen(js_name = "isFin")]
-    pub fn is_fin(&mut self, t: usize) -> bool {
-        let Pointee { inner, .. } = self.rc.as_ref();
-        let ty = match inner {
+    /// Return the number of types defined in this function.
+    #[wasm_bindgen(js_name = "numTypes")]
+    pub fn num_types(&self) -> usize {
+        match &self.rc.as_ref().inner {
+            Inner::Transparent { def, .. } => def.types.len(),
+            Inner::Opaque { types, .. } => types.len(),
+        }
+    }
+
+    /// Return the type with ID `t`, if it exists.
+    fn ty(&self, t: usize) -> Option<&rose::Ty> {
+        match &self.rc.as_ref().inner {
             Inner::Transparent { def, .. } => def.types.get(t),
             Inner::Opaque { types, .. } => types.get(t),
-        };
-        matches!(ty, Some(rose::Ty::Fin { .. }))
+        }
+    }
+
+    /// Return true iff `t` is the ID of a unit type.
+    #[wasm_bindgen(js_name = "isUnit")]
+    pub fn is_unit(&self, t: usize) -> bool {
+        matches!(self.ty(t), Some(rose::Ty::Unit))
+    }
+
+    /// Return true iff `t` is the ID of a boolean type.
+    #[wasm_bindgen(js_name = "isBool")]
+    pub fn is_bool(&self, t: usize) -> bool {
+        matches!(self.ty(t), Some(rose::Ty::Bool))
+    }
+
+    /// Return true iff `t` is the ID of a 64-bit floating-point type.
+    #[wasm_bindgen(js_name = "isF64")]
+    pub fn is_f64(&self, t: usize) -> bool {
+        matches!(self.ty(t), Some(rose::Ty::F64))
+    }
+
+    /// Return true iff `t` is the ID of a finite integer type.
+    #[wasm_bindgen(js_name = "isFin")]
+    pub fn is_fin(&self, t: usize) -> bool {
+        matches!(self.ty(t), Some(rose::Ty::Fin { .. }))
+    }
+
+    /// Return true iff `t` is the ID of an array type.
+    #[wasm_bindgen(js_name = "isArray")]
+    pub fn is_array(&self, t: usize) -> bool {
+        matches!(self.ty(t), Some(rose::Ty::Array { .. }))
+    }
+
+    /// Return true iff `t` is the ID of a struct type.
+    #[wasm_bindgen(js_name = "isStruct")]
+    pub fn is_struct(&self, t: usize) -> bool {
+        self.rc.as_ref().structs[t].is_some()
+    }
+
+    /// Return the size of the finite integer type with ID `t`.
+    pub fn size(&self, t: usize) -> usize {
+        match self.ty(t).unwrap() {
+            &rose::Ty::Fin { size } => size,
+            _ => panic!("not a finite integer"),
+        }
+    }
+
+    /// Return the ID of the index type for the array type with ID `t`.
+    pub fn index(&self, t: usize) -> usize {
+        match self.ty(t).unwrap() {
+            rose::Ty::Array { index, elem: _ } => index.ty(),
+            _ => panic!("not an array"),
+        }
     }
 
     /// Return the ID of the element type for the array type with ID `t`.
     pub fn elem(&self, t: usize) -> usize {
-        let Pointee { inner, .. } = self.rc.as_ref();
-        match inner {
-            Inner::Transparent { def, .. } => match def.types[t] {
-                rose::Ty::Array { index: _, elem } => elem.ty(),
-                _ => panic!("not an array"),
-            },
-            Inner::Opaque { .. } => panic!(),
+        match self.ty(t).unwrap() {
+            rose::Ty::Array { index: _, elem } => elem.ty(),
+            _ => panic!("not an array"),
         }
     }
 
     /// Return the string IDs for the struct type with ID `t`.
     pub fn keys(&self, t: usize) -> Box<[usize]> {
-        let Pointee { structs, .. } = self.rc.as_ref();
-        structs[t].as_ref().unwrap().clone()
+        self.rc.as_ref().structs[t].as_ref().unwrap().clone()
     }
 
     /// Return the member type IDs for the struct type with ID `t`.
     pub fn mems(&self, t: usize) -> Box<[usize]> {
-        let Pointee { inner, .. } = self.rc.as_ref();
-        let ty = match inner {
-            Inner::Transparent { def, .. } => def.types.get(t),
-            Inner::Opaque { types, .. } => types.get(t),
-        }
-        .unwrap();
-        match ty {
+        match self.ty(t).unwrap() {
             rose::Ty::Tuple { members } => members.iter().map(|m| m.ty()).collect(),
             _ => panic!("not a struct"),
         }
@@ -262,6 +311,21 @@ impl Func {
         Ok(to_js_value(&ret)?)
     }
 
+    /// Compile the call graph subtended by this function to WebAssembly.
+    pub fn compile(&self) -> Wasm {
+        let rose_wasm::Wasm { bytes, imports } = rose_wasm::compile(self.node());
+        Wasm {
+            bytes: Some(bytes),
+            imports: Some(
+                imports
+                    .into_keys()
+                    .map(|(Opaque { f }, _)| (*f).clone())
+                    .collect(),
+            ),
+        }
+    }
+
+    /// Set the JVP of this function to `f`.
     #[wasm_bindgen(js_name = "setJvp")]
     pub fn set_jvp(&self, f: &Func) {
         self.rc.as_ref().jvp.replace(Some(Rc::clone(&f.rc)));
@@ -333,7 +397,7 @@ impl Func {
                 }
                 let (deps_fwd, deps_bwd): (Vec<_>, Vec<_>) =
                     deps.iter().map(|f| f.transpose_pair()).unzip();
-                let dep_types: Box<_> = deps_bwd
+                let dep_types: Box<_> = deps_fwd
                     .iter()
                     .map(|f| match &f.rc.as_ref().inner {
                         Inner::Transparent { def, .. } => {
@@ -400,6 +464,26 @@ impl Func {
             fwd: Some(fwd),
             bwd: Some(bwd),
         }
+    }
+}
+
+/// A temporary object to hold a generated WebAssembly module and its imports.
+#[wasm_bindgen]
+pub struct Wasm {
+    bytes: Option<Vec<u8>>,
+    imports: Option<Vec<js_sys::Function>>,
+}
+
+#[wasm_bindgen]
+impl Wasm {
+    /// Return the module binary.
+    pub fn bytes(&mut self) -> Option<Vec<u8>> {
+        self.bytes.take()
+    }
+
+    /// Return the imports.
+    pub fn imports(&mut self) -> Option<Vec<js_sys::Function>> {
+        self.imports.take()
     }
 }
 

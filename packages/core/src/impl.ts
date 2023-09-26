@@ -582,7 +582,7 @@ type JsArgs<T> = {
   [K in keyof T]: ToJs<T[K]>;
 };
 
-/** Concretize the nullary abstract function `f` using the interpreter. */
+/** Concretize the abstract function `f` using the interpreter. */
 export const interp =
   <const A extends readonly any[], const R>(
     f: Fn & ((...args: A) => R),
@@ -594,6 +594,228 @@ export const interp =
     const vals = args.map((x, i) => pack(f, params[i], x));
     return unpack(f, func.retType(), func.interp(vals)) as ToJs<R>;
   };
+
+// https://github.com/rose-lang/rose/issues/116
+
+// TODO: use something more like an enum
+interface Layout {
+  size: number;
+  align: number;
+}
+
+/** Round up `size` to the nearest multiple of `align`.  */
+const aligned = ({ size, align }: Layout): number =>
+  (size + align - 1) & ~(align - 1);
+
+/** An aligned `ArrayBuffer` view, or `undefined` for zero-sized types. */
+type View = undefined | Uint8Array | Uint16Array | Uint32Array | Float64Array;
+
+const getView = (buffer: ArrayBuffer, layout: Layout, offset: number): View => {
+  // this code assumes that the layout is uniquely determined by its `size`
+  const { size } = layout;
+  if (size === 0) return undefined;
+  else if (size === 1) return new Uint8Array(buffer, offset);
+  else if (size === 2) return new Uint16Array(buffer, offset);
+  else if (size === 4) return new Uint32Array(buffer, offset);
+  else if (size === 8) return new Float64Array(buffer, offset);
+  else throw Error("unknown layout");
+};
+
+/** Memory representation for a type. */
+interface Meta {
+  /** Layout of an individual value of this type in memory. */
+  layout: Layout;
+
+  /**
+   * Return the Wasm representation of the JS value `x`.
+   *
+   * The given byte offset is only used for pointer types.
+   */
+  encode: (x: unknown, offset: number) => number;
+
+  /** Total memory cost of an object of this type, including sub-allocations. */
+  cost: number;
+
+  /** Return a JS value represented by the Wasm value `x`. */
+  decode: (x: number) => unknown;
+}
+
+/**
+ * Return enough information to encode and decode Wasm values with type ID `t`.
+ *
+ * The given function `f` must have already been compiled to WebAssembly,
+ * yielding the given `buffer` of sufficient size. The `metas` array should hold
+ * encoding/decoding information for all types with IDs less than `t`, or
+ * `undefined` for reference types and non-struct tuple types since those cannot
+ * appear in user-facing function signatures.
+ */
+const getMeta = (
+  f: Fn,
+  buffer: ArrayBuffer,
+  metas: (Meta | undefined)[],
+  t: number,
+): Meta | undefined => {
+  const func = f[inner];
+  if (func.isUnit(t)) {
+    return {
+      layout: { size: 0, align: 1 },
+      encode: () => 0,
+      cost: 0,
+      decode: () => null,
+    };
+  } else if (func.isBool(t)) {
+    return {
+      layout: { size: 1, align: 1 },
+      encode: (x) => (x ? 1 : 0),
+      cost: 0,
+      decode: Boolean,
+    };
+  } else if (func.isF64(t)) {
+    return {
+      layout: { size: 8, align: 8 },
+      encode: (x) => x as number,
+      cost: 0,
+      decode: (x) => x,
+    };
+  } else if (func.isFin(t)) {
+    const size = func.size(t);
+    const layout =
+      size <= 1
+        ? { size: 0, align: 1 }
+        : size <= 256
+        ? { size: 1, align: 1 }
+        : size <= 65536
+        ? { size: 2, align: 2 }
+        : { size: 4, align: 4 };
+    return { layout, encode: (x) => x as number, cost: 0, decode: (x) => x };
+  } else if (func.isArray(t)) {
+    const meta = metas[func.elem(t)];
+    if (meta === undefined) return undefined;
+    const { layout, encode, cost, decode } = meta;
+    const n = func.size(func.index(t));
+    const elem = aligned(layout);
+    const total = aligned({ size: n * elem, align: 8 });
+    const view = getView(buffer, layout, 0);
+    return {
+      layout: { size: 4, align: 4 },
+      encode:
+        view === undefined
+          ? (x, offset) => offset
+          : (x, offset) => {
+              let child = offset + total;
+              for (let i = 0; i < n; ++i) {
+                view[offset / elem + i] = encode((x as unknown[])[i], child);
+                child += cost;
+              }
+              return offset;
+            },
+      cost: total + n * cost,
+      decode:
+        view === undefined
+          ? () => {
+              const arr: unknown[] = [];
+              // this code assumes that all values of all zero-sized types can
+              // be represented by zero
+              for (let i = 0; i < n; ++i) arr.push(decode(0));
+              return arr;
+            }
+          : (x) => {
+              const arr: unknown[] = [];
+              for (let i = 0; i < n; ++i) arr.push(decode(view[x / elem + i]));
+              return arr;
+            },
+    };
+  } else if (func.isStruct(t)) {
+    const keys = func.keys(t);
+    const members = func.mems(t);
+    const n = keys.length;
+    const mems: { key: string; meta: Meta; view?: View; child?: number }[] = [];
+    for (let i = 0; i < n; ++i) {
+      const meta = metas[members[i]];
+      if (meta === undefined) return undefined;
+      mems.push({ key: f[strings][keys[i]], meta });
+    }
+    mems.sort((a, b) => a.meta.layout.align - b.meta.layout.align);
+    let cost = 0;
+    let offset = 0;
+    for (const mem of mems) {
+      const { meta } = mem;
+      mem.child = cost;
+      cost += meta.cost;
+      const { layout } = meta;
+      const { size, align } = layout;
+      offset = aligned({ size: offset, align });
+      mem.view = getView(buffer, layout, offset);
+      offset += size;
+    }
+    const total = aligned({ size: offset, align: 8 });
+    return {
+      layout: { size: 4, align: 4 },
+      encode: (x, offset) => {
+        for (const { key, meta, view, child } of mems) {
+          // instead of mutating each element of `mems` above to add more data
+          // and then still having an `if` statement in here, it would be nicer
+          // to just map over `mems` above to produce an array of closures that
+          // can be called directly, with the condition on `view === undefined`
+          // being handled once rather than in every call to `encode` here
+          if (view !== undefined) {
+            view[offset / aligned(meta.layout)] = meta.encode(
+              (x as any)[key],
+              offset + total + child!,
+            );
+          }
+        }
+        return offset;
+      },
+      cost: total + cost,
+      decode: (x) => {
+        const obj: any = {};
+        for (const { key, meta, view } of mems) {
+          if (view === undefined) {
+            // this code assumes that all values of all zero-sized types can be
+            // represented by zero
+            obj[key] = meta.decode(0);
+          } else {
+            obj[key] = meta.decode(view[x / aligned(meta.layout)]);
+          }
+        }
+        return obj;
+      },
+    };
+  } else return undefined;
+};
+
+/** Concretize the abstract function `f` using the compiler. */
+export const compile = async <const A extends readonly any[], const R>(
+  f: Fn & ((...args: A) => R),
+): Promise<(...args: JsArgs<A>) => ToJs<R>> => {
+  const func = f[inner];
+  const res = func.compile();
+  const bytes = res.bytes()!;
+  const imports = res.imports()!;
+  res.free();
+  const instance = await WebAssembly.instantiate(
+    await WebAssembly.compile(bytes),
+    { "": Object.fromEntries(imports.map((g, i) => [i.toString(), g])) },
+  );
+  const { f: g, m } = instance.exports;
+  const metas: (Meta | undefined)[] = [];
+  const n = func.numTypes();
+  for (let t = 0; t < n; ++t)
+    metas.push(getMeta(f, (m as WebAssembly.Memory).buffer, metas, t));
+  let total = 0;
+  const params = Array.from(func.paramTypes()).map((t) => {
+    const { encode, cost } = metas[t]!;
+    const offset = total;
+    total += cost;
+    return { encode, offset };
+  });
+  const { decode } = metas[func.retType()]!;
+  return (...args): any => {
+    const vals = params.map(({ encode, offset }, i) => encode(args[i], offset));
+    return decode((g as any)(...vals, total));
+  };
+};
 
 // https://www.typescriptlang.org/docs/handbook/2/conditional-types.html
 type ToJvp<T> = [T] extends [Null]
@@ -632,6 +854,7 @@ export const vjp = <const A, const R>(
   const tp = g[inner].transpose();
   const fwdFunc = tp.fwd()!;
   const bwdFunc = tp.bwd()!;
+  tp.free();
   const fwd = makeFn({ [inner]: fwdFunc, [strings]: [...f[strings]] });
   const bwd = makeFn({ [inner]: bwdFunc, [strings]: [...f[strings]] });
   return (arg: A) => {

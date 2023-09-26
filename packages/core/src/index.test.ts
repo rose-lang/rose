@@ -7,11 +7,14 @@ import {
   Vec,
   abs,
   add,
+  and,
   ceil,
+  compile,
   div,
   floor,
   fn,
   gt,
+  iff,
   interp,
   jvp,
   mul,
@@ -27,6 +30,7 @@ import {
   trunc,
   vec,
   vjp,
+  xor,
 } from "./index.js";
 
 describe("invalid", () => {
@@ -268,7 +272,7 @@ describe("valid", () => {
     expect(g(0, [true])).toBe(true);
   });
 
-  test("matrix multiplication", () => {
+  test("matrix multiplication", async () => {
     const n = 6;
 
     const Rn = Vec(n, Real);
@@ -303,7 +307,7 @@ describe("valid", () => {
       }),
     );
 
-    const f = interp(mmul);
+    const f = await compile(mmul);
     expect(
       f(
         [
@@ -408,12 +412,12 @@ describe("valid", () => {
     expect(h({ re: 3, du: 1 })).toEqual({ re: 9, du: 6 });
   });
 
-  test("JVP with sharing in call graph", () => {
+  test("JVP with sharing in call graph", async () => {
     let f = fn([Real], Real, (x) => x);
     for (let i = 0; i < 20; ++i) {
       f = fn([Real], Real, (x) => add(f(x), f(x)));
     }
-    const g = interp(jvp(f));
+    const g = await compile(jvp(f));
     expect(g({ re: 2, du: 3 })).toEqual({ re: 2097152, du: 3145728 });
   });
 
@@ -439,7 +443,7 @@ describe("valid", () => {
     expect(interp(g)()).toEqual([6, 3, 2]);
   });
 
-  test("VJP with sharing in call graph", () => {
+  test("VJP with sharing in call graph", async () => {
     const iterate = (
       n: number,
       f: (x: Real) => Real,
@@ -465,7 +469,7 @@ describe("valid", () => {
       const { ret, grad } = g(x);
       return [ret, grad(y)];
     });
-    const v = interp(h)(2, 3);
+    const v = (await compile(h))(2, 3);
     expect(v[0]).toBeCloseTo(2);
     expect(v[1]).toBeCloseTo(3);
   });
@@ -613,5 +617,232 @@ describe("valid", () => {
     expect(interp(f)(1)).toBeCloseTo(-Math.sin(1));
     f = grad(f);
     expect(interp(f)(1)).toBeCloseTo(-Math.cos(1));
+  });
+
+  test("compile", async () => {
+    const f1 = fn([Real], Real, (x) => sqrt(x));
+    const f2 = fn([Real, Real], Real, (x, y) => mul(x, f1(y)));
+    const f3 = fn([Real, Real], Real, (x, y) => mul(f1(x), y));
+    const f = fn([Real, Real], Real, (x, y) => sub(f2(x, y), f3(x, y)));
+    const g = await compile(f);
+    expect(g(2, 3)).toBeCloseTo(-0.7785390719815313);
+  });
+
+  test("compile opaque function", async () => {
+    const f = opaque([Real], Real, Math.sin);
+    const g = await compile(f);
+    expect(g(1)).toBeCloseTo(Math.sin(1));
+  });
+
+  test("compile calls to multiple opaque functions", async () => {
+    const sin = opaque([Real], Real, Math.sin);
+    const cos = opaque([Real], Real, Math.cos);
+    const f = fn([Real], Real, (x) => sub(sin(x), cos(x)));
+    const g = await compile(f);
+    expect(g(1)).toBeCloseTo(Math.sin(1) - Math.cos(1));
+  });
+
+  test("compile opaque and transparent calls together", async () => {
+    const log = opaque([Real], Real, Math.log);
+    const f = fn([Real], Real, (x) => add(log(x), sqrt(x)));
+    const g = fn([Real], Real, (x) => add(f(x), x));
+    const h = await compile(g);
+    expect(h(1)).toBeCloseTo(Math.log(1) + Math.sqrt(1) + 1);
+  });
+
+  test("compile array", async () => {
+    const f = fn([Vec(2, Real)], Real, (v) => mul(v[0], v[1]));
+    const g = fn([Real, Real], Real, (x, y) => f([x, y]));
+    const h = await compile(g);
+    expect(h(2, 3)).toBe(6);
+  });
+
+  test("compile null array", async () => {
+    const f = fn([Vec(2, Null)], Null, (v) => v[1]);
+    const g = fn([], Real, () => {
+      f([null, null]);
+      return 42;
+    });
+    const h = await compile(g);
+    expect(h()).toBe(42);
+  });
+
+  test("compile struct", async () => {
+    const f = fn([{ x: Real, y: Real }], Real, ({ x, y }) => mul(x, y));
+    const g = fn([Real, Real], Real, (x, y) => f({ x, y }));
+    const h = await compile(g);
+    expect(h(2, 3)).toBe(6);
+  });
+
+  test("compile logic", async () => {
+    const f = fn([Vec(3, Bool)], Bool, (v) => {
+      const p = v[0];
+      const q = v[1];
+      const r = v[2];
+      return iff(and(or(p, not(q)), xor(r, q)), or(not(p), and(q, r)));
+    });
+    const g = fn([Bool, Bool, Bool], Real, (p, q, r) =>
+      select(f([p, q, r]), Real, -1, -2),
+    );
+    const h = await compile(g);
+    expect(h(true, true, true)).toBe(-2);
+    expect(h(true, true, false)).toBe(-2);
+    expect(h(true, false, true)).toBe(-2);
+    expect(h(true, false, false)).toBe(-1);
+    expect(h(false, true, true)).toBe(-2);
+    expect(h(false, true, false)).toBe(-2);
+    expect(h(false, false, true)).toBe(-1);
+    expect(h(false, false, false)).toBe(-2);
+  });
+
+  test("compile signum", async () => {
+    const f = fn([Real], Real, (x) => sign(x));
+    const g = await compile(f);
+    expect(g(-2)).toBe(-1);
+    expect(g(-0)).toBe(-1);
+    expect(g(0)).toBe(1);
+    expect(g(2)).toBe(1);
+  });
+
+  test("compile select", async () => {
+    const f = fn([Bool, Real, Real], Real, (p, x, y) => select(p, Real, x, y));
+    const g = await compile(f);
+    expect(g(true, 2, 3)).toBe(2);
+    expect(g(false, 5, 7)).toBe(7);
+  });
+
+  test("compile vector comprehension", async () => {
+    const f = fn([Real, Vec(3, Real)], Vec(3, Real), (c, v) =>
+      vec(3, Real, (i) => mul(c, v[i])),
+    );
+    const g = fn([Real, Real, Real, Real], Real, (c, x, y, z) => {
+      const v = f(c, [x, y, z]);
+      return add(add(v[0], v[1]), v[2]);
+    });
+    const h = await compile(g);
+    expect(h(2, 3, 5, 7)).toBe(30);
+  });
+
+  test("compile empty vector comprehension", async () => {
+    let i = 0;
+    const f = opaque([], Real, () => {
+      ++i;
+      return i;
+    });
+    const g = fn([], Real, () => {
+      vec(0, Real, () => f());
+      return 0;
+    });
+    (await compile(g))();
+    expect(i).toEqual(0);
+  });
+
+  test("compile VJP", async () => {
+    const f = fn(
+      [Vec(2, { p: Bool, x: Real } as const)],
+      { p: Vec(2, Bool), x: Vec(2, Real) },
+      (v) => ({
+        p: vec(2, Bool, (i) => not(v[i].p)),
+        x: vec(2, Real, (i) => {
+          const { p, x } = v[i];
+          return select(p, Real, mul(x, x), x);
+        }),
+      }),
+    );
+    const g = fn([Bool, Real, Bool, Real], Real, (p1, x1, q1, y1) => {
+      const { ret, grad } = vjp(f)([
+        { p: p1, x: x1 },
+        { p: q1, x: y1 },
+      ]);
+      const { x } = ret;
+      const x2 = x[0];
+      const y2 = x[1];
+      const v = grad({ p: [true, false] as any, x: [2, 3] as any });
+      const { x: x3 } = v[0];
+      const { x: y3 } = v[1];
+      return mul(sub(x3, y2), sub(y3, x2));
+    });
+    const h = await compile(g);
+    expect(h(true, 2, true, 3)).toBe(-14);
+    expect(h(true, 5, false, 7)).toBe(-286);
+    expect(h(false, 11, true, 13)).toBe(-11189);
+    expect(h(false, 17, false, 19)).toBe(238);
+  });
+
+  test("compile VJP with call", async () => {
+    const f = fn([Real], Real, (x) => x);
+    const g = fn([Real], Real, (x) => f(x));
+    const h = fn([Real], Real, (x) => vjp(g)(x).ret);
+    expect((await compile(h))(1)).toBe(1);
+  });
+
+  test("compile VJP with opaque call", async () => {
+    const exp = opaque([Real], Real, Math.exp);
+    exp.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
+      const y = exp(x);
+      return { re: y, du: mulLin(dx, y) };
+    });
+    const g = fn([Real], Real, (x) => exp(x));
+    const h = fn([Real], Real, (x) => vjp(g)(x).ret);
+    expect((await compile(h))(1)).toBeCloseTo(Math.E);
+  });
+
+  test("compile nulls in signature", async () => {
+    const f = fn([Null], Null, (x) => x);
+    const g = await compile(f);
+    expect(g(null)).toBe(null);
+  });
+
+  test("compile booleans in signature", async () => {
+    const f = fn([Bool], Bool, (p) => not(p));
+    const g = await compile(f);
+    expect(g(true)).toBe(false);
+    expect(g(false)).toBe(true);
+  });
+
+  test("compile null arrays in signature", async () => {
+    const f = fn([Vec(2, Null)], Vec(2, Null), (v) => v);
+    const g = await compile(f);
+    expect(g([null, null])).toEqual([null, null]);
+  });
+
+  test("compile byte index arrays in signature", async () => {
+    const n = 256;
+    const f = fn([Vec(3, n), Vec(3, 3)], Vec(3, n), (v, i) =>
+      vec(3, n, (j) => v[i[j]]),
+    );
+    const g = await compile(f);
+    expect(g([12, 221, 234], [1, 2, 0])).toEqual([221, 234, 12]);
+  });
+
+  test("compile structs in signature", async () => {
+    const Pair = { x: Real, y: Real } as const;
+    const f = fn([Pair], Pair, ({ x, y }) => ({ x: y, y: x }));
+    const g = await compile(f);
+    expect(g({ x: 2, y: 3 })).toEqual({ x: 3, y: 2 });
+  });
+
+  test("compile zero-sized struct members in signature", async () => {
+    const Stuff = { a: Null, b: 0, c: 0, d: Null } as const;
+    const f = fn([Stuff], Stuff, ({ a, b, c, d }) => {
+      return { a: d, b: c, c: b, d: a };
+    });
+    const g = await compile(f);
+    const stuff = { a: null, b: 0, c: 0, d: null };
+    expect(g(stuff)).toEqual(stuff);
+  });
+
+  test("compile nested structs in signature", async () => {
+    const Pair = { x: Real, y: Real } as const;
+    const Stuff = { p: Bool, q: Pair } as const;
+    const f = fn([Stuff], Stuff, ({ p, q }) => ({
+      p: not(p),
+      q: { x: q.y, y: q.x },
+    }));
+    const g = await compile(f);
+    expect(g({ p: true, q: { x: 2, y: 3 } })).toEqual({
+      p: false,
+      q: { x: 3, y: 2 },
+    });
   });
 });
