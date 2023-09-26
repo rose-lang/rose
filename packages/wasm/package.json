@@ -1,7 +1,8 @@
 {
   "name": "@rose-lang/wasm",
-  "version": "0.0.0",
+  "version": "0.3.3",
   "license": "MIT",
+  "repository": "rose-lang/rose",
   "type": "module",
   "exports": {
     ".": {
@@ -13,6 +14,11 @@
     },
     "./*": "./dist/bindings/*.js"
   },
+  "files": [
+    "dist",
+    "index.js",
+    "wbg"
+  ],
   "scripts": {
     "build": "cp browser.js dist/ && cp wbg/rose_web.d.ts dist/index.d.ts && esbuild index.js --outfile=dist/index.js --platform=neutral --bundle --loader:.wasm=binary --define:import.meta.url=null --sourcemap"
   }

@@ -1,8 +1,7 @@
 .DS_Store
 *.tgz
-*.vsix
 /.cargo/
-/packages/vscode/*.png
+/packages/core/README.md
 /packages/wasm/wbg/
 /target/
 bindings/

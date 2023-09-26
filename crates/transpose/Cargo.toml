@@ -1,8 +1,10 @@
 [package]
-name = "rose"
+name = "rose-transpose"
 version = "0.3.3"
 publish = false
 edition = "2021"
 
 [dependencies]
 enumset = "1"
+indexmap = "2"
+rose = { path = "../core" }

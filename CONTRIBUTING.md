@@ -13,19 +13,19 @@ Make sure to have these tools installed:
 
 Once you've installed all prerequisites, clone this repo.
 
-```
+```sh
 git clone https://github.com/rose-lang/rose
 ```
 
 Then open a terminal in your clone of it; for instance, if you cloned it via the terminal, run this command:
 
-```
+```sh
 cd rose/
 ```
 
 Now you should be able to run everything using Make:
 
-```
+```sh
 make all
 ```
 
@@ -33,7 +33,7 @@ make all
 
 To just produce all build artifacts:
 
-```
+```sh
 make
 ```
 
@@ -41,7 +41,7 @@ make
 
 To run all tests:
 
-```
+```sh
 make test
 ```
 
@@ -49,7 +49,7 @@ make test
 
 To run any additional checks:
 
-```
+```sh
 make check
 ```
 
@@ -57,7 +57,7 @@ make check
 
 Sometimes old build artifacts can hide errors. To clean your build:
 
-```
+```sh
 make clean
 ```
 
@@ -69,27 +69,15 @@ an Internet connection.
 
 To develop the website locally:
 
-```
+```sh
 make site-deps && npm run --workspace=@rose-lang/site dev
 ```
 
 Or, if you want to host on your local network, e.g. to test on your phone:
 
-```
+```sh
 make site-deps && npm run --workspace=@rose-lang/site dev -- --host
 ```
-
-## VS Code
-
-The VS Code extension is built as part of `make` or `make all`, but you can also
-just build it by itself:
-
-```
-make vscode
-```
-
-Then `packages/vscode` will contain a `*.vsix` file that you can install in VS
-Code by right-clicking it and clicking the **Install Extension VSIX** button.
 
 [git]: https://git-scm.com/downloads
 [make]: https://en.wikipedia.org/wiki/Make_(software)

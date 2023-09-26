@@ -1,28 +1,44 @@
-import * as bool from "./bool.js";
-import { Bools, Reals } from "./fn.js";
-import * as real from "./real.js";
-
-export type Bool = bool.Bool;
-export const Bool: Bools = { tag: "Bool" };
-
-export type Real = real.Real;
-export const Real: Reals = { tag: "Real" };
-
-export { and, iff, not, or, select, xor } from "./bool.js";
-export { fn } from "./fn.js";
-export { interp } from "./interp.js";
 export {
+  Bool,
+  Dual,
+  Fn,
+  Null,
+  Real,
+  Tan,
+  Vec,
   abs,
   add,
+  addLin,
+  and,
+  ceil,
+  compile,
   div,
+  divLin,
   eq,
+  floor,
+  fn,
   geq,
   gt,
+  iff,
+  interp,
+  jvp,
   leq,
   lt,
   mul,
+  mulLin,
   neg,
+  negLin,
   neq,
+  not,
+  opaque,
+  or,
+  select,
+  sign,
   sqrt,
   sub,
-} from "./real.js";
+  subLin,
+  trunc,
+  vec,
+  vjp,
+  xor,
+} from "./impl.js";

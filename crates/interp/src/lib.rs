@@ -1,6 +1,6 @@
 use indexmap::IndexSet;
-use rose::{id, Binop, Expr, FuncNode, Ty, Unop};
-use std::{cell::Cell, rc::Rc};
+use rose::{id, Binop, Expr, Func, Node, Refs, Ty, Unop};
+use std::{cell::Cell, convert::Infallible, rc::Rc};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ pub enum Val {
     Bool(bool),
     F64(Cell<f64>),
     Fin(usize),
-    Ref(Rc<Val>),
+    Ref(Rc<Val>, Option<usize>),
     Array(Vals), // assume all indices are `Fin`
     Tuple(Vals),
 }
@@ -50,9 +50,35 @@ impl Val {
         }
     }
 
+    fn fin(&self) -> usize {
+        match self {
+            &Val::Fin(i) => i,
+            _ => unreachable!(),
+        }
+    }
+
+    fn get(&self, i: usize) -> &Self {
+        match self {
+            Val::Array(x) => &x[i],
+            Val::Tuple(x) => &x[i],
+            _ => unreachable!(),
+        }
+    }
+
+    fn slice(&self, i: usize) -> Self {
+        match self {
+            Val::Ref(x, None) => Val::Ref(Rc::clone(x), Some(i)),
+            Val::Ref(x, Some(j)) => Val::Ref(Rc::new(x.get(*j).clone()), Some(i)),
+            _ => unreachable!(),
+        }
+    }
+
     fn inner(&self) -> &Self {
         match self {
-            Val::Ref(x) => x.as_ref(),
+            Val::Ref(x, i) => match i {
+                None => x.as_ref(),
+                &Some(j) => x.get(j),
+            },
             _ => unreachable!(),
         }
     }
@@ -64,7 +90,7 @@ impl Val {
             &Self::Bool(x) => Self::Bool(x),
             Self::F64(_) => Self::F64(Cell::new(0.)),
             &Self::Fin(x) => Self::Fin(x),
-            Self::Ref(_) => unreachable!(),
+            Self::Ref(..) => unreachable!(),
             Self::Array(x) => Self::Array(collect_vals(x.iter().map(|x| x.zero()))),
             Self::Tuple(x) => Self::Tuple(collect_vals(x.iter().map(|x| x.zero()))),
         }
@@ -97,9 +123,6 @@ impl Val {
 /// This is meant to be used to pull all the types from a callee into a broader context. The
 /// `generics` are the IDs of all the types provided as generic type parameters for the callee. The
 /// `types are the IDs of all the types that have been pulled in so far.
-///
-/// The interpreter is meant to be used with no generic "free variables," and does not do any scope
-/// checking, so all scopes are replaced with a block ID of zero.
 fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty: &Ty) -> id::Ty {
     let resolved = match ty {
         Ty::Generic { id } => return generics[id.generic()],
@@ -109,12 +132,7 @@ fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty
         Ty::F64 => Ty::F64,
         &Ty::Fin { size } => Ty::Fin { size },
 
-        &Ty::Scope { kind, id: _ } => Ty::Scope {
-            kind,
-            id: id::var(usize::MAX), // we erase scope info
-        },
-        Ty::Ref { scope, inner } => Ty::Ref {
-            scope: types[scope.ty()],
+        Ty::Ref { inner } => Ty::Ref {
             inner: types[inner.ty()],
         },
         Ty::Array { index, elem } => Ty::Array {
@@ -129,24 +147,39 @@ fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty
     id::ty(i)
 }
 
-struct Interpreter<'a, F: FuncNode> {
-    typemap: &'a mut IndexSet<Ty>,
-    f: &'a F, // reference instead of value because otherwise borrow checker complains in `fn block`
+/// An opaque function that can be called by the interpreter.
+pub trait Opaque {
+    fn call(&self, types: &IndexSet<Ty>, generics: &[id::Ty], args: &[Val]) -> Val;
+}
+
+impl Opaque for Infallible {
+    fn call(&self, _: &IndexSet<Ty>, _: &[id::Ty], _: &[Val]) -> Val {
+        match *self {}
+    }
+}
+
+/// basically, the `'a` lifetime is for the graph of functions, and the `'b` lifetime is just for
+/// this particular instance of interpretation
+struct Interpreter<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> {
+    typemap: &'b mut IndexSet<Ty>,
+    refs: T,
+    def: &'a Func,
     types: Vec<id::Ty>,
     vars: Vec<Option<Val>>,
 }
 
-impl<'a, F: FuncNode> Interpreter<'a, F> {
-    fn new(typemap: &'a mut IndexSet<Ty>, f: &'a F, generics: &'a [id::Ty]) -> Self {
+impl<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> Interpreter<'a, 'b, O, T> {
+    fn new(typemap: &'b mut IndexSet<Ty>, refs: T, def: &'a Func, generics: &'b [id::Ty]) -> Self {
         let mut types = vec![];
-        for ty in f.def().types.iter() {
+        for ty in def.types.iter() {
             types.push(resolve(typemap, generics, &types, ty));
         }
         Self {
             typemap,
-            f,
+            refs,
+            def,
             types,
-            vars: vec![None; f.def().vars.len()],
+            vars: vec![None; def.vars.len()],
         }
     }
 
@@ -177,14 +210,8 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
                 _ => unreachable!(),
             },
 
-            &Expr::Slice { array, index } => match (self.get(array).inner(), self.get(index)) {
-                (Val::Array(v), &Val::Fin(i)) => v[i].clone(),
-                _ => unreachable!(),
-            },
-            &Expr::Field { tuple, member } => match self.get(tuple).inner() {
-                Val::Tuple(x) => x[member.member()].clone(),
-                _ => unreachable!(),
-            },
+            &Expr::Slice { array, index } => self.get(array).slice(self.get(index).fin()),
+            &Expr::Field { tuple, member } => self.get(tuple).slice(member.member()),
 
             &Expr::Unary { op, arg } => {
                 let x = self.get(arg);
@@ -193,6 +220,10 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
 
                     Unop::Neg => val_f64(-x.f64()),
                     Unop::Abs => val_f64(x.f64().abs()),
+                    Unop::Sign => val_f64(x.f64().signum()),
+                    Unop::Ceil => val_f64(x.f64().ceil()),
+                    Unop::Floor => val_f64(x.f64().floor()),
+                    Unop::Trunc => val_f64(x.f64().trunc()),
                     Unop::Sqrt => val_f64(x.f64().sqrt()),
                 }
             }
@@ -229,15 +260,10 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
             Expr::Call { id, generics, args } => {
                 let resolved: Vec<id::Ty> = generics.iter().map(|id| self.types[id.ty()]).collect();
                 let vals = args.iter().map(|id| self.vars[id.var()].clone().unwrap());
-                call(self.f.get(*id).unwrap(), self.typemap, &resolved, vals)
+                call(self.refs.get(*id).unwrap(), self.typemap, &resolved, vals)
             }
-            Expr::For {
-                index,
-                arg,
-                body,
-                ret,
-            } => {
-                let n = match self.typemap[self.types[index.ty()].ty()] {
+            Expr::For { arg, body, ret } => {
+                let n = match self.typemap[self.types[self.def.vars[arg.var()].ty()].ty()] {
                     Ty::Fin { size } => size,
                     _ => unreachable!(),
                 };
@@ -245,32 +271,15 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
                     (0..n).map(|i| self.block(*arg, body, *ret, Val::Fin(i)).clone()),
                 ))
             }
-            Expr::Read {
-                var,
-                arg,
-                body,
-                ret,
-            } => {
-                let r = Val::Ref(Rc::new(self.get(*var).clone()));
-                self.block(*arg, body, *ret, r);
-                Val::Unit
-            }
-            Expr::Accum {
-                shape,
-                arg,
-                body,
-                ret,
-            } => {
-                let x = Val::Ref(Rc::new(self.get(*shape).zero()));
-                self.block(*arg, body, *ret, x.clone());
-                x.inner().clone()
-            }
 
-            &Expr::Ask { var } => self.get(var).inner().clone(),
+            &Expr::Accum { shape } => Val::Ref(Rc::new(self.get(shape).zero()), None),
+
             &Expr::Add { accum, addend } => {
                 self.get(accum).inner().add(self.get(addend));
                 Val::Unit
             }
+
+            &Expr::Resolve { var } => self.get(var).inner().clone(),
         }
     }
 
@@ -284,30 +293,44 @@ impl<'a, F: FuncNode> Interpreter<'a, F> {
 }
 
 /// Assumes `generics` and `arg` are valid.
-fn call(
-    f: impl FuncNode,
-    types: &mut IndexSet<Ty>,
-    generics: &[id::Ty],
+fn call<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>>(
+    f: Node<'a, O, T>,
+    types: &'b mut IndexSet<Ty>,
+    generics: &'b [id::Ty],
     args: impl Iterator<Item = Val>,
 ) -> Val {
-    let mut interp = Interpreter::new(types, &f, generics);
-    for (var, arg) in f.def().params.iter().zip(args) {
-        interp.vars[var.var()] = Some(arg.clone());
+    match f {
+        Node::Transparent { refs, def } => {
+            let mut interp = Interpreter::new(types, refs, def, generics);
+            for (var, arg) in def.params.iter().zip(args) {
+                interp.vars[var.var()] = Some(arg.clone());
+            }
+            for instr in def.body.iter() {
+                interp.vars[instr.var.var()] = Some(interp.expr(&instr.expr));
+            }
+            interp.vars[def.ret.var()].as_ref().unwrap().clone()
+        }
+        Node::Opaque {
+            generics: _,
+            types: _,
+            params: _,
+            ret: _,
+            def,
+        } => {
+            let vals: Box<[Val]> = args.collect();
+            def.call(types, generics, &vals)
+        }
     }
-    for instr in f.def().body.iter() {
-        interp.vars[instr.var.var()] = Some(interp.expr(&instr.expr));
-    }
-    interp.vars[f.def().ret.var()].as_ref().unwrap().clone()
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {}
 
 /// Guaranteed not to panic if `f` is valid.
-pub fn interp(
-    f: impl FuncNode,
+pub fn interp<'a, O: Opaque, T: Refs<'a, Opaque = O>>(
+    f: Node<'a, O, T>,
     mut types: IndexSet<Ty>,
-    generics: &[id::Ty],
+    generics: &'a [id::Ty],
     args: impl Iterator<Item = Val>,
 ) -> Result<Val, Error> {
     // TODO: check that `generics` and `arg` are valid
@@ -317,30 +340,65 @@ pub fn interp(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rose::{Function, Instr};
+    use rose::{Func, Instr};
 
-    #[derive(Clone, Copy, Debug)]
-    struct FuncInSlice<'a> {
-        funcs: &'a [Function],
-        id: id::Function,
+    type CustomRef<'a> = &'a dyn Fn(&IndexSet<Ty>, &[id::Ty], &[Val]) -> Val;
+    type CustomBox = Box<dyn Fn(&IndexSet<Ty>, &[id::Ty], &[Val]) -> Val>;
+
+    struct Custom<'a> {
+        f: CustomRef<'a>,
     }
 
-    impl FuncNode for FuncInSlice<'_> {
-        fn def(&self) -> &Function {
-            &self.funcs[self.id.function()]
+    impl Opaque for Custom<'_> {
+        fn call(&self, types: &IndexSet<Ty>, generics: &[id::Ty], args: &[Val]) -> Val {
+            (self.f)(types, generics, args)
         }
+    }
 
-        fn get(&self, id: id::Function) -> Option<Self> {
-            Some(Self {
-                funcs: self.funcs,
-                id,
+    struct FuncInSlice<'a> {
+        custom: &'a [CustomBox],
+        funcs: &'a [Func],
+        id: id::Func,
+    }
+
+    impl<'a> Refs<'a> for FuncInSlice<'a> {
+        type Opaque = Custom<'a>;
+
+        fn get(&self, id: id::Func) -> Option<Node<'a, Custom<'a>, Self>> {
+            if id.func() < self.id.func() {
+                node(self.custom, self.funcs, id)
+            } else {
+                None
+            }
+        }
+    }
+
+    fn node<'a>(
+        custom: &'a [CustomBox],
+        funcs: &'a [Func],
+        id: id::Func,
+    ) -> Option<Node<'a, Custom<'a>, FuncInSlice<'a>>> {
+        let n = custom.len();
+        let i = id.func();
+        if i < n {
+            Some(Node::Opaque {
+                generics: &[],
+                types: &[],
+                params: &[],
+                ret: id::ty(0),
+                def: Custom { f: &custom[i] },
+            })
+        } else {
+            funcs.get(i - n).map(|def| Node::Transparent {
+                refs: FuncInSlice { custom, funcs, id },
+                def,
             })
         }
     }
 
     #[test]
     fn test_two_plus_two() {
-        let funcs = vec![Function {
+        let funcs = vec![Func {
             generics: vec![].into(),
             types: vec![Ty::F64].into(),
             vars: vec![id::ty(0), id::ty(0), id::ty(0)].into(),
@@ -357,10 +415,7 @@ mod tests {
             .into(),
         }];
         let answer = interp(
-            FuncInSlice {
-                funcs: &funcs,
-                id: id::function(0),
-            },
+            node(&[], &funcs, id::func(0)).unwrap(),
             IndexSet::new(),
             &[],
             [val_f64(2.), val_f64(2.)].into_iter(),
@@ -372,7 +427,7 @@ mod tests {
     #[test]
     fn test_nested_call() {
         let funcs = vec![
-            Function {
+            Func {
                 generics: vec![].into(),
                 types: vec![Ty::F64].into(),
                 vars: vec![id::ty(0)].into(),
@@ -384,7 +439,7 @@ mod tests {
                 }]
                 .into(),
             },
-            Function {
+            Func {
                 generics: vec![].into(),
                 types: vec![Ty::F64].into(),
                 vars: vec![id::ty(0), id::ty(0)].into(),
@@ -394,7 +449,7 @@ mod tests {
                     Instr {
                         var: id::var(0),
                         expr: Expr::Call {
-                            id: id::function(0),
+                            id: id::func(0),
                             generics: vec![].into(),
                             args: vec![].into(),
                         },
@@ -412,15 +467,43 @@ mod tests {
             },
         ];
         let answer = interp(
-            FuncInSlice {
-                funcs: &funcs,
-                id: id::function(1),
-            },
+            node(&[], &funcs, id::func(1)).unwrap(),
             IndexSet::new(),
             &[],
             [].into_iter(),
         )
         .unwrap();
         assert_eq!(answer, val_f64(1764.));
+    }
+
+    #[test]
+    fn test_custom() {
+        let custom: [CustomBox; 1] = [Box::new(|_, _, args| {
+            Val::F64(Cell::new(args[0].f64().powf(args[1].f64())))
+        })];
+        let funcs = [Func {
+            generics: [].into(),
+            types: [Ty::F64].into(),
+            vars: [id::ty(0), id::ty(0), id::ty(0)].into(),
+            params: [id::var(0), id::var(1)].into(),
+            ret: id::var(2),
+            body: [Instr {
+                var: id::var(2),
+                expr: Expr::Call {
+                    id: id::func(0),
+                    generics: [].into(),
+                    args: [id::var(0), id::var(1)].into(),
+                },
+            }]
+            .into(),
+        }];
+        let answer = interp(
+            node(&custom, &funcs, id::func(1)).unwrap(),
+            IndexSet::new(),
+            &[],
+            [val_f64(std::f64::consts::E), val_f64(std::f64::consts::PI)].into_iter(),
+        )
+        .unwrap();
+        assert_eq!(answer, val_f64(23.140692632779263));
     }
 }

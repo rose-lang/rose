@@ -2,15 +2,7 @@ pub mod id;
 
 use enumset::{EnumSet, EnumSetType};
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
-#[cfg(test)]
-use ts_rs::TS;
-
 /// A type constraint.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[allow(clippy::derived_hash_with_manual_eq)] // `PartialEq` impl comes from enumset; should be fine
 #[derive(Debug, EnumSetType, Hash)]
 pub enum Constraint {
@@ -18,15 +10,9 @@ pub enum Constraint {
     Value,
     /// Can be the `index` type of an `Array`.
     Index,
-    /// Allows a `Ref` to be read when used as its `scope` type.
-    Read,
-    /// Allows a `Ref` to be accumulated into when used as its `scope` type.
-    Accum,
 }
 
 /// A type.
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Ty {
     Unit,
@@ -39,14 +25,7 @@ pub enum Ty {
     Generic {
         id: id::Generic,
     },
-    Scope {
-        /// Must be either `Read` or `Accum`.
-        kind: Constraint,
-        /// The `arg` variable of the `Expr` introducing this scope.
-        id: id::Var,
-    },
     Ref {
-        scope: id::Ty,
         inner: id::Ty,
     },
     Array {
@@ -55,13 +34,13 @@ pub enum Ty {
         elem: id::Ty,
     },
     Tuple {
-        members: Vec<id::Ty>, // TODO: change to `Box<[id::Ty]`
+        members: Box<[id::Ty]>,
     },
 }
 
 /// A function definition.
 #[derive(Debug)]
-pub struct Function {
+pub struct Func {
     /// Generic type parameters.
     pub generics: Box<[EnumSet<Constraint>]>,
     /// Types used in this function definition.
@@ -76,23 +55,48 @@ pub struct Function {
     pub body: Box<[Instr]>,
 }
 
-/// Wrapper for a `Function` that knows how to resolve its `id::Function`s.
-pub trait FuncNode {
-    fn def(&self) -> &Function;
+/// Resolves `id::Func`s.
+pub trait Refs<'a> {
+    /// See `Node`.
+    type Opaque;
 
-    fn get(&self, id: id::Function) -> Option<Self>
+    /// Resolve `id` to a function node.
+    fn get(&self, id: id::Func) -> Option<Node<'a, Self::Opaque, Self>>
     where
         Self: Sized;
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+/// A node in a graph of functions.
+#[derive(Clone, Debug, Copy)]
+pub enum Node<'a, O, T: Refs<'a, Opaque = O>> {
+    /// A function with an explicit body.
+    Transparent {
+        /// To traverse the graph by resolving functions called by this one.
+        refs: T,
+        /// The signature and definition of this function.
+        def: &'a Func,
+    },
+    /// A function with an opaque body.
+    Opaque {
+        /// Generic type parameters.
+        generics: &'a [EnumSet<Constraint>],
+        /// Types used in this function's signature.
+        types: &'a [Ty],
+        /// Parameter types.
+        params: &'a [id::Ty],
+        /// Return type.
+        ret: id::Ty,
+        /// Definition of this function; semantics may vary.
+        def: O,
+    },
+}
+
 #[derive(Debug)]
 pub struct Instr {
     pub var: id::Var,
     pub expr: Expr,
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub enum Expr {
     Unit,
@@ -150,56 +154,39 @@ pub enum Expr {
     },
 
     Call {
-        id: id::Function,
+        id: id::Func,
         generics: Box<[id::Ty]>,
         args: Box<[id::Var]>,
     },
     For {
-        /// Must satisfy `Constraint::Index`.
-        index: id::Ty,
-        /// has type `index`.
+        /// Type must satisfy `Constraint::Index`.
         arg: id::Var,
         body: Box<[Instr]>,
         /// Variable from `body` holding an array element.
         ret: id::Var,
     },
-    /// Scope for a `Ref` with `Constraint::Read`. Returns `Unit`.
-    Read {
-        /// Contents of the `Ref`.
-        var: id::Var,
-        /// Has type `Ref` with scope `arg` and inner type same as `var`.
-        arg: id::Var,
-        body: Box<[Instr]>,
-        /// Variable from `body` holding the result of this block; escapes into outer scope.
-        ret: id::Var,
-    },
-    /// Scope for a `Ref` with `Constraint::Accum`. Returns the final contents of the `Ref`.
+
+    /// Start a scope for an accumulator `Ref`.
     Accum {
         /// Topology of the `Ref`.
         shape: id::Var,
-        /// Has type `Ref` with scope `arg` and inner type same as `shape`.
-        arg: id::Var,
-        body: Box<[Instr]>,
-        /// Variable from `body` holding the result of this block; escapes into outer scope.
-        ret: id::Var,
     },
 
-    /// Read from a `Ref` whose `scope` satisfies `Constraint::Read`.
-    Ask {
-        /// The `Ref`, which must be in scope.
-        var: id::Var,
-    },
-    /// Accumulate into a `Ref` whose `scope` satisfies `Constraint::Accum`. Returns `Unit`.
+    /// Accumulate into an accumulator `Ref`. Returns `Unit`.
     Add {
         /// The `Ref`, which must be in scope.
         accum: id::Var,
         /// Must be of the `Ref`'s inner type.
         addend: id::Var,
     },
+
+    /// Consume a `Ref` to get its contained value.
+    Resolve {
+        /// The `Ref`, which must be in scope.
+        var: id::Var,
+    },
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Unop {
     // `Bool` -> `Bool`
@@ -208,11 +195,13 @@ pub enum Unop {
     // `F64` -> `F64`
     Neg,
     Abs,
+    Sign,
+    Ceil,
+    Floor,
+    Trunc,
     Sqrt,
 }
 
-#[cfg_attr(test, derive(TS), ts(export))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Binop {
     // `Bool` -> `Bool` -> `Bool`
