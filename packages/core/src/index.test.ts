@@ -845,4 +845,87 @@ describe("valid", () => {
       q: { x: 3, y: 2 },
     });
   });
+
+  test("compile big structs in signature", async () => {
+    const M = 300;
+    const N = 70000;
+    const Stuff = {
+      a: Real,
+      b: N,
+      c: Real,
+      d: Null,
+      e: Bool,
+      f: M,
+      g: N,
+      h: Null,
+      i: Bool,
+      j: Bool,
+      k: Real,
+      l: Null,
+      m: N,
+      n: N,
+      o: M,
+      p: Null,
+      q: Null,
+      r: Real,
+      s: Real,
+      t: Real,
+      u: Real,
+    } as const;
+    const f = fn(
+      [Stuff],
+      Stuff,
+      ({ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u }) => {
+        return {
+          a: t,
+          b: m,
+          c: k,
+          d: p,
+          e,
+          f,
+          g: n,
+          h: l,
+          i: j,
+          j: i,
+          k: a,
+          l: d,
+          m: g,
+          n: b,
+          o,
+          p: h,
+          q,
+          r: s,
+          s: c,
+          t: r,
+          u: u,
+        };
+      },
+    );
+    const x = {
+      a: 0,
+      b: 1,
+      c: 2,
+      d: null,
+      e: false,
+      f: 3,
+      g: 4,
+      h: null,
+      i: true,
+      j: false,
+      k: 5,
+      l: null,
+      m: 6,
+      n: 7,
+      o: 8,
+      p: null,
+      q: null,
+      r: 9,
+      s: 10,
+      t: 11,
+      u: 12,
+    };
+    const g = interp(f);
+    const h = await compile(f);
+    expect(h(x)).toEqual(g(x));
+  });
 });

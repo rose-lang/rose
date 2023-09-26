@@ -972,7 +972,7 @@ pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
                         (i, size, align)
                     })
                     .collect();
-                mems.sort_unstable_by_key(|&(_, _, align)| align);
+                mems.sort_by_key(|&(_, _, align)| align);
                 let mut offsets = vec![0; members.len()];
                 let mut offset = 0;
                 for (i, s, a) in mems {
