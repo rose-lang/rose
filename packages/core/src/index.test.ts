@@ -436,7 +436,7 @@ describe("valid", () => {
   test("custom JVP with zero tangent", () => {
     const signum = opaque([Real], Real, Math.sign);
     signum.jvp = fn([Dual], Dual, ({ re: x }) => ({ re: sign(x), du: 0 }));
-    const f = interp(jvp(fn([Real], Real, (x) => signum(x))));
+    const f = interp(jvp(signum));
     expect(f({ re: 2, du: 1 })).toEqual({ re: 1, du: 0 });
   });
 

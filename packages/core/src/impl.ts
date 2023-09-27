@@ -514,7 +514,7 @@ export const opaque = <const P extends readonly Reals[], const R extends Reals>(
     // TODO: support generics
     call(g, new Uint32Array(), args);
   g[inner] = func;
-  g[strings] = []; // TODO: support tuples in opaque functions
+  g[strings] = initStrings().strings; // TODO: allow structs in opaque functions
   return makeFn(g) as any;
 };
 
