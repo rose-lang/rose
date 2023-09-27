@@ -160,7 +160,7 @@ impl Opaque for Infallible {
 
 /// basically, the `'a` lifetime is for the graph of functions, and the `'b` lifetime is just for
 /// this particular instance of interpretation
-struct Interpreter<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> {
+struct Interpreter<'a, 'b, O, T: Refs<'a, Opaque = O>> {
     typemap: &'b mut IndexSet<Ty>,
     refs: T,
     def: &'a Func,

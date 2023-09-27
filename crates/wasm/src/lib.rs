@@ -52,7 +52,7 @@ type Imports<O> = IndexMap<(O, Box<[id::Ty]>), (Box<[id::Ty]>, id::Ty)>;
 type Funcs<'a, T> = IndexMap<(ByAddress<&'a Func>, Box<[id::Ty]>), (T, Box<[id::Ty]>)>;
 
 /// Computes a topological sort of a call graph via depth-first search.
-struct Topsort<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> {
+struct Topsort<'a, O, T> {
     /// All types seen so far.
     types: IndexSet<Ty>,
 
@@ -63,7 +63,7 @@ struct Topsort<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> {
     funcs: Funcs<'a, T>,
 }
 
-impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
+impl<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
     /// Search in the given `block` of `f`, using `refs` to resolve immediate function calls.
     ///
     /// The `types` argument is the resolved type ID for each of `f.types` in `self.types`.
@@ -86,9 +86,7 @@ impl<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
                 | Expr::Accum { .. }
                 | Expr::Add { .. }
                 | Expr::Resolve { .. } => {}
-                Expr::For { body, .. } => {
-                    self.block(refs, f, types, body);
-                }
+                Expr::For { body, .. } => self.block(refs, f, types, body),
                 Expr::Call { id, generics, args } => {
                     let gens = generics.iter().map(|t| types[t.ty()]).collect();
                     match refs.get(*id).unwrap() {
@@ -321,7 +319,7 @@ struct Meta {
 }
 
 /// Generates WebAssembly code for a function.
-struct Codegen<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> {
+struct Codegen<'a, 'b, O, T> {
     /// Metadata about all the types in the global type index.
     metas: &'b [Meta],
 
@@ -359,7 +357,7 @@ struct Codegen<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> {
     wasm: Function,
 }
 
-impl<'a, 'b, O: Hash + Eq, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
+impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
     /// Return metadata for the type ID `t` in the current function.
     ///
     /// Do not use this if your type ID is already resolved to refer to the global type index.
@@ -758,7 +756,7 @@ pub struct Wasm<O> {
 }
 
 /// Compile `f` and all its direct and indirect callees to a WebAssembly module.
-pub fn compile<'a, O: Hash + Eq, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> Wasm<O> {
+pub fn compile<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> Wasm<O> {
     let mut topsort = Topsort {
         types: IndexSet::new(),
         imports: IndexMap::new(),
