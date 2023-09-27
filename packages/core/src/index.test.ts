@@ -433,6 +433,13 @@ describe("valid", () => {
     expect(interp(g)(0, 1)).toBeCloseTo(50000);
   });
 
+  test("custom JVP with zero tangent", () => {
+    const signum = opaque([Real], Real, Math.sign);
+    signum.jvp = fn([Dual], Dual, ({ re: x }) => ({ re: sign(x), du: 0 }));
+    const f = interp(jvp(fn([Real], Real, (x) => signum(x))));
+    expect(f({ re: 2, du: 1 })).toEqual({ re: 1, du: 0 });
+  });
+
   test("VJP", () => {
     const f = fn([Vec(2, Real)], Real, (v) => mul(v[0], v[1]));
     const g = fn([], Vec(3, Real), () => {

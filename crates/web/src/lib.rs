@@ -945,7 +945,7 @@ impl FuncBuilder {
     /// integer type; or if `t` is an integer type which cannot represent the given value of `x`.
     pub fn num(&mut self, t: usize, x: f64) -> Result<usize, JsError> {
         match self.ty(t)? {
-            Ty::F64 => Ok(self.constant(t, rose::Expr::F64 { val: x })),
+            Ty::F64 | Ty::T64 => Ok(self.constant(t, rose::Expr::F64 { val: x })),
             &Ty::Fin { size } => {
                 let y = x as usize;
                 if y as f64 != x {
