@@ -1,3 +1,6 @@
+#[cfg(feature = "debug")]
+mod pprint;
+
 use by_address::ByAddress;
 use enumset::EnumSet;
 use indexmap::{IndexMap, IndexSet};
@@ -143,6 +146,13 @@ pub struct Func {
     rc: Rc<Pointee>,
 }
 
+#[cfg(feature = "debug")]
+impl std::fmt::Display for Func {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        pprint::write_graph(f, self.node())
+    }
+}
+
 #[wasm_bindgen]
 impl Func {
     /// Return an opaque function taking `params` `F64` parameters and returning `F64`.
@@ -187,6 +197,12 @@ impl Func {
                 def: Opaque { f: ByAddress(def) },
             },
         }
+    }
+
+    #[cfg(feature = "debug")]
+    #[wasm_bindgen]
+    pub fn pprint(&self) -> String {
+        format!("{self}")
     }
 
     /// Return the IDs of this function's parameter types.
@@ -505,196 +521,6 @@ impl Transpose {
     pub fn bwd(&mut self) -> Option<Func> {
         self.bwd.take()
     }
-}
-
-#[cfg(feature = "debug")]
-#[wasm_bindgen]
-pub fn pprint(f: &Func) -> Result<String, JsError> {
-    use std::fmt::Write as _; // see https://doc.rust-lang.org/std/macro.write.html
-
-    fn print_instr(
-        mut s: &mut String,
-        def: &rose::Func,
-        spaces: usize,
-        instr: &rose::Instr,
-    ) -> Result<(), JsError> {
-        for _ in 0..spaces {
-            write!(&mut s, " ")?;
-        }
-        let x = instr.var.var();
-        write!(&mut s, "x{}: T{} = ", x, def.vars[x].ty())?;
-        match &instr.expr {
-            rose::Expr::Unit => writeln!(&mut s, "unit")?,
-            rose::Expr::Bool { val } => writeln!(&mut s, "{val}")?,
-            rose::Expr::F64 { val } => writeln!(&mut s, "{val}")?,
-            rose::Expr::Fin { val } => writeln!(&mut s, "{val}")?,
-            rose::Expr::Array { elems } => {
-                write!(&mut s, "[")?;
-                print_elems(s, 'x', elems.iter().map(|elem| elem.var()))?;
-                writeln!(&mut s, "]")?;
-            }
-            rose::Expr::Tuple { members } => {
-                write!(&mut s, "(")?;
-                print_elems(s, 'x', members.iter().map(|member| member.var()))?;
-                writeln!(&mut s, ")")?;
-            }
-            rose::Expr::Index { array, index } => {
-                writeln!(&mut s, "x{}[x{}]", array.var(), index.var())?
-            }
-            rose::Expr::Member { tuple, member } => {
-                writeln!(&mut s, "x{}[{}]", tuple.var(), member.member())?
-            }
-            rose::Expr::Slice { array, index } => {
-                writeln!(&mut s, "&x{}[x{}]", array.var(), index.var())?
-            }
-            rose::Expr::Field { tuple, member } => {
-                writeln!(&mut s, "&x{}[{}]", tuple.var(), member.member())?
-            }
-            rose::Expr::Unary { op, arg } => match op {
-                rose::Unop::Not => writeln!(&mut s, "not x{}", arg.var())?,
-                rose::Unop::Neg => writeln!(&mut s, "-x{}", arg.var())?,
-                rose::Unop::Abs => writeln!(&mut s, "|x{}|", arg.var())?,
-                rose::Unop::Sign => writeln!(&mut s, "sign(x{})", arg.var())?,
-                rose::Unop::Ceil => writeln!(&mut s, "ceil(x{})", arg.var())?,
-                rose::Unop::Floor => writeln!(&mut s, "floor(x{})", arg.var())?,
-                rose::Unop::Trunc => writeln!(&mut s, "trunc(x{})", arg.var())?,
-                rose::Unop::Sqrt => writeln!(&mut s, "sqrt(x{})", arg.var())?,
-            },
-            rose::Expr::Binary { op, left, right } => match op {
-                rose::Binop::And => writeln!(&mut s, "x{} and x{}", left.var(), right.var())?,
-                rose::Binop::Or => writeln!(&mut s, "x{} or x{}", left.var(), right.var())?,
-                rose::Binop::Iff => writeln!(&mut s, "x{} iff x{}", left.var(), right.var())?,
-                rose::Binop::Xor => writeln!(&mut s, "x{} xor x{}", left.var(), right.var())?,
-                rose::Binop::Neq => writeln!(&mut s, "x{} != x{}", left.var(), right.var())?,
-                rose::Binop::Lt => writeln!(&mut s, "x{} < x{}", left.var(), right.var())?,
-                rose::Binop::Leq => writeln!(&mut s, "x{} <= x{}", left.var(), right.var())?,
-                rose::Binop::Eq => writeln!(&mut s, "x{} == x{}", left.var(), right.var())?,
-                rose::Binop::Gt => writeln!(&mut s, "x{} > x{}", left.var(), right.var())?,
-                rose::Binop::Geq => writeln!(&mut s, "x{} >= x{}", left.var(), right.var())?,
-                rose::Binop::Add => writeln!(&mut s, "x{} + x{}", left.var(), right.var())?,
-                rose::Binop::Sub => writeln!(&mut s, "x{} - x{}", left.var(), right.var())?,
-                rose::Binop::Mul => writeln!(&mut s, "x{} * x{}", left.var(), right.var())?,
-                rose::Binop::Div => writeln!(&mut s, "x{} / x{}", left.var(), right.var())?,
-            },
-            rose::Expr::Select { cond, then, els } => {
-                writeln!(&mut s, "x{} ? x{} : x{}", cond.var(), then.var(), els.var())?
-            }
-            rose::Expr::Call { id, generics, args } => {
-                write!(&mut s, "f{}<", id.func())?;
-                print_elems(s, 'T', generics.iter().map(|generic| generic.ty()))?;
-                write!(&mut s, ">(")?;
-                print_elems(s, 'x', args.iter().map(|arg| arg.var()))?;
-                writeln!(&mut s, ")")?;
-            }
-            rose::Expr::For { arg, body, ret } => {
-                writeln!(
-                    &mut s,
-                    "for x{}: T{} {{",
-                    arg.var(),
-                    def.vars[arg.var()].ty()
-                )?;
-                print_block(s, def, spaces + 2, body, *ret)?;
-                for _ in 0..spaces {
-                    write!(&mut s, " ")?;
-                }
-                writeln!(&mut s, "}}")?
-            }
-            rose::Expr::Accum { shape } => writeln!(&mut s, "accum x{}", shape.var())?,
-            rose::Expr::Add { accum, addend } => {
-                writeln!(&mut s, "x{} += x{}", accum.var(), addend.var())?
-            }
-            rose::Expr::Resolve { var } => writeln!(&mut s, "resolve x{}", var.var())?,
-        }
-        Ok(())
-    }
-
-    fn print_block(
-        mut s: &mut String,
-        def: &rose::Func,
-        spaces: usize,
-        body: &[rose::Instr],
-        ret: id::Var,
-    ) -> Result<(), JsError> {
-        for instr in body.iter() {
-            print_instr(s, def, spaces, instr)?;
-        }
-        for _ in 0..spaces {
-            write!(&mut s, " ")?;
-        }
-        writeln!(&mut s, "x{}", ret.var())?;
-        Ok(())
-    }
-
-    fn print_elems(
-        s: &mut String,
-        prefix: char,
-        items: impl Iterator<Item = usize>,
-    ) -> std::fmt::Result {
-        let mut first = true;
-        for item in items {
-            if first {
-                first = false;
-            } else {
-                write!(s, ", ")?;
-            }
-            write!(s, "{}{}", prefix, item)?;
-        }
-        Ok(())
-    }
-
-    let mut s = String::new();
-    let Pointee { inner, .. } = f.rc.as_ref();
-    let def = match inner {
-        Inner::Transparent { def, .. } => def,
-        Inner::Opaque { .. } => return Err(JsError::new("opaque function")),
-    };
-
-    for (i, constraints) in def.generics.iter().enumerate() {
-        write!(&mut s, "G{i} = ")?;
-        let mut first = true;
-        for constraint in constraints.iter() {
-            if first {
-                first = false;
-            } else {
-                write!(&mut s, " + ")?;
-            }
-            write!(&mut s, "{constraint:?}")?;
-        }
-        writeln!(&mut s)?;
-    }
-    for (i, ty) in def.types.iter().enumerate() {
-        write!(&mut s, "T{i} = ")?;
-        match ty {
-            rose::Ty::Unit | rose::Ty::Bool | rose::Ty::F64 => writeln!(&mut s, "{ty:?}")?,
-            rose::Ty::Fin { size } => writeln!(&mut s, "{size}")?,
-            rose::Ty::Generic { id } => writeln!(&mut s, "G{}", id.generic())?,
-            rose::Ty::Ref { inner } => writeln!(&mut s, "&T{}", inner.ty())?,
-            rose::Ty::Array { index, elem } => writeln!(&mut s, "[T{}]T{}", index.ty(), elem.ty())?,
-            rose::Ty::Tuple { members } => {
-                write!(&mut s, "(")?;
-                print_elems(&mut s, 'T', members.iter().map(|member| member.ty()))?;
-                writeln!(&mut s, ")")?;
-            }
-        }
-    }
-    write!(&mut s, "(")?;
-    let mut first = true;
-    for param in def.params.iter() {
-        if first {
-            first = false;
-        } else {
-            write!(&mut s, ", ")?;
-        }
-        write!(&mut s, "x{}: T{}", param.var(), def.vars[param.var()].ty())?;
-    }
-    writeln!(&mut s, ") -> T{} {{", def.vars[def.ret.var()].ty())?;
-    for instr in def.body.iter() {
-        print_instr(&mut s, def, 2, instr)?;
-    }
-    writeln!(&mut s, "  x{}", def.ret.var())?;
-    writeln!(&mut s, "}}")?;
-
-    Ok(s)
 }
 
 /// A type, with key name information in the case of tuples (which thus become structs).
