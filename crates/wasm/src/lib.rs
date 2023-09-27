@@ -361,8 +361,13 @@ struct Codegen<'a, 'b, O, T> {
     /// allocation cost depends both on its block's allocation cost and on the number of iterations.
     offset: Size,
 
+    /// Stack of pending accumulator instructions to process at the end of each scope.
+    ///
+    /// The bottom element is always an empty vector, because after we process the entire function,
+    /// we call `resolve` again, which always pops this stack.
     stack: Vec<Vec<&'a Instr>>,
 
+    /// Pending accumulator instructions to process at the end of this scope, in reverse order.
     unresolved: Vec<&'a Instr>,
 
     /// The WebAssembly function under construction.
@@ -427,6 +432,7 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
         layout.store(&mut self.wasm, offset)
     }
 
+    /// Pop the top of the scope stack and process all pending accumulator instructions.
     fn resolve(&mut self) {
         let unresolved = replace(&mut self.unresolved, self.stack.pop().unwrap());
         for instr in unresolved.into_iter().rev() {
@@ -445,6 +451,7 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                     self.get(array);
                     self.get(index);
                     self.u32_const(layout.size());
+                    // TODO: avoid recalculating the offset
                     self.wasm.instruction(&Instruction::I32Mul);
                     self.wasm.instruction(&Instruction::I32Add);
                     self.load(layout, 0);
@@ -675,6 +682,7 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                         .collect();
                     for &arg in args.iter() {
                         match self.def.types[self.def.vars[arg.var()].ty()] {
+                            // `F64` accumulators become results, not params
                             Ty::Ref { inner } if self.meta(inner).ty == Ty::F64 => {}
                             _ => self.get(arg),
                         }
@@ -695,6 +703,7 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                     for &arg in args.iter().rev() {
                         match &self.def.types[self.def.vars[arg.var()].ty()] {
                             &Ty::Ref { inner } if self.meta(inner).ty == Ty::F64 => {
+                                // `F64` accumulators became results
                                 self.get(arg);
                                 self.wasm.instruction(&Instruction::F64Add);
                                 self.set(arg);
@@ -1195,17 +1204,13 @@ pub fn compile<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
             unresolved: vec![],
             wasm: Function::new([(i32s, ValType::I32), (f64s, ValType::F64)]),
         };
-        for &param in def.params.iter() {
-            if let (_, true) = vt(def.vars[param.var()]) {
-                codegen.wasm.instruction(&Instruction::F64Const(0.));
-                codegen.set(param);
-            }
-        }
+        // accumulator result variables are automatically zero: https://stackoverflow.com/a/77170544
         codegen.block(&def.body);
         codegen.resolve();
         codegen.get(def.ret);
         for &param in def.params.iter() {
             if let (_, true) = vt(def.vars[param.var()]) {
+                // return the accumulator variables we moved from params to results
                 codegen.get(param);
             }
         }
