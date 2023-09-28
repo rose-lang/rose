@@ -46,13 +46,56 @@ fn resolve(typemap: &mut IndexSet<Ty>, generics: &[id::Ty], types: &[id::Ty], ty
 /// global type index.
 type Imports<O> = IndexMap<(O, Box<[id::Ty]>), (Box<[id::Ty]>, id::Ty)>;
 
+/// Liveness and aliasing analysis results for a variable.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Var {
+    /// The variable is dead.
+    Dead,
+
+    /// The variable is live, and is not an alias of another variable.
+    Live,
+
+    /// The variable is live, and is an alias of another variable.
+    Alias(id::Var),
+}
+
+/// Collection of liveness and aliasing analysis results for a whole function.
+struct Vars(Box<[Var]>);
+
+impl Vars {
+    /// Return the current analysis for `x`.
+    fn get(&self, x: id::Var) -> Var {
+        self.0[x.var()]
+    }
+
+    /// Mark `x` as live, if it's not already marked as an alias.
+    fn live(&mut self, x: id::Var) {
+        if let Var::Dead = self.get(x) {
+            self.0[x.var()] = Var::Live
+        }
+    }
+
+    /// If `y` is live or an alias then mark `x` as live.
+    fn follow(&mut self, x: id::Var, y: id::Var) {
+        match self.get(y) {
+            Var::Dead => {}
+            Var::Alias(_) | Var::Live => self.live(x),
+        }
+    }
+
+    /// Mark `x` as an alias of `y`.
+    fn alias(&mut self, x: id::Var, y: id::Var) {
+        self.0[x.var()] = Var::Alias(y);
+    }
+}
+
 /// An index of transparent functions.
 ///
 /// Each key holds a reference to the function itself followed by the generic parameters used for
 /// this particular instance. The value holds the function's immediate callees (see `rose::Refs`)
 /// followed by a mapping from the function's own type indices to resolved type indices in a
 /// global type index.
-type Funcs<'a, T> = IndexMap<(ByAddress<&'a Func>, Box<[id::Ty]>), (T, Box<[id::Ty]>)>;
+type Funcs<'a, T> = IndexMap<(ByAddress<&'a Func>, Box<[id::Ty]>), (T, Box<[id::Ty]>, Vars)>;
 
 /// Computes a topological sort of a call graph via depth-first search.
 struct Topsort<'a, O, T> {
@@ -67,30 +110,54 @@ struct Topsort<'a, O, T> {
 }
 
 impl<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
+    /// Return the resolved type for the variable `x` in the function `f`.
+    ///
+    /// The `types` argument is the resolved type ID for each of `f.types` in `self.types`.
+    fn var_ty(&self, f: &'a Func, types: &[id::Ty], x: id::Var) -> &Ty {
+        &self.types[types[f.vars[x.var()].ty()].ty()]
+    }
+
     /// Search in the given `block` of `f`, using `refs` to resolve immediate function calls.
     ///
     /// The `types` argument is the resolved type ID for each of `f.types` in `self.types`.
-    fn block(&mut self, refs: &T, f: &'a Func, types: &[id::Ty], block: &[Instr]) {
-        for instr in block.iter() {
+    fn block(&mut self, refs: &T, f: &'a Func, types: &[id::Ty], vars: &mut Vars, block: &[Instr]) {
+        for instr in block.iter().rev() {
             match &instr.expr {
-                Expr::Unit
-                | Expr::Bool { .. }
-                | Expr::F64 { .. }
-                | Expr::Fin { .. }
-                | Expr::Array { .. }
-                | Expr::Tuple { .. }
-                | Expr::Index { .. }
-                | Expr::Member { .. }
-                | Expr::Slice { .. }
-                | Expr::Field { .. }
-                | Expr::Unary { .. }
-                | Expr::Binary { .. }
-                | Expr::Select { .. }
-                | Expr::Accum { .. }
-                | Expr::Add { .. }
-                | Expr::Resolve { .. } => {}
-                Expr::For { body, .. } => self.block(refs, f, types, body),
+                Expr::Unit | Expr::Bool { .. } | Expr::F64 { .. } | Expr::Fin { .. } => {}
+                Expr::Array { elems } => {
+                    for &elem in elems.iter() {
+                        vars.follow(elem, instr.var);
+                    }
+                }
+                Expr::Tuple { members } => {
+                    for &member in members.iter() {
+                        vars.follow(member, instr.var);
+                    }
+                }
+                &Expr::Index { array, index } => {
+                    vars.follow(array, instr.var);
+                    vars.follow(index, instr.var);
+                }
+                &Expr::Member { tuple, .. } => vars.follow(tuple, instr.var),
+                &Expr::Slice { .. } => vars.live(instr.var),
+                &Expr::Field { .. } => vars.live(instr.var),
+                &Expr::Unary { arg, .. } => vars.follow(arg, instr.var),
+                &Expr::Binary { left, right, .. } => {
+                    vars.follow(left, instr.var);
+                    vars.follow(right, instr.var);
+                }
+                &Expr::Select { cond, then, els } => {
+                    if let Ty::Ref { .. } = self.var_ty(f, types, instr.var) {
+                        vars.live(instr.var); // we simply consider all accumulators to be live
+                    }
+                    vars.follow(then, instr.var);
+                    vars.follow(els, instr.var);
+                    vars.follow(cond, instr.var);
+                }
                 Expr::Call { id, generics, args } => {
+                    for arg in args.iter() {
+                        vars.live(*arg); // args always live because callee might have side effects
+                    }
                     let gens = generics.iter().map(|t| types[t.ty()]).collect();
                     match refs.get(*id).unwrap() {
                         Node::Transparent { refs, def } => {
@@ -119,6 +186,25 @@ impl<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
                         }
                     }
                 }
+                Expr::For { arg, body, ret } => {
+                    // we consider loop collections live because their bodies may have side effects
+                    vars.live(instr.var);
+                    vars.live(*ret);
+                    self.block(refs, f, types, vars, body);
+                    vars.live(*arg); // we need the index to compile the loop itself
+                }
+                &Expr::Accum { shape } => {
+                    vars.live(instr.var); // we simply consider all accumulators to be live
+                    match self.var_ty(f, types, shape) {
+                        Ty::Unit | Ty::F64 => {}
+                        Ty::Bool | Ty::Fin { .. } | Ty::Array { .. } | Ty::Tuple { .. } => {
+                            vars.live(shape) // therefore the shape is always live too
+                        }
+                        Ty::Generic { .. } | Ty::Ref { .. } => unreachable!(),
+                    }
+                }
+                &Expr::Add { addend, .. } => vars.live(addend),
+                &Expr::Resolve { var } => vars.alias(instr.var, var),
             }
         }
     }
@@ -129,10 +215,17 @@ impl<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
         for ty in def.types.iter() {
             types.push(resolve(&mut self.types, &generics, &types, ty));
         }
-        self.block(&refs, def, &types, &def.body);
+        let mut vars = Vars(vec![Var::Dead; def.vars.len()].into());
+        vars.live(def.ret);
+        self.block(&refs, def, &types, &mut vars, &def.body);
+        for &param in def.params.iter() {
+            if let Ty::Ref { .. } = self.var_ty(def, &types, param) {
+                vars.live(param);
+            }
+        }
         let prev = self
             .funcs
-            .insert((ByAddress(def), generics), (refs, types.into()));
+            .insert((ByAddress(def), generics), (refs, types.into(), vars));
         // we're doing depth-first search on a DAG, so even if we wait until this last moment to
         // mark the node as visited, we still can't have seen it already
         assert!(prev.is_none());
@@ -352,8 +445,8 @@ struct Codegen<'a, 'b, O, T> {
     /// Mapping from this function's type indices to type indices in the global type index.
     types: &'b [id::Ty],
 
-    /// The WebAssembly local assigned to each variable in this function.
-    locals: &'b [Local],
+    /// The WebAssembly local assigned to each live variable in this function.
+    locals: &'b [Option<Local>],
 
     /// The amount of memory allocated so far in the current block.
     ///
@@ -382,22 +475,27 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
         &self.metas[self.types[t.ty()].ty()]
     }
 
+    /// Return true iff `x` is assigned a WebAssembly local.
+    fn live(&self, x: id::Var) -> bool {
+        self.locals[x.var()].is_some()
+    }
+
     /// Emit an instruction to push the value of `x` onto the stack.
     fn get(&mut self, x: id::Var) {
         self.wasm
-            .instruction(&Instruction::LocalGet(self.locals[x.var()]));
+            .instruction(&Instruction::LocalGet(self.locals[x.var()].unwrap()));
     }
 
     /// Emit an instruction to pop the top of the stack and store it in `x`.
     fn set(&mut self, x: id::Var) {
         self.wasm
-            .instruction(&Instruction::LocalSet(self.locals[x.var()]));
+            .instruction(&Instruction::LocalSet(self.locals[x.var()].unwrap()));
     }
 
     /// Emit an instruction to store the stack top in `x` without popping it.
     fn tee(&mut self, x: id::Var) {
         self.wasm
-            .instruction(&Instruction::LocalTee(self.locals[x.var()]));
+            .instruction(&Instruction::LocalTee(self.locals[x.var()].unwrap()));
     }
 
     /// Emit an instruction to push the current memory allocation pointer onto the stack.
@@ -438,11 +536,7 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
         for instr in unresolved.into_iter().rev() {
             match instr.expr {
                 Expr::Slice { array, index } => {
-                    let &Meta { layout, .. } =
-                        self.meta(match self.def.types[self.def.vars[instr.var.var()].ty()] {
-                            Ty::Ref { inner } => inner,
-                            _ => unreachable!(),
-                        });
+                    let layout = Layout::F64;
                     self.get(array);
                     self.get(index);
                     self.u32_const(layout.size());
@@ -460,17 +554,13 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                     self.store(layout, 0);
                 }
                 Expr::Field { tuple, member } => {
-                    let &Meta { layout, .. } =
-                        self.meta(match self.def.types[self.def.vars[instr.var.var()].ty()] {
-                            Ty::Ref { inner } => inner,
-                            _ => unreachable!(),
-                        });
                     let Meta { members, .. } =
                         self.meta(match self.def.types[self.def.vars[tuple.var()].ty()] {
                             Ty::Ref { inner } => inner,
                             _ => unreachable!(),
                         });
                     let offset = members.as_ref().unwrap()[member.member()];
+                    let layout = Layout::F64;
                     self.get(tuple);
                     self.get(tuple);
                     self.load(layout, offset);
@@ -501,65 +591,86 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
     fn block(&mut self, block: &'a [Instr]) {
         for instr in block.iter() {
             match &instr.expr {
-                Expr::Unit => {
-                    self.wasm.instruction(&Instruction::I32Const(0));
-                }
+                Expr::Unit => {}
                 &Expr::Bool { val } => {
-                    self.wasm.instruction(&Instruction::I32Const(val.into()));
+                    if self.live(instr.var) {
+                        self.wasm.instruction(&Instruction::I32Const(val.into()));
+                        self.set(instr.var);
+                    }
                 }
                 &Expr::F64 { val } => {
-                    self.wasm.instruction(&Instruction::F64Const(val));
+                    if self.live(instr.var) {
+                        self.wasm.instruction(&Instruction::F64Const(val));
+                        self.set(instr.var);
+                    }
                 }
                 &Expr::Fin { val } => {
-                    self.wasm
-                        .instruction(&Instruction::I32Const(val.try_into().unwrap()));
+                    if self.live(instr.var) {
+                        self.wasm
+                            .instruction(&Instruction::I32Const(val.try_into().unwrap()));
+                        self.set(instr.var);
+                    }
                 }
                 Expr::Array { elems } => {
-                    let &Meta { layout, .. } =
-                        self.meta(match self.def.types[self.def.vars[instr.var.var()].ty()] {
-                            Ty::Array { elem, .. } => elem,
-                            _ => unreachable!(),
-                        });
-                    let size = layout.size();
-                    for (i, &elem) in elems.iter().enumerate() {
+                    if self.live(instr.var) {
+                        let &Meta { layout, .. } =
+                            self.meta(match self.def.types[self.def.vars[instr.var.var()].ty()] {
+                                Ty::Array { elem, .. } => elem,
+                                _ => unreachable!(),
+                            });
+                        let size = layout.size();
+                        for (i, &elem) in elems.iter().enumerate() {
+                            self.pointer();
+                            self.get(elem);
+                            self.store(layout, size * u_size(i));
+                        }
                         self.pointer();
-                        self.get(elem);
-                        self.store(layout, size * u_size(i));
+                        self.set(instr.var);
+                        self.bump(size * u_size(elems.len()));
                     }
-                    self.pointer();
-                    self.bump(size * u_size(elems.len()));
                 }
                 Expr::Tuple { members } => {
-                    let Meta { members: mems, .. } = self.meta(self.def.vars[instr.var.var()]);
-                    let mut size = 0;
-                    for (&member, &offset) in members.iter().zip(mems.as_ref().unwrap().iter()) {
-                        let &Meta { layout, .. } = self.meta(self.def.vars[member.var()]);
+                    if self.live(instr.var) {
+                        let Meta { members: mems, .. } = self.meta(self.def.vars[instr.var.var()]);
+                        let mut size = 0;
+                        for (&member, &offset) in members.iter().zip(mems.as_ref().unwrap().iter())
+                        {
+                            let &Meta { layout, .. } = self.meta(self.def.vars[member.var()]);
+                            self.pointer();
+                            self.get(member);
+                            self.store(layout, offset);
+                            size = size.max(offset + layout.size());
+                        }
                         self.pointer();
-                        self.get(member);
-                        self.store(layout, offset);
-                        size = size.max(offset + layout.size());
+                        self.set(instr.var);
+                        self.bump(size);
                     }
-                    self.pointer();
-                    self.bump(size);
                 }
                 &Expr::Index { array, index } => {
-                    let &Meta { layout, .. } = self.meta(self.def.vars[instr.var.var()]);
-                    let size = layout.size();
-                    self.get(array);
-                    self.get(index);
-                    self.u32_const(size);
-                    self.wasm.instruction(&Instruction::I32Mul);
-                    self.wasm.instruction(&Instruction::I32Add);
-                    self.load(layout, 0);
+                    if self.live(instr.var) {
+                        let &Meta { layout, .. } = self.meta(self.def.vars[instr.var.var()]);
+                        let size = layout.size();
+                        self.get(array);
+                        self.get(index);
+                        self.u32_const(size);
+                        self.wasm.instruction(&Instruction::I32Mul);
+                        self.wasm.instruction(&Instruction::I32Add);
+                        self.load(layout, 0);
+                        self.set(instr.var);
+                    }
                 }
                 &Expr::Member { tuple, member } => {
-                    let Meta { members, .. } = self.meta(self.def.vars[tuple.var()]);
-                    let offset = members.as_ref().unwrap()[member.member()];
-                    let &Meta { layout, .. } = self.meta(self.def.vars[instr.var.var()]);
-                    self.get(tuple);
-                    self.load(layout, offset);
+                    if self.live(instr.var) {
+                        let Meta { members, .. } = self.meta(self.def.vars[tuple.var()]);
+                        let offset = members.as_ref().unwrap()[member.member()];
+                        let &Meta { layout, .. } = self.meta(self.def.vars[instr.var.var()]);
+                        self.get(tuple);
+                        self.load(layout, offset);
+                        self.set(instr.var);
+                    }
                 }
                 &Expr::Slice { array, index } => {
+                    // we simply consider all accumulators to be live
                     let meta =
                         self.meta(match self.def.types[self.def.vars[instr.var.var()].ty()] {
                             Ty::Ref { inner } => inner,
@@ -567,6 +678,8 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                         });
                     match meta.ty {
                         Ty::F64 => {
+                            // need to explicitly set to zero because accumulators can be modified
+                            // and this initialization might be inside of a loop
                             self.wasm.instruction(&Instruction::F64Const(0.));
                             self.unresolved.push(instr);
                         }
@@ -580,8 +693,10 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                             self.load(meta.layout, 0);
                         }
                     }
+                    self.set(instr.var);
                 }
                 &Expr::Field { tuple, member } => {
+                    // we simply consider all accumulators to be live
                     let meta =
                         self.meta(match self.def.types[self.def.vars[instr.var.var()].ty()] {
                             Ty::Ref { inner } => inner,
@@ -589,6 +704,8 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                         });
                     match meta.ty {
                         Ty::F64 => {
+                            // need to explicitly set to zero because accumulators can be modified
+                            // and this initialization might be inside of a loop
                             self.wasm.instruction(&Instruction::F64Const(0.));
                             self.unresolved.push(instr);
                         }
@@ -603,79 +720,95 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                             self.load(meta.layout, offset);
                         }
                     }
+                    self.set(instr.var);
                 }
-                &Expr::Unary { op, arg } => match op {
-                    Unop::Not => {
-                        self.get(arg);
-                        self.wasm.instruction(&Instruction::I32Eqz);
+                &Expr::Unary { op, arg } => {
+                    if self.live(instr.var) {
+                        match op {
+                            Unop::Not => {
+                                self.get(arg);
+                                self.wasm.instruction(&Instruction::I32Eqz);
+                            }
+                            Unop::Neg => {
+                                self.get(arg);
+                                self.wasm.instruction(&Instruction::F64Neg);
+                            }
+                            Unop::Abs => {
+                                self.get(arg);
+                                self.wasm.instruction(&Instruction::F64Abs);
+                            }
+                            Unop::Sign => {
+                                // TODO: `f64.const` instructions are always 8 bytes, much larger
+                                // than most instructions; maybe we should just keep this constant
+                                // in a local
+                                self.wasm.instruction(&Instruction::F64Const(1.));
+                                self.get(arg);
+                                self.wasm.instruction(&Instruction::F64Copysign);
+                            }
+                            Unop::Ceil => {
+                                self.get(arg);
+                                self.wasm.instruction(&Instruction::F64Ceil);
+                            }
+                            Unop::Floor => {
+                                self.get(arg);
+                                self.wasm.instruction(&Instruction::F64Floor);
+                            }
+                            Unop::Trunc => {
+                                self.get(arg);
+                                self.wasm.instruction(&Instruction::F64Trunc);
+                            }
+                            Unop::Sqrt => {
+                                self.get(arg);
+                                self.wasm.instruction(&Instruction::F64Sqrt);
+                            }
+                        }
+                        self.set(instr.var);
                     }
-                    Unop::Neg => {
-                        self.get(arg);
-                        self.wasm.instruction(&Instruction::F64Neg);
-                    }
-                    Unop::Abs => {
-                        self.get(arg);
-                        self.wasm.instruction(&Instruction::F64Abs);
-                    }
-                    Unop::Sign => {
-                        // TODO: `f64.const` instructions are always 8 bytes, much larger than most
-                        // instructions; maybe we should just keep this constant in a local
-                        self.wasm.instruction(&Instruction::F64Const(1.));
-                        self.get(arg);
-                        self.wasm.instruction(&Instruction::F64Copysign);
-                    }
-                    Unop::Ceil => {
-                        self.get(arg);
-                        self.wasm.instruction(&Instruction::F64Ceil);
-                    }
-                    Unop::Floor => {
-                        self.get(arg);
-                        self.wasm.instruction(&Instruction::F64Floor);
-                    }
-                    Unop::Trunc => {
-                        self.get(arg);
-                        self.wasm.instruction(&Instruction::F64Trunc);
-                    }
-                    Unop::Sqrt => {
-                        self.get(arg);
-                        self.wasm.instruction(&Instruction::F64Sqrt);
-                    }
-                },
+                }
                 &Expr::Binary { op, left, right } => {
-                    self.get(left);
-                    self.get(right);
-                    match op {
-                        Binop::And => self.wasm.instruction(&Instruction::I32And),
-                        Binop::Or => self.wasm.instruction(&Instruction::I32Or),
-                        Binop::Iff => self.wasm.instruction(&Instruction::I32Eq),
-                        Binop::Xor => self.wasm.instruction(&Instruction::I32Xor),
-                        Binop::Neq => self.wasm.instruction(&Instruction::F64Ne),
-                        Binop::Lt => self.wasm.instruction(&Instruction::F64Lt),
-                        Binop::Leq => self.wasm.instruction(&Instruction::F64Le),
-                        Binop::Eq => self.wasm.instruction(&Instruction::F64Eq),
-                        Binop::Gt => self.wasm.instruction(&Instruction::F64Gt),
-                        Binop::Geq => self.wasm.instruction(&Instruction::F64Ge),
-                        Binop::Add => self.wasm.instruction(&Instruction::F64Add),
-                        Binop::Sub => self.wasm.instruction(&Instruction::F64Sub),
-                        Binop::Mul => self.wasm.instruction(&Instruction::F64Mul),
-                        Binop::Div => self.wasm.instruction(&Instruction::F64Div),
-                    };
+                    if self.live(instr.var) {
+                        self.get(left);
+                        self.get(right);
+                        match op {
+                            Binop::And => self.wasm.instruction(&Instruction::I32And),
+                            Binop::Or => self.wasm.instruction(&Instruction::I32Or),
+                            Binop::Iff => self.wasm.instruction(&Instruction::I32Eq),
+                            Binop::Xor => self.wasm.instruction(&Instruction::I32Xor),
+                            Binop::Neq => self.wasm.instruction(&Instruction::F64Ne),
+                            Binop::Lt => self.wasm.instruction(&Instruction::F64Lt),
+                            Binop::Leq => self.wasm.instruction(&Instruction::F64Le),
+                            Binop::Eq => self.wasm.instruction(&Instruction::F64Eq),
+                            Binop::Gt => self.wasm.instruction(&Instruction::F64Gt),
+                            Binop::Geq => self.wasm.instruction(&Instruction::F64Ge),
+                            Binop::Add => self.wasm.instruction(&Instruction::F64Add),
+                            Binop::Sub => self.wasm.instruction(&Instruction::F64Sub),
+                            Binop::Mul => self.wasm.instruction(&Instruction::F64Mul),
+                            Binop::Div => self.wasm.instruction(&Instruction::F64Div),
+                        };
+                        self.set(instr.var);
+                    }
                 }
                 &Expr::Select { cond, then, els } => {
                     match self.def.types[self.def.vars[instr.var.var()].ty()] {
                         Ty::Ref { inner } if self.meta(inner).ty == Ty::F64 => {
+                            // need to explicitly set to zero because accumulators can be modified
+                            // and this initialization might be inside of a loop
                             self.wasm.instruction(&Instruction::F64Const(0.));
+                            self.set(instr.var);
                             self.unresolved.push(instr);
                         }
-                        _ => {
+                        _ if self.live(instr.var) => {
                             self.get(then);
                             self.get(els);
                             self.get(cond);
                             self.wasm.instruction(&Instruction::Select);
+                            self.set(instr.var);
                         }
+                        _ => {}
                     }
                 }
                 Expr::Call { id, generics, args } => {
+                    // we simply consider all calls to be live because they could have side effects
                     let gens = generics
                         .iter()
                         .map(|t| self.types[self.def.vars[t.ty()].ty()])
@@ -710,6 +843,11 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                             }
                             _ => {}
                         }
+                    }
+                    if self.live(instr.var) {
+                        self.set(instr.var);
+                    } else {
+                        self.wasm.instruction(&Instruction::Drop);
                     }
                 }
                 Expr::For { arg, body, ret } => {
@@ -760,16 +898,15 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
 
                         self.offset = offset + self.offset * n;
                     }
-
-                    continue;
                 }
                 &Expr::Accum { shape } => {
+                    // we simply consider all accumulators to be live
                     let meta = self.meta(self.def.vars[shape.var()]);
                     match &meta.ty {
                         Ty::Unit | Ty::Bool | Ty::Fin { .. } => self.get(shape),
                         Ty::F64 => {
-                            // TODO: `f64.const` instructions are always 8 bytes, much larger than
-                            // most instructions; maybe we should just keep this constant in a local
+                            // need to explicitly set to zero because accumulators can be modified
+                            // and this initialization might be inside of a loop
                             self.wasm.instruction(&Instruction::F64Const(0.));
                         }
                         Ty::Generic { .. } | Ty::Ref { .. } => unreachable!(),
@@ -782,6 +919,7 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                             self.bump(cost);
                         }
                     }
+                    self.set(instr.var);
                     self.stack.push(take(&mut self.unresolved));
                 }
                 &Expr::Add { accum, addend } => {
@@ -802,14 +940,12 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                                 .instruction(&Instruction::Call(meta.accum.unwrap().add));
                         }
                     }
-                    self.wasm.instruction(&Instruction::I32Const(0));
                 }
                 &Expr::Resolve { var } => {
                     self.resolve();
-                    self.get(var);
+                    assert_eq!(self.locals[instr.var.var()], self.locals[var.var()]);
                 }
             }
-            self.set(instr.var);
         }
     }
 }
@@ -1149,7 +1285,7 @@ pub fn compile<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
     }
 
     let mut costs = vec![]; // allocation cost of each function, in bytes
-    for ((def, _), (refs, def_types)) in funcs.iter() {
+    for ((def, _), (refs, def_types, vars)) in funcs.iter() {
         let vt = |t: id::Ty| val_type(&metas, def_types[t.ty()]); // short for `ValType`
         let mut locals = vec![None; def.vars.len()];
 
@@ -1172,23 +1308,24 @@ pub fn compile<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
 
         let mut i32s = 0;
         for (i, &t) in def.vars.iter().enumerate() {
-            if locals[i].is_none() {
-                if let (ValType::I32, _) = vt(t) {
-                    locals[i] = Some(num_params + i32s);
-                    i32s += 1;
-                }
+            if let (None, (ValType::I32, _), Var::Live) = (locals[i], vt(t), vars.get(id::var(i))) {
+                locals[i] = Some(num_params + i32s);
+                i32s += 1;
             }
         }
         let mut f64s = 0;
         for (i, &t) in def.vars.iter().enumerate() {
-            if locals[i].is_none() {
-                assert!(matches!(vt(t), (ValType::F64, _)));
+            if let (None, (ValType::F64, _), Var::Live) = (locals[i], vt(t), vars.get(id::var(i))) {
                 locals[i] = Some(num_params + i32s + f64s);
                 f64s += 1;
             }
         }
+        for (i, var) in vars.0.iter().enumerate() {
+            if let Var::Alias(other) = var {
+                locals[i] = locals[other.var()];
+            }
+        }
 
-        let locals: Box<_> = locals.into_iter().map(Option::unwrap).collect();
         let mut codegen = Codegen {
             metas: &metas,
             imports: &imports,
@@ -1226,7 +1363,7 @@ pub fn compile<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
 
     let mut memory_section = MemorySection::new();
     let page_size = 65536; // https://webassembly.github.io/spec/core/exec/runtime.html#page-size
-    let cost = funcs.last().map_or(0, |((def, _), (_, def_types))| {
+    let cost = funcs.last().map_or(0, |((def, _), (_, def_types, _))| {
         def.params
             .iter()
             .filter_map(|param| metas[def_types[def.vars[param.var()].ty()].ty()].accum)
