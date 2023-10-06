@@ -50,6 +50,28 @@ const g = fn([Real, Real], Vec(3, Real), (x, y) => {
 console.log(interp(g)(2, 3)); // [6, 3, 2]
 ```
 
+### With Vite
+
+If you are using [Vite][] then you will need to also install the
+[vite-plugin-top-level-await][] package, because Rose internally uses [top-level
+`await`][], which Vite does not directly support. You must also include the
+following in your Vite config:
+
+```js
+import { defineConfig } from "vite";
+import topLevelAwait from "vite-plugin-top-level-await";
+
+export default defineConfig({
+  // the plugin described above
+  plugins: [topLevelAwait()],
+
+  // Vite bundles external dependencies by default in development mode, but that
+  // process does not include assets; this option disables that particular kind
+  // of bundling for Rose so that it can use its internal WebAssembly module
+  optimizeDeps: { exclude: ["rose"] },
+});
+```
+
 ## Contributing
 
 See [`CONTRIBUTING.md`][].
@@ -64,4 +86,7 @@ Rose is licensed under the [MIT License][].
 [MIT License]: https://github.com/rose-lang/rose/blob/main/LICENSE
 [npm]: https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
 [pnpm]: https://pnpm.io/installation
+[top-level `await`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/await#top_level_await
+[vite-plugin-top-level-await]: https://www.npmjs.com/package/vite-plugin-top-level-await
+[Vite]: https://vitejs.dev/
 [Yarn]: https://classic.yarnpkg.com/lang/en/docs/install/
