@@ -33,7 +33,7 @@ bun add rose
 
 ## Usage
 
-This example defines custom gradients for the builtin JavaScript logarithm and
+This example defines custom derivatives for the builtin JavaScript logarithm and
 power functions, then computes the output, gradient, and Hessian for the power
 function applied with base 2 and exponent 3:
 
