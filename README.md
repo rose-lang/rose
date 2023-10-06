@@ -19,6 +19,12 @@ With [Yarn][]:
 yarn add rose
 ```
 
+With [pnpm][]:
+
+```sh
+pnpm add rose
+```
+
 With [Bun][]:
 
 ```sh
@@ -57,4 +63,5 @@ Rose is licensed under the [MIT License][].
 [JAX]: http://jax.readthedocs.io/
 [MIT License]: https://github.com/rose-lang/rose/blob/main/LICENSE
 [npm]: https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
+[pnpm]: https://pnpm.io/installation
 [Yarn]: https://classic.yarnpkg.com/lang/en/docs/install/
