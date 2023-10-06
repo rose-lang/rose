@@ -33,21 +33,36 @@ bun add rose
 
 ## Usage
 
-This example computes the output and gradient of a simple function that
-multiplies together the two components of a vector:
+This example defines custom gradients for the builtin JavaScript logarithm and
+power functions, then computes the output, gradient, and Hessian for the power
+function applied with base 2 and exponent 3:
 
 ```js
-import { Real, Vec, fn, interp, mul, vjp } from "rose";
+import { Dual, Real, Vec, add, compile, div, fn, mul, opaque, vjp } from "rose";
 
-const f = fn([Vec(2, Real)], Real, (v) => mul(v[0], v[1]));
-
-const g = fn([Real, Real], Vec(3, Real), (x, y) => {
-  const { ret, grad } = vjp(f)([x, y]);
-  const v = grad(1);
-  return [ret, v[0], v[1]];
+const log = opaque([Real], Real, Math.log);
+log.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
+  return { re: log(x), du: div(dx, x) };
 });
 
-console.log(interp(g)(2, 3)); // [6, 3, 2]
+const pow = opaque([Real, Real], Real, Math.pow);
+pow.jvp = fn([Dual, Dual], Dual, ({ re: x, du: dx }, { re: y, du: dy }) => {
+  const z = pow(x, y);
+  return { re: z, du: mul(add(mul(dx, div(y, x)), mul(dy, log(x))), z) };
+});
+
+const Vec2 = Vec(2, Real);
+const Mat2 = Vec(2, Vec2);
+
+const f = fn([Vec2], Real, (v) => pow(v[0], v[1]));
+const g = fn([Vec2], Vec2, (v) => vjp(f)(v).grad(1));
+const h = fn([Vec2], Mat2, (v) => {
+  const { grad } = vjp(g)(v);
+  return [grad([1, 0]), grad([0, 1])];
+});
+
+const funcs = await Promise.all([compile(f), compile(g), compile(h)]);
+console.log(funcs.map((func) => func([2, 3])));
 ```
 
 ### With Vite
