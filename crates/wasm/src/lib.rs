@@ -196,8 +196,12 @@ impl<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
                 &Expr::Accum { shape } => {
                     vars.live(instr.var); // we simply consider all accumulators to be live
                     match self.var_ty(f, types, shape) {
-                        Ty::Unit | Ty::F64 => {}
-                        Ty::Bool | Ty::Fin { .. } | Ty::Array { .. } | Ty::Tuple { .. } => {
+                        Ty::F64 => {}
+                        Ty::Unit
+                        | Ty::Bool
+                        | Ty::Fin { .. }
+                        | Ty::Array { .. }
+                        | Ty::Tuple { .. } => {
                             vars.live(shape) // therefore the shape is always live too
                         }
                         Ty::Generic { .. } | Ty::Ref { .. } => unreachable!(),
@@ -445,6 +449,9 @@ struct Codegen<'a, 'b, O, T> {
     /// Mapping from this function's type indices to type indices in the global type index.
     types: &'b [id::Ty],
 
+    /// The WebAssembly local assigned to the stack pointer.
+    pointer: Local,
+
     /// The WebAssembly local assigned to each live variable in this function.
     locals: &'b [Option<Local>],
 
@@ -500,8 +507,7 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
 
     /// Emit an instruction to push the current memory allocation pointer onto the stack.
     fn pointer(&mut self) {
-        self.wasm
-            .instruction(&Instruction::LocalGet(u_size(self.def.params.len())));
+        self.wasm.instruction(&Instruction::LocalGet(self.pointer));
     }
 
     /// Emit an instruction to push the constant integer value `x` onto the stack.
@@ -515,8 +521,7 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
         self.pointer();
         self.u32_const(aligned);
         self.wasm.instruction(&Instruction::I32Add);
-        self.wasm
-            .instruction(&Instruction::LocalSet(u_size(self.def.params.len())));
+        self.wasm.instruction(&Instruction::LocalSet(self.pointer));
         self.offset += aligned;
     }
 
@@ -1335,6 +1340,7 @@ pub fn compile<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
             refs,
             def,
             types: def_types,
+            pointer: num_params - 1,
             locals: &locals,
             offset: 0,
             stack: vec![vec![]],

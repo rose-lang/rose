@@ -596,7 +596,7 @@ describe("valid", () => {
     ).toEqual({ p: true, x: 13, y: 0, z: 7 });
   });
 
-  test("opaque functions with derivatives", () => {
+  test("opaque functions with derivatives", async () => {
     const grad = (f: any) => fn([Real], Real, (x) => vjp(f)(x).grad(1) as Real);
 
     const sin = opaque([Real], Real, Math.sin);
@@ -612,16 +612,16 @@ describe("valid", () => {
     let f = sin;
     expect(interp(f)(1)).toBeCloseTo(Math.sin(1));
     f = grad(f);
-    expect(interp(f)(1)).toBeCloseTo(Math.cos(1));
+    expect((await compile(f))(1)).toBeCloseTo(Math.cos(1));
     f = grad(f);
     expect(interp(f)(1)).toBeCloseTo(-Math.sin(1));
 
     f = cos;
-    expect(interp(f)(1)).toBeCloseTo(Math.cos(1));
+    expect((await compile(f))(1)).toBeCloseTo(Math.cos(1));
     f = grad(f);
     expect(interp(f)(1)).toBeCloseTo(-Math.sin(1));
     f = grad(f);
-    expect(interp(f)(1)).toBeCloseTo(-Math.cos(1));
+    expect((await compile(f))(1)).toBeCloseTo(-Math.cos(1));
   });
 
   test("compile", async () => {
