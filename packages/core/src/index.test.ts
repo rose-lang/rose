@@ -18,7 +18,6 @@ import {
   interp,
   jvp,
   mul,
-  mulLin,
   neg,
   not,
   opaque,
@@ -31,6 +30,7 @@ import {
   vec,
   vjp,
   xor,
+  zero,
 } from "./index.js";
 
 describe("invalid", () => {
@@ -54,9 +54,7 @@ describe("invalid", () => {
 
   test("add argument type", () => {
     const two = true as any;
-    expect(() => fn([], Real, () => add(two, two))).toThrow(
-      "did not expect boolean",
-    );
+    expect(() => fn([], Real, () => add(two, two))).toThrow("invalid value");
   });
 
   test("invalid index type", () => {
@@ -427,7 +425,7 @@ describe("valid", () => {
     const epsilon = 1e-5;
     f.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
       const y = f(x);
-      return { re: y, du: mulLin(dx, div(1 / 2, max(epsilon, y))) };
+      return { re: y, du: mul(dx, div(1 / 2, max(epsilon, y))) };
     });
     const g = fn([Real, Real], Real, (x, y) => vjp(f)(x).grad(y));
     expect(interp(g)(0, 1)).toBeCloseTo(50000);
@@ -435,7 +433,7 @@ describe("valid", () => {
 
   test("custom JVP with zero tangent", () => {
     const signum = opaque([Real], Real, Math.sign);
-    signum.jvp = fn([Dual], Dual, ({ re: x }) => ({ re: sign(x), du: 0 }));
+    signum.jvp = fn([Dual], Dual, ({ re: x }) => ({ re: sign(x), du: zero() }));
     const f = interp(jvp(signum));
     expect(f({ re: 2, du: 1 })).toEqual({ re: 1, du: 0 });
   });
@@ -605,10 +603,10 @@ describe("valid", () => {
     const cos = opaque([Real], Real, Math.cos);
 
     sin.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
-      return { re: sin(x), du: mulLin(dx, cos(x)) };
+      return { re: sin(x), du: mul(dx, cos(x)) };
     });
     cos.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
-      return { re: cos(x), du: mulLin(dx, neg(sin(x))) };
+      return { re: cos(x), du: mul(dx, neg(sin(x))) };
     });
 
     let f = sin;
@@ -787,7 +785,7 @@ describe("valid", () => {
     const exp = opaque([Real], Real, Math.exp);
     exp.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
       const y = exp(x);
-      return { re: y, du: mulLin(dx, y) };
+      return { re: y, du: mul(dx, y) };
     });
     const g = fn([Real], Real, (x) => exp(x));
     const h = fn([Real], Real, (x) => vjp(g)(x).ret);

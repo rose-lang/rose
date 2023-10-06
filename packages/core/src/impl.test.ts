@@ -8,7 +8,6 @@ import {
   fn,
   inner,
   mul,
-  mulLin,
   neg,
   opaque,
   vjp,
@@ -48,13 +47,13 @@ fn f0 = <>{
 
     exp.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
       const y = exp(x);
-      return { re: y, du: mulLin(dx, y) };
+      return { re: y, du: mul(dx, y) };
     });
     sin.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
-      return { re: sin(x), du: mulLin(dx, cos(x)) };
+      return { re: sin(x), du: mul(dx, cos(x)) };
     });
     cos.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
-      return { re: cos(x), du: mulLin(dx, neg(sin(x))) };
+      return { re: cos(x), du: mul(dx, neg(sin(x))) };
     });
 
     const Complex = { re: Real, im: Real } as const;

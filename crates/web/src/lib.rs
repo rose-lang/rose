@@ -1100,6 +1100,25 @@ impl FuncBuilder {
         sig.push(types[def.vars[def.ret.var()].ty()].ty());
         sig
     }
+
+    /// Return the type IDs for `left` and `right`, checking that they are defined and in scope.
+    fn get_lr(&self, left: usize, right: usize) -> Result<(id::Ty, id::Ty), JsError> {
+        let x = self
+            .vars
+            .get(left)
+            .ok_or_else(|| JsError::new("left is undefined"))?;
+        let y = self
+            .vars
+            .get(right)
+            .ok_or_else(|| JsError::new("right is undefined"))?;
+        if let Extra::Expired = x.extra {
+            return Err(JsError::new("left is out of scope"));
+        }
+        if let Extra::Expired = y.extra {
+            return Err(JsError::new("right is out of scope"));
+        }
+        Ok((x.t, y.t))
+    }
 }
 
 /// A block under construction.
@@ -1162,8 +1181,6 @@ impl Block {
         self.instr(f, id::ty(t), rose::Expr::Member { tuple, member })
     }
 
-    // unary
-
     /// Return the variable ID for a new boolean negation instruction on `arg`.
     ///
     /// Assumes `arg` is defined, in scope, and has boolean type.
@@ -1171,18 +1188,6 @@ impl Block {
         let t = id::ty(f.ty_bool());
         let expr = rose::Expr::Unary {
             op: rose::Unop::Not,
-            arg: id::var(arg),
-        };
-        self.instr(f, t, expr)
-    }
-
-    /// Return the variable ID for a new floating-point negation instruction on `arg`.
-    ///
-    /// Assumes `arg` is defined, in scope, and has 64-bit floating point type.
-    pub fn neg(&mut self, f: &mut FuncBuilder, arg: usize) -> usize {
-        let t = f.vars[arg].t;
-        let expr = rose::Expr::Unary {
-            op: rose::Unop::Neg,
             arg: id::var(arg),
         };
         self.instr(f, t, expr)
@@ -1259,10 +1264,6 @@ impl Block {
         };
         self.instr(f, t, expr)
     }
-
-    // end of unary
-
-    // binary
 
     /// Return the variable ID for a new logical conjunction instruction on `left` and `right`.
     ///
@@ -1394,60 +1395,6 @@ impl Block {
         self.instr(f, t, expr)
     }
 
-    /// Return the variable ID for a new addition instruction on `left` and `right`.
-    ///
-    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
-    pub fn add(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
-        let t = f.vars[left].t;
-        let expr = rose::Expr::Binary {
-            op: rose::Binop::Add,
-            left: id::var(left),
-            right: id::var(right),
-        };
-        self.instr(f, t, expr)
-    }
-
-    /// Return the variable ID for a new subtraction instruction on `left` and `right`.
-    ///
-    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
-    pub fn sub(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
-        let t = f.vars[left].t;
-        let expr = rose::Expr::Binary {
-            op: rose::Binop::Sub,
-            left: id::var(left),
-            right: id::var(right),
-        };
-        self.instr(f, t, expr)
-    }
-
-    /// Return the variable ID for a new multiplication instruction on `left` and `right`.
-    ///
-    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
-    pub fn mul(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
-        let t = f.vars[left].t;
-        let expr = rose::Expr::Binary {
-            op: rose::Binop::Mul,
-            left: id::var(left),
-            right: id::var(right),
-        };
-        self.instr(f, t, expr)
-    }
-
-    /// Return the variable ID for a new division instruction on `left` and `right`.
-    ///
-    /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.
-    pub fn div(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
-        let t = f.vars[left].t;
-        let expr = rose::Expr::Binary {
-            op: rose::Binop::Div,
-            left: id::var(left),
-            right: id::var(right),
-        };
-        self.instr(f, t, expr)
-    }
-
-    // end of binary
-
     /// Return the variable ID for a new instruction using `cond` to choose `then` or `els`.
     ///
     /// Assumes `cond`, `then`, and `els` are defined and in scope, that `cond` has boolean type,
@@ -1538,5 +1485,115 @@ impl Block {
     pub fn resolve(&mut self, f: &mut FuncBuilder, t: usize, var: usize) -> usize {
         let expr = rose::Expr::Resolve { var: id::var(var) };
         self.instr(f, id::ty(t), expr)
+    }
+
+    /// Return the variable ID for a new floating-point negation instruction on `arg`.
+    ///
+    /// `Err` if `arg` is undefined or out of scope, or if its type is not `F64` or `T64`.
+    pub fn neg(&mut self, f: &mut FuncBuilder, arg: usize) -> Result<usize, JsError> {
+        let x = f
+            .vars
+            .get(arg)
+            .ok_or_else(|| JsError::new("arg is undefined"))?;
+        if let Extra::Expired = x.extra {
+            return Err(JsError::new("arg is out of scope"));
+        }
+        let t = x.t;
+        if !(t.ty() == f.ty_f64() || t.ty() == f.ty_t64()) {
+            return Err(JsError::new("arg has invalid type"));
+        }
+        let expr = rose::Expr::Unary {
+            op: rose::Unop::Neg,
+            arg: id::var(arg),
+        };
+        Ok(self.instr(f, t, expr))
+    }
+
+    /// Return the variable ID for a new addition instruction on `left` and `right`.
+    ///
+    /// `Err` if `left` or `right` is undefined or out of scope, or if their types are not either
+    /// both `F64` or both `T64`.
+    pub fn add(
+        &mut self,
+        f: &mut FuncBuilder,
+        left: usize,
+        right: usize,
+    ) -> Result<usize, JsError> {
+        let (t1, t2) = f.get_lr(left, right)?;
+        if !((t1.ty() == f.ty_f64() || t1.ty() == f.ty_t64()) && t2 == t1) {
+            return Err(JsError::new("left and right have invalid types"));
+        }
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Add,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        Ok(self.instr(f, t1, expr))
+    }
+
+    /// Return the variable ID for a new subtraction instruction on `left` and `right`.
+    ///
+    /// `Err` if `left` or `right` is undefined or out of scope, or if their types are not either
+    /// both `F64` or both `T64`.
+    pub fn sub(
+        &mut self,
+        f: &mut FuncBuilder,
+        left: usize,
+        right: usize,
+    ) -> Result<usize, JsError> {
+        let (t1, t2) = f.get_lr(left, right)?;
+        if !((t1.ty() == f.ty_f64() || t1.ty() == f.ty_t64()) && t2 == t1) {
+            return Err(JsError::new("left and right have invalid types"));
+        }
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Sub,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        Ok(self.instr(f, t1, expr))
+    }
+
+    /// Return the variable ID for a new multiplication instruction on `left` and `right`.
+    ///
+    /// `Err` if `left` or `right` is undefined or out of scope, or if `left`'s type is not `F64` or
+    /// `T64`, or if `right`'s type is not `F64`.
+    pub fn mul(
+        &mut self,
+        f: &mut FuncBuilder,
+        left: usize,
+        right: usize,
+    ) -> Result<usize, JsError> {
+        let (t1, t2) = f.get_lr(left, right)?;
+        if !((t1.ty() == f.ty_f64() || t1.ty() == f.ty_t64()) && t2.ty() == f.ty_f64()) {
+            return Err(JsError::new("left and right have invalid types"));
+        }
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Mul,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        Ok(self.instr(f, t1, expr))
+    }
+
+    /// Return the variable ID for a new division instruction on `left` and `right`.
+    ///
+    /// `Err` if `left` or `right` is undefined or out of scope, or if `left`'s type is not `F64` or
+    /// `T64`, or if `right`'s type is not `F64`.
+    pub fn div(
+        &mut self,
+        f: &mut FuncBuilder,
+        left: usize,
+        right: usize,
+    ) -> Result<usize, JsError> {
+        let (t1, t2) = f.get_lr(left, right)?;
+        if !((t1.ty() == f.ty_f64() || t1.ty() == f.ty_t64()) && t2.ty() == f.ty_f64()) {
+            return Err(JsError::new("left and right have invalid types"));
+        }
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::Div,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        Ok(self.instr(f, t1, expr))
     }
 }

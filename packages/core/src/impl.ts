@@ -80,8 +80,14 @@ export type Bool = boolean | Var;
 /** An abstract 64-bit floating point number. */
 export type Real = number | Var;
 
+/** The zero tangent. */
+const zeroSymbol = Symbol("zero");
+
+/** The zero tangent. */
+type Zero = typeof zeroSymbol;
+
 /** An abstract 64-bit floating point tangent number. */
-export type Tan = number | Var;
+export type Tan = Zero | Var;
 
 /** An abstract natural number, which can be used to index into a vector. */
 type Nat = number | symbol;
@@ -209,7 +215,7 @@ const valId = (ctx: Context, t: number, x: unknown): number => {
         }
       }
     }
-  } else throw Error(`invalid value: ${x}`);
+  } else throw Error("invalid value");
 
   map.set(x, id);
   return id;
@@ -540,7 +546,7 @@ const pack = (f: Fn, t: number, x: unknown): RawVal => {
       }
       return { Tuple: vals };
     }
-  } else throw Error(`invalid value: ${x}`);
+  } else throw Error("invalid value");
 };
 
 /** Translate a concrete value from the interpreter's raw format. */
@@ -944,12 +950,6 @@ export const select = <const T>(
 const realId = (ctx: Context, x: Real): number =>
   valId(ctx, ctx.func.tyF64(), x);
 
-/** Return the negative of the abstract number `x`. */
-export const neg = (x: Real): Real => {
-  const ctx = getCtx();
-  return newVar(ctx.block.neg(ctx.func, realId(ctx, x)));
-};
-
 /** Return the absolute value of the abstract number `x`. */
 export const abs = (x: Real): Real => {
   const ctx = getCtx();
@@ -984,30 +984,6 @@ export const trunc = (x: Real): Real => {
 export const sqrt = (x: Real): Real => {
   const ctx = getCtx();
   return newVar(ctx.block.sqrt(ctx.func, realId(ctx, x)));
-};
-
-/** Return the abstract number `x` plus the abstract number `y`. */
-export const add = (x: Real, y: Real): Real => {
-  const ctx = getCtx();
-  return newVar(ctx.block.add(ctx.func, realId(ctx, x), realId(ctx, y)));
-};
-
-/** Return the abstract number `x` minus the abstract number `y`. */
-export const sub = (x: Real, y: Real): Real => {
-  const ctx = getCtx();
-  return newVar(ctx.block.sub(ctx.func, realId(ctx, x), realId(ctx, y)));
-};
-
-/** Return the abstract number `x` times the abstract number `y`. */
-export const mul = (x: Real, y: Real): Real => {
-  const ctx = getCtx();
-  return newVar(ctx.block.mul(ctx.func, realId(ctx, x), realId(ctx, y)));
-};
-
-/** Return the abstract number `x` divided by the abstract number `y`. */
-export const div = (x: Real, y: Real): Real => {
-  const ctx = getCtx();
-  return newVar(ctx.block.div(ctx.func, realId(ctx, x), realId(ctx, y)));
 };
 
 /** Return an abstract boolean for if `x` is not equal to `y`. */
@@ -1071,35 +1047,68 @@ export const vec = <const I, const T>(
   return idVal(ctx, t, id) as Vec<ToSymbolic<T>>;
 };
 
-/** Return the variable ID for the abstract floating point tangent `x`. */
-const tanId = (ctx: Context, x: Tan): number => valId(ctx, ctx.func.tyT64(), x);
-
-/** Return the negative of the abstract tangent `x`. */
-export const negLin = (x: Tan): Tan => {
-  const ctx = getCtx();
-  return newVar(ctx.block.neg(ctx.func, tanId(ctx, x)));
+/** Return the variable ID for the abstract number or tangent `x`. */
+const numId = (ctx: Context, x: Real | Tan): number => {
+  if (typeof x === "object") return (x as any)[variable];
+  let t = x === zeroSymbol ? ctx.func.tyT64() : ctx.func.tyF64();
+  const map = typeMap(ctx, t);
+  let id = map.get(x);
+  if (id !== undefined) return id; // constant, so can't be out of scope
+  if (!(typeof x === "number")) throw Error("invalid value");
+  id = ctx.func.num(t, x);
+  map.set(x, id);
+  return id;
 };
 
-/** Return the abstract tangent `x` plus the abstract tangent `y`. */
-export const addLin = (x: Tan, y: Tan): Tan => {
+/** Return the zero tangent. */
+export const zero = (): Tan => {
   const ctx = getCtx();
-  return newVar(ctx.block.add(ctx.func, tanId(ctx, x), tanId(ctx, y)));
+  const t = ctx.func.tyT64();
+  typeMap(ctx, t).set(zeroSymbol, ctx.func.num(t, 0));
+  return zeroSymbol;
 };
 
-/** Return the abstract tangent `x` minus the abstract tangent `y`. */
-export const subLin = (x: Tan, y: Tan): Tan => {
+/** Return the negative of the abstract number `x`. */
+export const neg: {
+  (x: Real): Real;
+  (x: Tan): Tan;
+} = (x: Real | Tan): Var => {
   const ctx = getCtx();
-  return newVar(ctx.block.sub(ctx.func, tanId(ctx, x), tanId(ctx, y)));
+  return newVar(ctx.block.neg(ctx.func, numId(ctx, x)));
 };
 
-/** Return the abstract tangent `x` times the abstract number `y`. */
-export const mulLin = (x: Tan, y: Real): Tan => {
+/** Return the abstract number `x` plus the abstract number `y`. */
+export const add: {
+  (x: Real, y: Real): Real;
+  (x: Tan, y: Tan): Tan;
+} = (x: Real | Tan, y: Real | Tan): Var => {
   const ctx = getCtx();
-  return newVar(ctx.block.mul(ctx.func, tanId(ctx, x), realId(ctx, y)));
+  return newVar(ctx.block.add(ctx.func, numId(ctx, x), numId(ctx, y)));
 };
 
-/** Return the abstract tangent `x` divided by the abstract number `y`. */
-export const divLin = (x: Tan, y: Real): Tan => {
+/** Return the abstract number `x` minus the abstract number `y`. */
+export const sub: {
+  (x: Real, y: Real): Real;
+  (x: Tan, y: Tan): Tan;
+} = (x: Real | Tan, y: Real | Tan): Var => {
   const ctx = getCtx();
-  return newVar(ctx.block.div(ctx.func, tanId(ctx, x), realId(ctx, y)));
+  return newVar(ctx.block.sub(ctx.func, numId(ctx, x), numId(ctx, y)));
+};
+
+/** Return the abstract number `x` times the abstract number `y`. */
+export const mul: {
+  (x: Real, y: Real): Real;
+  (x: Tan, y: Real): Tan;
+} = (x: Real | Tan, y: Real): Var => {
+  const ctx = getCtx();
+  return newVar(ctx.block.mul(ctx.func, numId(ctx, x), numId(ctx, y)));
+};
+
+/** Return the abstract number `x` divided by the abstract number `y`. */
+export const div: {
+  (x: Real, y: Real): Real;
+  (x: Tan, y: Real): Tan;
+} = (x: Real | Tan, y: Real): Var => {
+  const ctx = getCtx();
+  return newVar(ctx.block.div(ctx.func, numId(ctx, x), numId(ctx, y)));
 };
