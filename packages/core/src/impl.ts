@@ -264,7 +264,7 @@ const ind = Symbol("index");
 const elm = Symbol("elem");
 
 /** Representation of a vector type. */
-interface Vecs<K, V> {
+export interface Vecs<K, V> {
   [ind]: K;
   [elm]: V;
 }
@@ -274,8 +274,11 @@ export const Vec = <K, V>(index: K, elem: V): Vecs<K, V> => {
   return { [ind]: index, [elm]: elem };
 };
 
+/** Create a struct type. */
+export const struct = <const T>(t: T): T => t;
+
 /** The 128-bit floating-point dual number type. */
-export const Dual = { re: Real, du: Tan } as const;
+export const Dual = struct({ re: Real, du: Tan });
 
 // TODO: make this locale-independent
 const compare = (a: string, b: string): number => a.localeCompare(b);

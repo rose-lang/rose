@@ -25,6 +25,7 @@ import {
   select,
   sign,
   sqrt,
+  struct,
   sub,
   trunc,
   vec,
@@ -341,7 +342,7 @@ describe("valid", () => {
   });
 
   test("struct", () => {
-    const Pair = { x: Real, y: Real } as const;
+    const Pair = struct({ x: Real, y: Real });
     const f = fn([Pair], Real, (p) => sub(p.y, p.x));
     const g = fn([Real, Real], Pair, (x, y) => ({ y, x }));
     const h = interp(fn([Real, Real], Real, (x, y) => f(g(x, y))));
@@ -364,7 +365,7 @@ describe("valid", () => {
 
   test("array of structs", () => {
     const n = 2;
-    const Indexed = { i: n, x: Real } as const;
+    const Indexed = struct({ i: n, x: Real });
     const f = fn([Vec(n, Real)], Vec(n, Indexed), (v) =>
       vec(n, Indexed, (i) => ({ i, x: v[i] })),
     );
@@ -480,7 +481,7 @@ describe("valid", () => {
   });
 
   test("VJP with struct and select", () => {
-    const Stuff = { a: Null, b: Bool, c: Real } as const;
+    const Stuff = struct({ a: Null, b: Bool, c: Real });
     const f = fn([Stuff], Real, ({ b, c }) =>
       select(or(false, not(b)), Real, c, 2),
     );
@@ -574,7 +575,7 @@ describe("valid", () => {
   });
 
   test("VJP twice with struct", () => {
-    const Pair = { x: Real, y: Real } as const;
+    const Pair = struct({ x: Real, y: Real });
     const f = fn([Pair], Real, ({ x, y }) => mul(x, y));
     const g = fn([Pair], Pair, (p) => vjp(f)(p).grad(1));
     const h = fn([Pair, Pair], Pair, (p, q) => vjp(g)(p).grad(q));
@@ -582,7 +583,7 @@ describe("valid", () => {
   });
 
   test("VJP twice with select", () => {
-    const Stuff = { p: Bool, x: Real, y: Real, z: Real } as const;
+    const Stuff = struct({ p: Bool, x: Real, y: Real, z: Real });
     const f = fn([Stuff], Real, ({ p, x, y, z }) =>
       mul(z, select(p, Real, x, y)),
     );
@@ -744,7 +745,7 @@ describe("valid", () => {
 
   test("compile VJP", async () => {
     const f = fn(
-      [Vec(2, { p: Bool, x: Real } as const)],
+      [Vec(2, struct({ p: Bool, x: Real }))],
       { p: Vec(2, Bool), x: Vec(2, Real) },
       (v) => ({
         p: vec(2, Bool, (i) => not(v[i].p)),
@@ -821,14 +822,14 @@ describe("valid", () => {
   });
 
   test("compile structs in signature", async () => {
-    const Pair = { x: Real, y: Real } as const;
+    const Pair = struct({ x: Real, y: Real });
     const f = fn([Pair], Pair, ({ x, y }) => ({ x: y, y: x }));
     const g = await compile(f);
     expect(g({ x: 2, y: 3 })).toEqual({ x: 3, y: 2 });
   });
 
   test("compile zero-sized struct members in signature", async () => {
-    const Stuff = { a: Null, b: 0, c: 0, d: Null } as const;
+    const Stuff = struct({ a: Null, b: 0, c: 0, d: Null });
     const f = fn([Stuff], Stuff, ({ a, b, c, d }) => {
       return { a: d, b: c, c: b, d: a };
     });
@@ -838,8 +839,8 @@ describe("valid", () => {
   });
 
   test("compile nested structs in signature", async () => {
-    const Pair = { x: Real, y: Real } as const;
-    const Stuff = { p: Bool, q: Pair } as const;
+    const Pair = struct({ x: Real, y: Real });
+    const Stuff = struct({ p: Bool, q: Pair });
     const f = fn([Stuff], Stuff, ({ p, q }) => ({
       p: not(p),
       q: { x: q.y, y: q.x },
@@ -854,7 +855,7 @@ describe("valid", () => {
   test("compile big structs in signature", async () => {
     const M = 300;
     const N = 70000;
-    const Stuff = {
+    const Stuff = struct({
       a: Real,
       b: N,
       c: Real,
@@ -876,7 +877,7 @@ describe("valid", () => {
       s: Real,
       t: Real,
       u: Real,
-    } as const;
+    });
     const f = fn(
       [Stuff],
       Stuff,

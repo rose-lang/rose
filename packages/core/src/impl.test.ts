@@ -10,6 +10,7 @@ import {
   mul,
   neg,
   opaque,
+  struct,
   vjp,
 } from "./impl.js";
 
@@ -56,7 +57,7 @@ fn f0 = <>{
       return { re: cos(x), du: mul(dx, neg(sin(x))) };
     });
 
-    const Complex = { re: Real, im: Real } as const;
+    const Complex = struct({ re: Real, im: Real });
 
     const complexp = fn([Complex], Complex, (z) => {
       const c = exp(z.re);
