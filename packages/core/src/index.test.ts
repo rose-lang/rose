@@ -440,7 +440,7 @@ describe("valid", () => {
   });
 
   test("VJP", () => {
-    const f = fn([Vec(2, Real)], Real, (v) => mul(v[0], v[1]));
+    const f = fn([Vec(2, Real)], Real, ([x, y]) => mul(x, y));
     const g = fn([], Vec(3, Real), () => {
       const { ret: x, grad } = vjp(f)([2, 3]);
       const v = grad(1);
@@ -558,11 +558,9 @@ describe("valid", () => {
       else if (n % 2 == 0) return powi(mul(x, x), n / 2);
       else return mul(x, powi(mul(x, x), (n - 1) / 2));
     };
-    const f = fn([Vec(2, Real)], Real, (v) => {
-      const x = v[0];
-      const y = v[1];
-      return sub(sub(powi(x, 3), mul(2, mul(x, y))), powi(y, 6));
-    });
+    const f = fn([Vec(2, Real)], Real, ([x, y]) =>
+      sub(sub(powi(x, 3), mul(2, mul(x, y))), powi(y, 6)),
+    );
     const g = fn([Vec(2, Real)], Vec(2, Real), (v) => vjp(f)(v).grad(1));
     const h = fn([Vec(2, Real)], Vec(2, Vec(2, Real)), (v) => {
       const { grad } = vjp(g)(v);
@@ -657,7 +655,7 @@ describe("valid", () => {
   });
 
   test("compile array", async () => {
-    const f = fn([Vec(2, Real)], Real, (v) => mul(v[0], v[1]));
+    const f = fn([Vec(2, Real)], Real, ([x, y]) => mul(x, y));
     const g = fn([Real, Real], Real, (x, y) => f([x, y]));
     const h = await compile(g);
     expect(h(2, 3)).toBe(6);
@@ -681,12 +679,9 @@ describe("valid", () => {
   });
 
   test("compile logic", async () => {
-    const f = fn([Vec(3, Bool)], Bool, (v) => {
-      const p = v[0];
-      const q = v[1];
-      const r = v[2];
-      return iff(and(or(p, not(q)), xor(r, q)), or(not(p), and(q, r)));
-    });
+    const f = fn([Vec(3, Bool)], Bool, ([p, q, r]) =>
+      iff(and(or(p, not(q)), xor(r, q)), or(not(p), and(q, r))),
+    );
     const g = fn([Bool, Bool, Bool], Real, (p, q, r) =>
       select(f([p, q, r]), Real, -1, -2),
     );
@@ -760,12 +755,9 @@ describe("valid", () => {
         { p: p1, x: x1 },
         { p: q1, x: y1 },
       ]);
-      const { x } = ret;
-      const x2 = x[0];
-      const y2 = x[1];
+      const [x2, y2] = ret.x;
       const v = grad({ p: [true, false] as any, x: [2, 3] as any });
-      const { x: x3 } = v[0];
-      const { x: y3 } = v[1];
+      const [{ x: x3 }, { x: y3 }] = v;
       return mul(sub(x3, y2), sub(y3, x2));
     });
     const h = await compile(g);

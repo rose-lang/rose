@@ -21,7 +21,7 @@ import("rose").then(
     const Vec2 = Vec(2, Real);
     const Mat2 = Vec(2, Vec2);
 
-    const f = fn([Vec2], Real, (v) => pow(v[0], v[1]));
+    const f = fn([Vec2], Real, ([x, y]) => pow(x, y));
     const g = fn([Vec2], Vec2, (v) => vjp(f)(v).grad(1));
     const h = fn([Vec2], Mat2, (v) => {
       const { grad } = vjp(g)(v);

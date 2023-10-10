@@ -92,10 +92,18 @@ export type Tan = Zero | Var;
 /** An abstract natural number, which can be used to index into a vector. */
 type Nat = number | symbol;
 
-/** An abstract vector, which can be indexed by a natural number. */
-export interface Vec<T> {
+/** The portion of an abstract vector that can be directly indexed. */
+interface VecIndex<T> {
   [K: Nat]: T;
 }
+
+/** The portion of an abstract vector that can be destructured. */
+interface VecIter<T> {
+  [Symbol.iterator](): IterableIterator<T>;
+}
+
+/** An abstract vector, which can be indexed by a natural number. */
+export type Vec<T> = VecIndex<T> & VecIter<T>;
 
 /** The context for an abstract function under construction. */
 interface Context {
@@ -349,10 +357,22 @@ const arrayProxy = (ctx: Context, t: number, v: number): Vec<unknown> => {
   const index = ctx.func.index(t);
   const elem = ctx.func.elem(t);
   return new Proxy(
-    {},
     {
-      get: (target, prop) => {
+      *[Symbol.iterator]() {
+        // we assume the context was already checked
+        const n = ctx.func.size(t);
+        for (let i = 0; i < n; ++i) {
+          // but the context can change between `yield`s
+          if (getCtx() !== ctx) throw Error("array escaped its context");
+          const x = ctx.block.index(ctx.func, elem, v, valId(ctx, index, i));
+          yield idVal(ctx, elem, x);
+        }
+      },
+    },
+    {
+      get: (target: Vec<unknown>, prop) => {
         if (getCtx() !== ctx) throw Error("array escaped its context");
+        if (prop === Symbol.iterator) return target[prop];
         if (prop === variable) return v;
         const i = typeof prop === "string" ? parseInt(prop, 10) : prop;
         const x = ctx.block.index(ctx.func, elem, v, valId(ctx, index, i));
