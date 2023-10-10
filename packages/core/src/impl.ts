@@ -251,19 +251,19 @@ export const Real = Symbol("Real");
 export const Tan = Symbol("Tan");
 
 /** Representation of the null type. */
-type Nulls = typeof Null;
+export type Nulls = typeof Null;
 
 /** Representation of the boolean type. */
-type Bools = typeof Bool;
+export type Bools = typeof Bool;
 
 /** Representation of the 64-bit floating point type. */
-type Reals = typeof Real;
+export type Reals = typeof Real;
 
 /** Representation of the 64-bit floating point tangent type. */
-type Tans = typeof Tan;
+export type Tans = typeof Tan;
 
 /** Representation of a bounded index type (it's just the upper bound). */
-type Nats = number;
+export type Nats = number;
 
 /** Property key for the index type ID of a vector type. */
 const ind = Symbol("index");
@@ -432,11 +432,11 @@ const call = (f: Fn, generics: Uint32Array, args: unknown[]): unknown => {
 /**
  * Map from a type of a type to the type of the symbolic values it represents.
  *
- * The result should be `Symbolic`, so this should be used in any situation
- * where the abstract value is being synthesized (e.g. the parameters of the
- * body of `fn` or `vec`, or the returned value from a call or `select`).
+ * This should be used in any situation where the abstract value is being
+ * synthesized (e.g. the parameters of the body of `fn` or `vec`, or the
+ * returned value from a call or `select`).
  */
-type ToSymbolic<T> = T extends Nulls
+export type Symbolic<T> = T extends Nulls
   ? Null
   : T extends Bools
   ? Bool
@@ -447,17 +447,17 @@ type ToSymbolic<T> = T extends Nulls
   : T extends Nats
   ? Nat
   : T extends Vecs<any, infer V>
-  ? Vec<ToSymbolic<V>>
-  : { [K in keyof T]: ToSymbolic<T[K]> };
+  ? Vec<Symbolic<V>>
+  : { [K in keyof T]: Symbolic<T[K]> };
 
 /**
  * Map from a type of a type to the type of the abstract values it represents.
  *
- * The result should be `Value`, so this should be used in any situation where
- * the abstract value is provided by the user (e.g. the returned value in the
- * body of `fn` or `vec`, or the inputs to a call or `select).
+ * This should be used in any situation where the abstract value is provided by
+ * the user (e.g. the returned value in the body of `fn` or `vec`, or the inputs
+ * to a call or `select).
  */
-type ToValue<T> = T extends Nulls
+export type Value<T> = T extends Nulls
   ? Null
   : T extends Bools
   ? Bool
@@ -468,25 +468,25 @@ type ToValue<T> = T extends Nulls
   : T extends Nats
   ? Nat
   : T extends Vecs<any, infer V>
-  ? Vec<ToValue<V>> | ToValue<V>[]
-  : { [K in keyof T]: ToValue<T[K]> };
+  ? Vec<Value<V>> | Value<V>[]
+  : { [K in keyof T]: Value<T[K]> };
 
-/** Map from a parameter type array to a symbolic parameter value type array. */
+/** Map from parameter type array to symbolic parameter value type array. */
 type SymbolicParams<T> = {
-  [K in keyof T]: ToSymbolic<T[K]>;
+  [K in keyof T]: Symbolic<T[K]>;
 };
 
-/** Map from a parameter type array to an abstract parameter value type array. */
+/** Map from parameter type array to abstract parameter value type array. */
 type ValueParams<T> = {
-  [K in keyof T]: ToValue<T[K]>;
+  [K in keyof T]: Value<T[K]>;
 };
 
 /** Construct an abstract function by abstractly interpreting `f` once. */
 export const fn = <const P extends readonly any[], const R>(
   params: P,
   ret: R,
-  f: (...args: SymbolicParams<P>) => ToValue<R>,
-): Fn & ((...args: ValueParams<P>) => ToSymbolic<R>) => {
+  f: (...args: SymbolicParams<P>) => Value<R>,
+): Fn & ((...args: ValueParams<P>) => Symbolic<R>) => {
   // TODO: support closures
   if (context !== undefined)
     throw Error("can't define a function while defining another function");
@@ -535,8 +535,8 @@ export const fn = <const P extends readonly any[], const R>(
 export const opaque = <const P extends readonly Reals[], const R extends Reals>(
   params: P,
   ret: R,
-  f: (...args: JsArgs<SymbolicParams<P>>) => ToJs<ToValue<R>>,
-): Fn & ((...args: ValueParams<P>) => ToSymbolic<R>) => {
+  f: (...args: JsArgs<SymbolicParams<P>>) => ToJs<Value<R>>,
+): Fn & ((...args: ValueParams<P>) => Symbolic<R>) => {
   // TODO: support more complicated signatures for opaque functions
   const func = new wasm.Func(params.length, f);
   const g: any = (...args: any): any =>
@@ -958,15 +958,15 @@ export const xor = (p: Bool, q: Bool): Bool => {
 export const select = <const T>(
   cond: Bool,
   ty: T,
-  then: ToValue<T>,
-  els: ToValue<T>,
-): ToSymbolic<T> => {
+  then: Value<T>,
+  els: Value<T>,
+): Symbolic<T> => {
   const ctx = getCtx();
   const t = tyId(ctx, ty);
   const p = boolId(ctx, cond);
   const a = valId(ctx, t, then);
   const b = valId(ctx, t, els);
-  return idVal(ctx, t, ctx.block.select(ctx.func, p, t, a, b)) as ToSymbolic<T>;
+  return idVal(ctx, t, ctx.block.select(ctx.func, p, t, a, b)) as Symbolic<T>;
 };
 
 /** Return the variable ID for the abstract floating point number `x`. */
@@ -1049,8 +1049,8 @@ export const geq = (x: Real, y: Real): Bool => {
 export const vec = <const I, const T>(
   index: I,
   elem: T,
-  f: (i: ToSymbolic<I>) => ToValue<T>,
-): Vec<ToSymbolic<T>> => {
+  f: (i: Symbolic<I>) => Value<T>,
+): Vec<Symbolic<T>> => {
   const ctx = getCtx();
   const i = tyId(ctx, index);
   const e = tyId(ctx, elem);
@@ -1061,13 +1061,13 @@ export const vec = <const I, const T>(
   const body = new wasm.Block();
   try {
     ctx.block = body;
-    out = valId(ctx, e, f(idVal(ctx, i, arg) as ToSymbolic<I>));
+    out = valId(ctx, e, f(idVal(ctx, i, arg) as Symbolic<I>));
   } finally {
     if (out === undefined) body.free();
     ctx.block = block;
   }
   const id = block.vec(ctx.func, t, arg, body, out);
-  return idVal(ctx, t, id) as Vec<ToSymbolic<T>>;
+  return idVal(ctx, t, id) as Vec<Symbolic<T>>;
 };
 
 /** Return the variable ID for the abstract number or tangent `x`. */
