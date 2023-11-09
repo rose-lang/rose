@@ -16,6 +16,7 @@ use wasm_bindgen::prelude::{wasm_bindgen, JsError, JsValue};
 #[wasm_bindgen]
 pub fn initialize() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+    console_log::init().unwrap();
 }
 
 fn to_js_value(value: &impl Serialize) -> Result<JsValue, serde_wasm_bindgen::Error> {
