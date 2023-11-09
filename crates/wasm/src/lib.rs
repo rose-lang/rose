@@ -1083,21 +1083,22 @@ pub fn compile<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
                 // accumulator pointer for calls to the zero function for elements if this array
                 // stores composite values
                 let mut zero = Function::new([(2, ValType::I32)]);
-                let mut total = aligned(size * n, 8);
+                let bound = size * n; // use this instead of padded `total` for bounds checking
+                let mut total = aligned(bound, 8);
                 // same as zero, the local is a pointer to the end of the accumulator array, used
                 // for bounds checking
                 let mut add = Function::new([(1, ValType::I32)]);
 
                 if n > 0 {
                     zero.instruction(&Instruction::LocalGet(0));
-                    zero.instruction(&Instruction::I32Const(total.try_into().unwrap()));
+                    zero.instruction(&Instruction::I32Const(bound.try_into().unwrap()));
                     zero.instruction(&Instruction::I32Add);
                     zero.instruction(&Instruction::LocalTee(2));
                     zero.instruction(&Instruction::LocalSet(3));
                     zero.instruction(&Instruction::Loop(BlockType::Empty));
 
                     add.instruction(&Instruction::LocalGet(0));
-                    add.instruction(&Instruction::I32Const(total.try_into().unwrap()));
+                    add.instruction(&Instruction::I32Const(bound.try_into().unwrap()));
                     add.instruction(&Instruction::I32Add);
                     add.instruction(&Instruction::LocalSet(2));
                     add.instruction(&Instruction::Loop(BlockType::Empty));
