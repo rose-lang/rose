@@ -1093,7 +1093,10 @@ pub fn compile<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
                     zero.instruction(&Instruction::LocalGet(0));
                     zero.instruction(&Instruction::I32Const(bound.try_into().unwrap()));
                     zero.instruction(&Instruction::I32Add);
-                    zero.instruction(&Instruction::LocalTee(2));
+                    zero.instruction(&Instruction::LocalSet(2));
+                    zero.instruction(&Instruction::LocalGet(0));
+                    zero.instruction(&Instruction::I32Const(total.try_into().unwrap()));
+                    zero.instruction(&Instruction::I32Add);
                     zero.instruction(&Instruction::LocalSet(3));
                     zero.instruction(&Instruction::Loop(BlockType::Empty));
 

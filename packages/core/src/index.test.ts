@@ -926,4 +926,12 @@ describe("valid", () => {
     const h = await compile(f);
     expect(h(x)).toEqual(g(x));
   });
+
+  test("compile matrix gradient", async () => {
+    const T = Vec(1, Vec(1, Real));
+    const f = fn([T], Null, () => null);
+    const g = fn([], T, () => vjp(f)([[0]]).grad(null));
+    const h = await compile(g);
+    expect(h()).toEqual([[0]]);
+  });
 });
