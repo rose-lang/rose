@@ -42,9 +42,17 @@ const h = fn([Vec2], Mat2, ([x, y]) => {
   return [vec(2, Real, (i) => a[i].du), vec(2, Real, (i) => b[i].du)];
 });
 
-export default await compile(
+type Vec2 = [number, number];
+
+export interface Info {
+  val: number;
+  grad: Vec2;
+  hess: [Vec2, Vec2];
+}
+
+export default (await compile(
   fn([Real, Real], { val: Real, grad: Vec2, hess: Mat2 }, (x, y) => {
     const v = [x, y];
     return { val: f(v), grad: g(v), hess: h(v) };
   }),
-);
+)) as unknown as (x: number, y: number) => Info;

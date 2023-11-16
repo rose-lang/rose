@@ -1,8 +1,84 @@
-import all from "./func.js";
-
-console.log(all(2, 3));
+import all, { Info } from "./func.js";
 
 type Vec2 = [number, number];
+
+interface Parabola {
+  /** coefficient of square term */
+  a: number;
+  /** coefficient of linear term */
+  b: number;
+  /** constant */
+  c: number;
+}
+
+const xParabola = (
+  [a, b]: Vec2,
+  { val: f, grad: [fx, fy], hess: [[fxx], [fxy, fyy]] }: Info,
+  y: number,
+): Parabola => {
+  return {
+    a: (1 / 2) * fxx,
+    b: fx + fxx * -a + fxy * (y - b),
+    c:
+      f -
+      fx * a +
+      fy * (y - b) +
+      (1 / 2) * fxx * a ** 2 -
+      fxy * a * (y - b) +
+      (1 / 2) * fyy * (y - b) ** 2,
+  };
+};
+
+const yParabola = (
+  [a, b]: Vec2,
+  { val: f, grad: [fx, fy], hess: [[fxx], [fxy, fyy]] }: Info,
+  x: number,
+): Parabola => {
+  return {
+    a: (1 / 2) * fyy,
+    b: fy + fxy * (x - a) + fyy * -b,
+    c:
+      f +
+      fx * (x - a) +
+      fy * -b +
+      (1 / 2) * fxx * (x - a) ** 2 +
+      fxy * (x - a) * -b +
+      (1 / 2) * fyy * b ** 2,
+  };
+};
+
+interface PointSlope {
+  point: Vec2;
+  slope: number;
+}
+
+const pointSlope = ({ a, b, c }: Parabola, x: number): PointSlope => {
+  const y = a * x ** 2 + b * x + c;
+  const m = 2 * a * x + b;
+  return { point: [x, y], slope: m };
+};
+
+const intersectPointSlope = (l1: PointSlope, l2: PointSlope): Vec2 => {
+  const [x1, y1] = l1.point;
+  const [x2, y2] = l2.point;
+  const m1 = l1.slope;
+  const m2 = l2.slope;
+  const x = (m1 * x1 - m2 * x2 - y1 + y2) / (m1 - m2);
+  const y = m1 * (x - x1) + y1;
+  return [x, y];
+};
+
+const bezier = (
+  parabola: Parabola,
+  x1: number,
+  x2: number,
+): [Vec2, Vec2, Vec2] => {
+  const l1 = pointSlope(parabola, x1);
+  const l2 = pointSlope(parabola, x2);
+  const [x3, y3] = intersectPointSlope(l1, l2);
+  return [l1.point, [x3, y3], l2.point];
+};
+
 type Vec3 = number[];
 
 type Mat3x3 = Vec3[];
@@ -33,17 +109,27 @@ const matMul = (a: Mat3x3, b: Mat3x3): Mat3x3 => {
   return c;
 };
 
-const identity: Mat3x3 = [
-  [1, 0, 0],
-  [0, 1, 0],
-  [0, 0, 1],
-];
-
-const scale = (s: number): Mat3x3 => [
-  [s, 0, 0],
-  [0, s, 0],
-  [0, 0, s],
-];
+const inverse = (a: Mat3x3): Mat3x3 => {
+  const [[a00, a01, a02], [a10, a11, a12], [a20, a21, a22]] = a;
+  const det =
+    a00 * (a11 * a22 - a12 * a21) -
+    a01 * (a10 * a22 - a12 * a20) +
+    a02 * (a10 * a21 - a11 * a20);
+  const b00 = (a11 * a22 - a12 * a21) / det;
+  const b01 = -(a01 * a22 - a02 * a21) / det;
+  const b02 = (a01 * a12 - a02 * a11) / det;
+  const b10 = -(a10 * a22 - a12 * a20) / det;
+  const b11 = (a00 * a22 - a02 * a20) / det;
+  const b12 = -(a00 * a12 - a02 * a10) / det;
+  const b20 = (a10 * a21 - a11 * a20) / det;
+  const b21 = -(a00 * a21 - a01 * a20) / det;
+  const b22 = (a00 * a11 - a01 * a10) / det;
+  return [
+    [b00, b01, b02],
+    [b10, b11, b12],
+    [b20, b21, b22],
+  ];
+};
 
 const rotateX = (theta: number): Mat3x3 => [
   [1, 0, 0],
@@ -57,24 +143,81 @@ const rotateZ = (theta: number): Mat3x3 => [
   [0, 0, 1],
 ];
 
-const screen = [scale(130), rotateX(-1), rotateZ((-3 * Math.PI) / 4)].reduce(
-  matMul,
-);
+const scalePlane = 130;
+const scaleValue = 40;
+const tilt = -1;
+const screen = [
+  rotateX(tilt),
+  rotateZ((-3 * Math.PI) / 4),
+  [
+    [scalePlane, 0, 0],
+    [0, scalePlane, 0],
+    [0, 0, scaleValue],
+  ],
+].reduce(matMul);
+const world = inverse(screen);
 
 const toScreen = (v: Vec3): Vec2 => {
   const [x, y] = matVecMul(screen, v);
   return [x, y];
 };
 
+const toWorld = ([x, y]: Vec2): Vec3 => {
+  const [, , [a, b, c]] = world;
+  const z = -(a * x + b * y) / c;
+  return matVecMul(world, [x, y, z]);
+};
+
+let point: Vec2;
+let info: Info;
+
+const setPoint = (newPoint: Vec2) => {
+  point = newPoint;
+  info = all(...point);
+};
+
+setPoint([0.5, 0.5]);
+
+const roseColor = "#C33358";
+
 const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 const { width, height } = canvas;
 const ctx = canvas.getContext("2d")!;
+ctx.lineWidth = 3;
+ctx.lineCap = "round";
+
+const update = (u: number, v: number) => {
+  const [x, y] = toWorld([u - width / 2, height / 2 - v]);
+  setPoint([x, y]);
+};
+
+const mouse = (e: MouseEvent) => {
+  if (e.buttons & 1) update(e.offsetX, e.offsetY);
+};
+
+canvas.addEventListener("mousedown", mouse);
+canvas.addEventListener("mousemove", mouse);
+
+const touch = (e: TouchEvent) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const { clientX: x, clientY: y } = e.touches[0];
+  update(x - rect.left, y - rect.top);
+};
+
+canvas.addEventListener("touchstart", touch);
+canvas.addEventListener("touchmove", touch);
 
 const poly = (points: Vec3[]) => {
   ctx.moveTo(...toScreen(points[0]));
   for (let i = 1; i < points.length; ++i) {
     ctx.lineTo(...toScreen(points[i]));
   }
+};
+
+const quadratic = (a: Vec3, b: Vec3, c: Vec3) => {
+  ctx.moveTo(...toScreen(a));
+  ctx.quadraticCurveTo(...toScreen(b), ...toScreen(c));
 };
 
 const lineHalf = 0.015;
@@ -110,25 +253,51 @@ const draw: FrameRequestCallback = (milliseconds) => {
   ctx.closePath();
   ctx.fill();
 
+  ctx.fillStyle = roseColor;
+  ctx.beginPath();
+  ctx.ellipse(
+    ...toScreen([...point, 0]),
+    scalePlane * 0.05,
+    scalePlane * 0.05 * Math.cos(tilt),
+    0,
+    0,
+    2 * Math.PI,
+  );
+  ctx.fill();
+
+  ctx.strokeStyle = roseColor;
+  ctx.beginPath();
+  ctx.moveTo(...toScreen([...point, 0]));
+  ctx.lineTo(...toScreen([...point, info.val]));
+  ctx.stroke();
+
+  ctx.fillStyle = roseColor;
+  ctx.beginPath();
+  ctx.ellipse(
+    ...toScreen([...point, info.val]),
+    scalePlane * 0.03,
+    scalePlane * 0.03,
+    0,
+    0,
+    2 * Math.PI,
+  );
+  ctx.fill();
+
   ctx.strokeStyle = "white";
-  ctx.lineWidth = 3;
-  ctx.lineCap = "round";
   for (let x = -0.875; x < 0.9; x += 0.25) {
+    const parabola = yParabola(point, info, x);
     const y = Math.sqrt((1 + pulse) ** 2 - x ** 2);
+    const [[y1, z1], [y2, z2], [y3, z3]] = bezier(parabola, -y, y);
     ctx.beginPath();
-    poly([
-      [x, -y, 0],
-      [x, y, 0],
-    ]);
+    quadratic([x, y1, z1], [x, y2, z2], [x, y3, z3]);
     ctx.stroke();
   }
   for (let y = -0.875; y < 0.9; y += 0.25) {
+    const parabola = xParabola(point, info, y);
     const x = Math.sqrt((1 + pulse) ** 2 - y ** 2);
+    const [[x1, z1], [x2, z2], [x3, z3]] = bezier(parabola, -x, x);
     ctx.beginPath();
-    poly([
-      [-x, y, 0],
-      [x, y, 0],
-    ]);
+    quadratic([x1, y, z1], [x2, y, z2], [x3, y, z3]);
     ctx.stroke();
   }
 
