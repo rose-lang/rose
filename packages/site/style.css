@@ -51,7 +51,24 @@ body {
 
 .example {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 25px;
+}
+
+.textbox {
+  border: none;
+  background-color: #111;
+  padding: 5px;
+  border-radius: 10px;
+  color: grey;
+  font-family: monospace;
+  font-size: 20px;
+  text-align: center;
+}
+
+.textbox:focus {
+  outline: 2px solid var(--color-link-dark-hover);
 }
 
 .bottom {
