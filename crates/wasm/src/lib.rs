@@ -139,7 +139,10 @@ impl<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>> Topsort<'a, O, T> {
                     vars.follow(index, instr.var);
                 }
                 &Expr::Member { tuple, .. } => vars.follow(tuple, instr.var),
-                &Expr::Slice { .. } => vars.live(instr.var),
+                &Expr::Slice { index, .. } => {
+                    vars.live(instr.var);
+                    vars.follow(index, instr.var);
+                }
                 &Expr::Field { .. } => vars.live(instr.var),
                 &Expr::Unary { arg, .. } => vars.follow(arg, instr.var),
                 &Expr::Binary { left, right, .. } => {

@@ -934,4 +934,12 @@ describe("valid", () => {
     const h = await compile(g);
     expect(h()).toEqual([[0]]);
   });
+
+  test("compile gradient with dynamic index", async () => {
+    const T = struct({ v: Vec(1, Real), i: 1 });
+    const f = fn([T], Real, ({ v, i }) => v[i]);
+    const g = fn([T], T, (x) => vjp(f)(x).grad(1));
+    const h = await compile(g);
+    expect(h({ v: [2], i: 0 })).toEqual({ v: [1], i: 0 });
+  });
 });
