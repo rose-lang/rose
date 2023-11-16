@@ -2,13 +2,24 @@
   --color-background: #222;
   --color-text: #ddd;
   --color-text-hover: white;
-  --color-text-dark: #666;
-  --color-link-dark: hsl(222 50% 45%);
-  --color-link-dark-hover: hsl(222 50% 50%);
+  --color-text-dark: hsl(0, 0%, 40%);
+  --color-link-dark: hsl(345, 50%, 45%);
+  --color-link-dark-hover: hsl(345, 50%, 50%);
 
   background-color: var(--color-background);
   color: var(--color-text);
   font-family: sans-serif;
+}
+
+body,
+html {
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .top {
@@ -44,6 +55,9 @@
 }
 
 .bottom {
+  position: fixed;
+  bottom: 20px;
+  width: 100%;
   text-align: center;
   color: var(--color-text-dark);
   font-style: italic;

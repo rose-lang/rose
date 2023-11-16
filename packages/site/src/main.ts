@@ -1,34 +1,72 @@
-import hljs from "highlight.js/lib/core";
-import javascript from "highlight.js/lib/languages/javascript";
-import "highlight.js/styles/base16/helios.css";
+import {
+  Dual,
+  Real,
+  Vec,
+  add,
+  compile,
+  div,
+  fn,
+  jvp,
+  mul,
+  opaque,
+  vec,
+  vjp,
+} from "rose";
 
-hljs.registerLanguage("javascript", javascript);
-hljs.highlightAll();
+const log = opaque([Real], Real, Math.log);
+log.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
+  return { re: log(x), du: div(dx, x) };
+});
 
-import("rose").then(
-  async ({ Dual, Real, Vec, add, compile, div, fn, mul, opaque, vjp }) => {
-    const log = opaque([Real], Real, Math.log);
-    log.jvp = fn([Dual], Dual, ({ re: x, du: dx }) => {
-      return { re: log(x), du: div(dx, x) };
-    });
+const pow = opaque([Real, Real], Real, Math.pow);
+pow.jvp = fn([Dual, Dual], Dual, ({ re: x, du: dx }, { re: y, du: dy }) => {
+  const z = pow(x, y);
+  return { re: z, du: mul(add(mul(dx, div(y, x)), mul(dy, log(x))), z) };
+});
 
-    const pow = opaque([Real, Real], Real, Math.pow);
-    pow.jvp = fn([Dual, Dual], Dual, ({ re: x, du: dx }, { re: y, du: dy }) => {
-      const z = pow(x, y);
-      return { re: z, du: mul(add(mul(dx, div(y, x)), mul(dy, log(x))), z) };
-    });
+const Vec2 = Vec(2, Real);
+const Mat2 = Vec(2, Vec2);
 
-    const Vec2 = Vec(2, Real);
-    const Mat2 = Vec(2, Vec2);
+const f = fn([Vec2], Real, ([x, y]) => pow(x, y));
+const g = fn([Vec2], Vec2, (v) => vjp(f)(v).grad(1));
+const h = fn([Vec2], Mat2, ([x, y]) => {
+  const d = jvp(g);
+  const a = d([
+    { re: x, du: 1 },
+    { re: y, du: 0 },
+  ]);
+  const b = d([
+    { re: x, du: 0 },
+    { re: y, du: 1 },
+  ]);
+  return [vec(2, Real, (i) => a[i].du), vec(2, Real, (i) => b[i].du)];
+});
 
-    const f = fn([Vec2], Real, ([x, y]) => pow(x, y));
-    const g = fn([Vec2], Vec2, (v) => vjp(f)(v).grad(1));
-    const h = fn([Vec2], Mat2, (v) => {
-      const { grad } = vjp(g)(v);
-      return [grad([1, 0] as any), grad([0, 1] as any)];
-    });
-
-    const funcs = await Promise.all([compile(f), compile(g), compile(h)]);
-    console.log(funcs.map((func) => func([2, 3])));
-  },
+const all = await compile(
+  fn([Real, Real], { val: Real, grad: Vec2, hess: Mat2 }, (x, y) => {
+    const v = [x, y];
+    return { val: f(v), grad: g(v), hess: h(v) };
+  }),
 );
+
+console.log(all(2, 3));
+
+const canvas = document.getElementById("canvas") as HTMLCanvasElement;
+const { width, height } = canvas;
+const ctx = canvas.getContext("2d")!;
+
+const draw: FrameRequestCallback = (milliseconds) => {
+  ctx.resetTransform();
+  ctx.clearRect(0, 0, width, height);
+
+  ctx.translate(width / 2, height / 2);
+  ctx.scale(1, -1);
+  ctx.rotate(milliseconds / 1000);
+
+  ctx.fillStyle = "#c7254e";
+  ctx.fillRect(-100, -100, 200, 200);
+
+  window.requestAnimationFrame(draw);
+};
+
+window.requestAnimationFrame(draw);

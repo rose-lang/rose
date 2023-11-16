@@ -30,36 +30,10 @@
       ></a>
     </div>
     <div class="example">
-      <pre><code class="language-javascript">import * as rose from "rose";
-import { Real, Vec, fn } from "rose";
-import { pow } from "./pow.js";
-
-const Vec2 = Vec(2, Real);
-const Mat2 = Vec(2, Vec2);
-
-const f = fn([Vec2], Real, (v) => {
-  return pow(v[0], v[1]);
-});
-
-const g = fn([Vec2], Vec2, (v) => {
-  return rose.vjp(f)(v).grad(1);
-});
-
-const h = fn([Vec2], Mat2, (v) => {
-  const { grad } = rose.vjp(g)(v);
-  return [grad([1, 0]), grad([0, 1])];
-});
-
-const l = await Promise.all([
-  rose.compile(f),
-  rose.compile(g),
-  rose.compile(h),
-]);
-
-export default (x, y) => {
-  return l.map((func) => func([x, y]));
-};</code></pre>
+      <canvas width="300" height="300" id="canvas"></canvas>
     </div>
+    <div></div>
+    <div></div>
     <div class="bottom">
       <a href="https://github.com/rose-lang/rose-icons">icons</a> by
       <a href="https://github.com/aatxe">Aaron Weiss</a> /
