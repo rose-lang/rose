@@ -57,7 +57,7 @@ const rotateZ = (theta: number): Mat3x3 => [
   [0, 0, 1],
 ];
 
-const screen = [scale(150), rotateX(-1), rotateZ((-3 * Math.PI) / 4)].reduce(
+const screen = [scale(130), rotateX(-1), rotateZ((-3 * Math.PI) / 4)].reduce(
   matMul,
 );
 
@@ -91,7 +91,7 @@ const draw: FrameRequestCallback = (milliseconds) => {
 
   const pulse = Math.sin(milliseconds / 1000) / 10;
 
-  ctx.fillStyle = "white";
+  ctx.fillStyle = "grey";
   ctx.beginPath();
   poly([
     [1 + pulse + arrowLen, 0, 0],
@@ -109,6 +109,28 @@ const draw: FrameRequestCallback = (milliseconds) => {
   ]);
   ctx.closePath();
   ctx.fill();
+
+  ctx.strokeStyle = "white";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  for (let x = -0.875; x < 0.9; x += 0.25) {
+    const y = Math.sqrt((1 + pulse) ** 2 - x ** 2);
+    ctx.beginPath();
+    poly([
+      [x, -y, 0],
+      [x, y, 0],
+    ]);
+    ctx.stroke();
+  }
+  for (let y = -0.875; y < 0.9; y += 0.25) {
+    const x = Math.sqrt((1 + pulse) ** 2 - y ** 2);
+    ctx.beginPath();
+    poly([
+      [-x, y, 0],
+      [x, y, 0],
+    ]);
+    ctx.stroke();
+  }
 
   window.requestAnimationFrame(draw);
 };
