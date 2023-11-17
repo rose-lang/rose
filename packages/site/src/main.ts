@@ -1,6 +1,56 @@
-import all, { Info } from "./func.js";
+import { Real, Vec, compile, fn, jvp, vec, vjp } from "rose";
+import { Expr, parse } from "./parse.js";
 
 type Vec2 = [number, number];
+
+interface Info {
+  val: number;
+  grad: Vec2;
+  hess: [Vec2, Vec2];
+}
+
+type Func = (x: number, y: number) => Info;
+
+const autodiff = async (root: Expr): Promise<Func> => {
+  const Vec2 = Vec(2, Real);
+  const f = fn([Vec2], Real, (v) => {
+    const emit = (e: Expr): Real => {
+      switch (e.kind) {
+        case "const":
+          return e.val;
+        case "var":
+          return v[e.idx];
+        case "unary":
+          return e.f(emit(e.arg));
+        case "binary":
+          return e.f(emit(e.lhs), emit(e.rhs));
+      }
+    };
+    return emit(root);
+  });
+
+  const Mat2 = Vec(2, Vec2);
+  const g = fn([Vec2], Vec2, (v) => vjp(f)(v).grad(1));
+  const h = fn([Vec2], Mat2, ([x, y]) => {
+    const d = jvp(g);
+    const a = d([
+      { re: x, du: 1 },
+      { re: y, du: 0 },
+    ]);
+    const b = d([
+      { re: x, du: 0 },
+      { re: y, du: 1 },
+    ]);
+    return [vec(2, Real, (i) => a[i].du), vec(2, Real, (i) => b[i].du)];
+  });
+
+  return (await compile(
+    fn([Real, Real], { val: Real, grad: Vec2, hess: Mat2 }, (x, y) => {
+      const v = [x, y];
+      return { val: f(v), grad: g(v), hess: h(v) };
+    }),
+  )) as unknown as Func;
+};
 
 interface Parabola {
   /** coefficient of square term */
@@ -75,7 +125,13 @@ const bezier = (
 ): [Vec2, Vec2, Vec2] => {
   const l1 = pointSlope(parabola, x1);
   const l2 = pointSlope(parabola, x2);
-  const [x3, y3] = intersectPointSlope(l1, l2);
+  let [x3, y3] = intersectPointSlope(l1, l2);
+  if (!(Number.isFinite(x3) && Number.isFinite(y3))) {
+    const [x1, y1] = l1.point;
+    const [x2, y2] = l2.point;
+    x3 = (x1 + x2) / 2;
+    y3 = (y1 + y2) / 2;
+  }
   return [l1.point, [x3, y3], l2.point];
 };
 
@@ -168,15 +224,31 @@ const toWorld = ([x, y]: Vec2): Vec3 => {
   return matVecMul(world, [x, y, z]);
 };
 
-let point: Vec2;
+let func: Func;
+let point: Vec2 = [0.5, 0.5];
 let info: Info;
 
 const setPoint = (newPoint: Vec2) => {
   point = newPoint;
-  info = all(...point);
+  info = func(...point);
 };
 
-setPoint([0.5, 0.5]);
+const textbox = document.getElementById("textbox") as HTMLInputElement;
+const setFunc = async () => {
+  let root: Expr = { kind: "const", val: NaN };
+  try {
+    root = parse(textbox.value);
+    textbox.classList.remove("error");
+  } catch (e) {
+    textbox.classList.add("error");
+  }
+  func = await autodiff(root);
+  setPoint(point);
+};
+await setFunc();
+textbox.addEventListener("input", async () => {
+  await setFunc();
+});
 
 const roseColor = "#C33358";
 

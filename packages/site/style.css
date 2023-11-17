@@ -71,6 +71,10 @@ body {
   outline: 2px solid var(--color-link-dark-hover);
 }
 
+.error {
+  background-color: hsl(345, 50%, 20%);
+}
+
 .bottom {
   position: fixed;
   bottom: 20px;

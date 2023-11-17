@@ -51,7 +51,7 @@ prettier: npm
 packages: core site wasm
 
 # run JavaScript tests
-test-js: test-core
+test-js: test-core test-site
 
 ## `packages/core`
 
@@ -68,8 +68,13 @@ test-core: npm wasm
 
 site-deps: npm core
 
+# build
 site: site-deps
 	npm run --workspace=@rose-lang/site build
+
+# test
+test-site: site-deps
+	npm run --workspace=@rose-lang/site test -- run --no-threads
 
 ## `packages/wasm`
 
