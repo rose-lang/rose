@@ -1,4 +1,3 @@
-import { Real, Vec, compile, fn, jvp, vec, vjp } from "rose";
 import { Expr, parse } from "./parse.js";
 
 type Vec2 = [number, number];
@@ -11,10 +10,9 @@ interface Info {
 
 type Func = (x: number, y: number) => Info;
 
-const autodiff = async (root: Expr): Promise<Func> => {
-  const Vec2 = Vec(2, Real);
-  const f = fn([Vec2], Real, (v) => {
-    const emit = (e: Expr): Real => {
+const autodiff = (root: Expr): Func => {
+  const f = (v: number[]) => {
+    const emit = (e: Expr): number => {
       switch (e.kind) {
         case "const":
           return e.val;
@@ -27,29 +25,18 @@ const autodiff = async (root: Expr): Promise<Func> => {
       }
     };
     return emit(root);
-  });
-
-  const Mat2 = Vec(2, Vec2);
-  const g = fn([Vec2], Vec2, (v) => vjp(f)(v).grad(1));
-  const h = fn([Vec2], Mat2, ([x, y]) => {
-    const d = jvp(g);
-    const a = d([
-      { re: x, du: 1 },
-      { re: y, du: 0 },
-    ]);
-    const b = d([
-      { re: x, du: 0 },
-      { re: y, du: 1 },
-    ]);
-    return [vec(2, Real, (i) => a[i].du), vec(2, Real, (i) => b[i].du)];
-  });
-
-  return (await compile(
-    fn([Real, Real], { val: Real, grad: Vec2, hess: Mat2 }, (x, y) => {
-      const v = [x, y];
-      return { val: f(v), grad: g(v), hess: h(v) };
-    }),
-  )) as unknown as Func;
+  };
+  return (x, y) => {
+    const v = [x, y];
+    return {
+      val: f(v),
+      grad: [0, 0],
+      hess: [
+        [0, 0],
+        [0, 0],
+      ],
+    };
+  };
 };
 
 interface Parabola {
@@ -234,7 +221,7 @@ const setPoint = (newPoint: Vec2) => {
 };
 
 const textbox = document.getElementById("textbox") as HTMLInputElement;
-const setFunc = async () => {
+const setFunc = () => {
   let root: Expr = { kind: "const", val: NaN };
   try {
     root = parse(textbox.value);
@@ -242,12 +229,12 @@ const setFunc = async () => {
   } catch (e) {
     textbox.classList.add("error");
   }
-  func = await autodiff(root);
+  func = autodiff(root);
   setPoint(point);
 };
-await setFunc();
+setFunc();
 textbox.addEventListener("input", async () => {
-  await setFunc();
+  setFunc();
 });
 
 const roseColor = "#C33358";

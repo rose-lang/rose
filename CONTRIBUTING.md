@@ -7,7 +7,6 @@ Make sure to have these tools installed:
 - [Git][]
 - [Make][]
 - [Node][]
-- [Rust][]
 
 ## Setup
 
@@ -61,9 +60,8 @@ Sometimes old build artifacts can hide errors. To clean your build:
 make clean
 ```
 
-This doesn't clean everything; it keeps around downloaded files and Rust's
-`target` directory. You should be able to run `make all` right after it without
-an Internet connection.
+This doesn't clean everything; it keeps around downloaded files. You should be
+able to run `make all` right after it without an Internet connection.
 
 ## Site
 
@@ -82,4 +80,3 @@ make site-deps && npm run --workspace=@rose-lang/site dev -- --host
 [git]: https://git-scm.com/downloads
 [make]: https://en.wikipedia.org/wiki/Make_(software)
 [node]: https://nodejs.org/en/download
-[rust]: https://www.rust-lang.org/tools/install

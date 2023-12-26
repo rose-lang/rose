@@ -1,9 +1,5 @@
 .DS_Store
 *.tgz
-/.cargo/
 /packages/core/README.md
-/packages/wasm/wbg/
-/target/
-bindings/
 dist/
 node_modules/

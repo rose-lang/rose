@@ -1,10 +1,7 @@
 {
   "compilerOptions": {
     "forceConsistentCasingInFileNames": true,
-    "lib": [
-      "DOM", // https://github.com/microsoft/TypeScript-DOM-lib-generator/issues/826
-      "ES2021" // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/FinalizationRegistry
-    ],
+    "lib": ["DOM"], // https://github.com/microsoft/TypeScript-DOM-lib-generator/issues/826
     "module": "Node16",
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
