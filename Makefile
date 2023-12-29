@@ -9,7 +9,7 @@ check: prettier
 
 # delete build artifacts, but not dependencies or downloaded files
 clean:
-	git clean -Xdf packages -e '!node_modules'
+	git clean -Xdf packages -e '!node_modules' -e '!*.png'
 
 # do everything
 all: build test check
@@ -23,25 +23,25 @@ prettier: npm
 	npx prettier --check .
 
 # build `packages/`
-packages: core site vscode
+packages: rose site vscode
 
 # run JavaScript tests
-test-js: test-core test-site
+test-js: test-rose test-site
 
-## `packages/core`
+## `packages/rose`
 
 # build
-core: npm
-	cp README.md packages/core
+rose: npm
+	cp README.md packages/rose
 	npm run --workspace=rose build
 
 # test
-test-core: npm
+test-rose: npm
 	npm run --workspace=rose test -- run --no-threads
 
 ## `packages/site`
 
-site-deps: npm core
+site-deps: npm rose
 
 # build
 site: site-deps
