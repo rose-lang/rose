@@ -77,6 +77,18 @@ Or, if you want to host on your local network, e.g. to test on your phone:
 make site-deps && npm run --workspace=@rose-lang/site dev -- --host
 ```
 
+## VS Code
+
+The VS Code extension is built as part of `make` or `make all`, but you can also
+just build it by itself:
+
+```sh
+make vscode
+```
+
+Then `packages/vscode` will contain a `*.vsix` file that you can install in VS
+Code by right-clicking it and clicking the **Install Extension VSIX** button.
+
 [git]: https://git-scm.com/downloads
 [make]: https://en.wikipedia.org/wiki/Make_(software)
 [node]: https://nodejs.org/en/download
