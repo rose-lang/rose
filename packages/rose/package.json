@@ -4,6 +4,9 @@
   "license": "MIT",
   "repository": "rose-lang/rose",
   "type": "module",
+  "bin": {
+    "rose": "./bin/rose.js"
+  },
   "exports": "./dist/index.js",
   "files": [
     "dist",
