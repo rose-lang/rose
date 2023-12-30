@@ -16,6 +16,9 @@
       "include": "#literals"
     },
     {
+      "include": "#punctuation"
+    },
+    {
       "include": "#operators"
     }
   ],
@@ -32,35 +35,35 @@
       "patterns": [
         {
           "name": "keyword.control.rose",
-          "match": "(?<![0-9A-Za-z])(else|for|if|then)(?![0-9A-Za-z])"
+          "match": "\\b(else|from|if|pub|then|use)\\b"
         },
         {
           "name": "keyword.other.rose",
-          "match": "(?<![0-9A-Za-z])(and|in|mod|not|or)(?![0-9A-Za-z])"
+          "match": "\\b(and|in|or)\\b"
         },
         {
           "name": "storage.type.rose",
-          "match": "(?<![0-9A-Za-z])(def|let|type)(?![0-9A-Za-z])"
+          "match": "\\b(class|def|infix|infixl|infixr|instance|let|type|val)\\b"
         }
       ]
     },
     "identifiers": {
       "patterns": [
         {
+          "name": "support.type.primitive.rose",
+          "match": "\\b(bool|f32|f64|i32|i64|u32|u64)\\b"
+        },
+        {
           "name": "entity.name.type.rose",
-          "match": "(?<![0-9A-Za-z])([A-Z][0-9A-Za-z]*)(?![0-9A-Za-z])"
+          "match": "\\b([A-Z]\\w*)\\b"
         },
         {
           "name": "constant.language.rose",
-          "match": "(?<![0-9A-Za-z])(infinity)(?![0-9A-Za-z])"
-        },
-        {
-          "name": "entity.name.function.rose",
-          "match": "(?<![0-9A-Za-z])([a-z][0-9A-Za-z]*)(?=\\s*\\()"
+          "match": "\\b(false|true)\\b"
         },
         {
           "name": "variable.other.rose",
-          "match": "(?<![0-9A-Za-z])([a-z][0-9A-Za-z]*)(?![0-9A-Za-z])"
+          "match": "\\b([a-z]\\w*)\\b"
         }
       ]
     },
@@ -68,7 +71,19 @@
       "patterns": [
         {
           "name": "constant.numeric.rose",
-          "match": "(?<![0-9A-Za-z])[0-9]+(?![0-9A-Za-z])"
+          "match": "\\b[0-9]+\\b"
+        },
+        {
+          "name": "string.quoted.double.rose",
+          "match": "\"([^\"\\\\]|\\\\.)*\""
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.rose",
+          "match": "[\\(\\)\\[\\]\\{\\},\\.]"
         }
       ]
     },
@@ -76,11 +91,7 @@
       "patterns": [
         {
           "name": "keyword.operator.rose",
-          "match": "!=|\\*|\\+|-|/|<=|==|>="
-        },
-        {
-          "name": "keyword.operator.rose",
-          "match": "(<|=|>)(?!=)"
+          "match": "[^\\s#\\w\\d\"\\(\\)\\[\\]\\{\\},\\.]+"
         }
       ]
     }

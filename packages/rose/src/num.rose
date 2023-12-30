@@ -1,0 +1,59 @@
+pub class Neg A {
+  type T
+  val neg : A -> T
+}
+
+pub class Add A B {
+  type T
+  val add : A -> B -> T
+}
+
+pub class Sub A B {
+  type T
+  val sub : A -> B -> T
+}
+
+pub class Mul A B {
+  type T
+  val mul : A -> B -> T
+}
+
+pub class Div A B {
+  type T
+  val div : A -> B -> T
+}
+
+pub def A (Neg A) => - (x : A) : (Neg A).T = Neg.neg x
+
+pub infixl [0] A B (Add A B) => (x : A) + (y : B) : (Add A B).T = Add.add x y
+
+pub infixl [0] A B (Sub A B) => (x : A) - (y : B) : (Sub A B).T = Sub.sub x y
+
+pub infixl [1] A B (Mul A B) => (x : A) * (y : B) : (Mul A B).T = Mul.mul x y
+
+pub infixl [1] A B (Div A B) => (x : A) / (y : B) : (Div A B).T = Div.div x y
+
+instance Neg f64 {
+  type T = f64
+  def neg = f64.neg
+}
+
+instance Add f64 f64 {
+  type T = f64
+  def add = f64.add
+}
+
+instance Sub f64 f64 {
+  type T = f64
+  def sub = f64.sub
+}
+
+instance Mul f64 f64 {
+  type T = f64
+  def mul = f64.mul
+}
+
+instance Div f64 f64 {
+  type T = f64
+  def div = f64.div
+}
