@@ -10,14 +10,17 @@
   "exports": {
     ".": "./dist/index.js",
     "./num": "./dist/num.js",
-    "./prelude": "./dist/math.js"
+    "./prelude": "./dist/prelude.js"
   },
   "files": [
     "dist",
     "src"
   ],
+  "dependencies": {
+    "yargs": "^17"
+  },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && rose build",
     "test": "vitest"
   }
 }
