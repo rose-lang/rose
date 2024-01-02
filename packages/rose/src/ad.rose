@@ -46,6 +46,10 @@ instance A B (AD A) (AD B) => AD (A | B) {
   type D = (AD A).D | (AD B).D
 }
 
+instance A B (AD A) (AD B) => AD (A -> B) {
+  type D = (AD A).D -> (AD B).D
+}
+
 pub val A B (AD A) (AD B) => linearize : (A -> B) -> (AD A).D -> (AD B).D
 
 pub val A B (AD A) (AD B) =>

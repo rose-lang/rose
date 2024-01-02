@@ -1,18 +1,28 @@
+use { linearize, transpose } from "./ad"
 use { + } from "./num"
 
 val T => init : u32 -> []T
 
 pub val T => len : []T -> u32
 
-def T => suffix (f : u32 -> T) (n : u32) (xs : []T) (i : u32) : () =
-  if i < n then
-    let _ = xs i = f i
-    in return suffix f n xs (i + 1)
+def do_for_range (f : u32 -> ()) (a : u32) (b : u32) : () =
+  if a < b then
+    let _ = f a
+    in return do_for_range f (a + 1) b
   else ()
+
+def do_for ((n, f) : (u32, u32 -> ())) : () = do_for_range f 0 n
+
+def linearize do_for = do_for
 
 pub def T => new (n : u32) (f : u32 -> T) : []T =
   let xs = init n
-  let _ = suffix f n xs 0
+  let _ = do_for (n, \i => xs i = f i)
   in xs
+
+def transpose do_for ((n, f) : (u32, u32 -> ())) : ((), () -> ()) =
+  let g : u32 -> ((), () -> ()) = transpose f
+  let hs : [](() -> ()) = new n (\i => let (_, h) = g i in h)
+  in ((), \() => do_for (n, \i => (hs i) ()))
 
 pub def A B => map (f : A -> B) (xs : []A) : []B = new (len xs) (\i => f (xs i))
