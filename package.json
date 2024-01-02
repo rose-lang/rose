@@ -5,6 +5,7 @@
     "packages/*"
   ],
   "devDependencies": {
+    "@types/moo": "^0.5",
     "@types/node": "^20",
     "@types/yargs": "^17",
     "@vscode/vsce": "^2",

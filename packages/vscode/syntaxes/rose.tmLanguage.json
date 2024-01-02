@@ -50,12 +50,13 @@
     "literals": {
       "patterns": [
         {
-          "name": "constant.numeric.rose",
-          "match": "\\b[0-9]+(\\.[0-9]+)?\\b"
+          "name": "string.quoted.double.rose",
+          "begin": "\"",
+          "end": "\""
         },
         {
-          "name": "string.quoted.double.rose",
-          "match": "\"([^\"\\\\]|\\\\.)*\""
+          "name": "constant.numeric.rose",
+          "match": "\\b\\d+(\\.\\d+)?\\b"
         },
         {
           "name": "constant.language.rose",
@@ -91,7 +92,7 @@
       "patterns": [
         {
           "name": "keyword.operator.rose",
-          "match": "[^\\s#\\w\\d\"\\(\\)\\[\\]\\{\\},\\.]+"
+          "match": "[^\\s#\\w\"\\(\\)\\[\\]\\{\\},\\.]+"
         }
       ]
     }

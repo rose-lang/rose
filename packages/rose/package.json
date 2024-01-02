@@ -19,6 +19,7 @@
     "src"
   ],
   "dependencies": {
+    "moo": "^0.5",
     "yargs": "^17"
   },
   "scripts": {
