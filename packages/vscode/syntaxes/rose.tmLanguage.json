@@ -10,10 +10,10 @@
       "include": "#keywords"
     },
     {
-      "include": "#identifiers"
+      "include": "#literals"
     },
     {
-      "include": "#literals"
+      "include": "#identifiers"
     },
     {
       "include": "#punctuation"
@@ -39,11 +39,27 @@
         },
         {
           "name": "keyword.other.rose",
-          "match": "\\b(and|in|or)\\b"
+          "match": "\\b(and|do|in|or)\\b"
         },
         {
           "name": "storage.type.rose",
           "match": "\\b(class|def|infix|infixl|infixr|instance|let|type|val)\\b"
+        }
+      ]
+    },
+    "literals": {
+      "patterns": [
+        {
+          "name": "constant.numeric.rose",
+          "match": "\\b[0-9]+(\\.[0-9]+)?\\b"
+        },
+        {
+          "name": "string.quoted.double.rose",
+          "match": "\"([^\"\\\\]|\\\\.)*\""
+        },
+        {
+          "name": "constant.language.rose",
+          "match": "\\b(false|true)\\b"
         }
       ]
     },
@@ -58,24 +74,8 @@
           "match": "\\b([A-Z]\\w*)\\b"
         },
         {
-          "name": "constant.language.rose",
-          "match": "\\b(false|true)\\b"
-        },
-        {
           "name": "variable.other.rose",
           "match": "\\b(\\w+)\\b"
-        }
-      ]
-    },
-    "literals": {
-      "patterns": [
-        {
-          "name": "constant.numeric.rose",
-          "match": "\\b[0-9]+\\b"
-        },
-        {
-          "name": "string.quoted.double.rose",
-          "match": "\"([^\"\\\\]|\\\\.)*\""
         }
       ]
     },
