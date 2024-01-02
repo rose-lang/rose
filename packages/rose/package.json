@@ -9,6 +9,7 @@
   },
   "exports": {
     ".": "./dist/index.js",
+    "./ad": "./dist/ad.js",
     "./num": "./dist/num.js",
     "./prelude": "./dist/prelude.js"
   },
