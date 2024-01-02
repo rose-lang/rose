@@ -35,11 +35,11 @@
       "patterns": [
         {
           "name": "keyword.control.rose",
-          "match": "\\b(else|from|if|pub|then|use)\\b"
+          "match": "\\b(else|from|if|pub|return|then|use)\\b"
         },
         {
           "name": "keyword.other.rose",
-          "match": "\\b(and|do|in|or)\\b"
+          "match": "\\b(and|in|or)\\b"
         },
         {
           "name": "storage.type.rose",

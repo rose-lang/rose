@@ -1,1 +1,2 @@
+pub use { len, map, new } from "./array"
 pub use { +, -, *, / } from "./num"

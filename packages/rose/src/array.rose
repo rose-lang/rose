@@ -1,0 +1,18 @@
+use { + } from "./num"
+
+val T => init : u32 => []T
+
+pub val T => len : []T => u32
+
+def T => suffix (f : u32 -> T) (n : u32) (xs : []T) (i : u32) : () =
+  if i < n then
+    let _ = xs i = f i
+    in return suffix f n xs (i + 1)
+  else ()
+
+pub def T => new (n : u32) (f : u32 -> T) : []T =
+  let xs = init n
+  let _ = suffix f n xs 0
+  in xs
+
+pub def A B => map (f : A -> B) (xs : []A) : []B = new (len xs) (\i => f (xs i))

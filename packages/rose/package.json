@@ -10,6 +10,7 @@
   "exports": {
     ".": "./dist/index.js",
     "./ad": "./dist/ad.js",
+    "./array": "./dist/array.js",
     "./num": "./dist/num.js",
     "./prelude": "./dist/prelude.js"
   },
