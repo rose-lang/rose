@@ -5,6 +5,8 @@ val T => init : u32 -> []T
 
 pub val T => len : []T -> u32
 
+pub val T => set : []T -> u32 -> T -> ()
+
 def do_for_range (f : u32 -> ()) (a : u32) (b : u32) : () =
   if a < b then
     let _ = f a
@@ -17,7 +19,7 @@ def linearize do_for = do_for
 
 pub def T => new (n : u32) (f : u32 -> T) : []T =
   let xs = init n
-  let _ = do_for (n, \i => xs i = f i)
+  let _ = do_for (n, \i => set xs i (f i))
   in xs
 
 def transpose do_for ((n, f) : (u32, u32 -> ())) : ((), () -> ()) =
