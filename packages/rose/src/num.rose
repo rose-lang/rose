@@ -37,7 +37,7 @@ pub infixl [1] A B (Div A B) => (x : A) / (y : B) : (Div A B).T = Div.div x y
 
 instance Neg i32 {
   type T = i32
-  def neg = i32.neg
+  def neg (x : i32) : i32 = i32.sub 0 x
 }
 
 instance Add i32 i32 {
@@ -61,11 +61,6 @@ instance Div i32 i32 {
 }
 
 # u32
-
-instance Neg u32 {
-  type T = u32
-  def neg = u32.neg
-}
 
 instance Add u32 u32 {
   type T = u32
@@ -91,7 +86,7 @@ instance Div u32 u32 {
 
 instance Neg i64 {
   type T = i64
-  def neg = i64.neg
+  def neg (x : i64) : i64 = i64.sub 0 x
 }
 
 instance Add i64 i64 {
@@ -115,11 +110,6 @@ instance Div i64 i64 {
 }
 
 # u64
-
-instance Neg u64 {
-  type T = u64
-  def neg = u64.neg
-}
 
 instance Add u64 u64 {
   type T = u64
