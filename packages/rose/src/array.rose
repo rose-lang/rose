@@ -23,6 +23,6 @@ pub def T => new (n : u32) (f : u32 -> T) : []T =
 def transpose do_for ((n, f) : (u32, u32 -> ())) : ((), () -> ()) =
   let g : u32 -> ((), () -> ()) = transpose f
   let hs : [](() -> ()) = new n (\i => let (_, h) = g i in h)
-  in ((), \() => do_for (n, \i => (hs i) ()))
+  in ((), \() => do_for (n, \i => hs i ()))
 
 pub def A B => map (f : A -> B) (xs : []A) : []B = new (len xs) (\i => f (xs i))
