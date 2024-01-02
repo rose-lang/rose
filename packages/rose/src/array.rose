@@ -1,8 +1,8 @@
 use { + } from "./num"
 
-val T => init : u32 => []T
+val T => init : u32 -> []T
 
-pub val T => len : []T => u32
+pub val T => len : []T -> u32
 
 def T => suffix (f : u32 -> T) (n : u32) (xs : []T) (i : u32) : () =
   if i < n then
