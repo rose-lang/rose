@@ -63,7 +63,7 @@
         },
         {
           "name": "variable.other.rose",
-          "match": "\\b([a-z]\\w*)\\b"
+          "match": "\\b(\\w+)\\b"
         }
       ]
     },
