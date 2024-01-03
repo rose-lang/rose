@@ -1,6 +1,6 @@
 import moo from "moo";
 
-export const lexer = () =>
+export const lexer = (): moo.Lexer =>
   moo.compile({
     op: /[^\s#\w"\(\)\[\]\{\},\.]+/,
     space: { match: /\s+/, lineBreaks: true },
