@@ -1,2 +1,2 @@
-pub use { len, map, new } from "./array"
-pub use { +, -, *, / } from "./num"
+pub use { len, map, new } from "./array.js"
+pub use { +, -, *, / } from "./num.js"

@@ -1,5 +1,5 @@
-use { linearize, transpose } from "./ad"
-use { + } from "./num"
+use { linearize, transpose } from "./ad.js"
+use { + } from "./num.js"
 
 val T => init : u32 -> []T
 
