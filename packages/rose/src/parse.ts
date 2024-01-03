@@ -7,6 +7,7 @@ export type ErrorData =
   // token trees
   | { kind: "Unmatched"; left: TokenId }
   | { kind: "Mismatched"; left: TokenId; right: TokenId }
+  | { kind: "Extra"; right: TokenId }
 
   // `use`
   | { kind: "UseListMissing"; use: TokenId }
@@ -97,7 +98,9 @@ export const forest = (tokens: Token[]): Tree[] => {
     return trees;
   };
 
-  return recurse();
+  const trees = recurse();
+  if (i < tokens.length) throw new ParseError({ kind: "Extra", right: i });
+  return trees;
 };
 
 export const filter = (tokens: Token[], trees: Tree[]): Tree[] => {
