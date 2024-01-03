@@ -5,7 +5,7 @@ export const lexer = (): moo.Lexer =>
     op: /[^\s#\w"\(\)\[\]\{\},\.]+/,
     space: { match: /\s+/, lineBreaks: true },
     comment: /#.*?$/,
-    str: { match: /".*?"/, lineBreaks: true },
+    str: { match: /"[^"]*?"/, lineBreaks: true },
     num: /\d+(?:\.\d+)?\b/,
     id: /(?!\d)\w+/,
     lparen: "(",

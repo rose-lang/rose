@@ -29,6 +29,12 @@ test("string", () => {
   ]);
 });
 
+test("multiline string", () => {
+  expect(tokens('"one string\nmultiple lines"')).toEqual([
+    { type: "str", text: '"one string\nmultiple lines"' },
+  ]);
+});
+
 test("integer", () => {
   expect(tokens("42")).toEqual([{ type: "num", text: "42" }]);
 });
