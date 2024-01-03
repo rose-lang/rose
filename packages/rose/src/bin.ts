@@ -13,6 +13,8 @@ import {
   toplevel,
 } from "./parse.js";
 
+const backtick = (s: string) => `\`${s.replace(/[`\$\\]/g, (x) => `\\${x}`)}\``;
+
 const infixes: ToplevelKind[] = ["infix", "infixl", "infixr"];
 
 const parse = (
@@ -69,7 +71,7 @@ const transform = (lex: moo.Lexer, source: string): string => {
         )}, prec: [${prec.map((x) => `${x}`).join(", ")}] },`,
     ),
     "};",
-    `export const source = ${JSON.stringify(source)};`,
+    `export const source = ${backtick(source)};`,
     "",
   ].join("\n");
 };
