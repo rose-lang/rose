@@ -19,7 +19,17 @@ export type ErrorData =
 
   // `use` items
   | { kind: "UseItemWrong"; before: TokenId; wrong: TokenId }
-  | { kind: "UseCommaMissing"; before: TokenId; after: TokenId };
+  | { kind: "UseCommaMissing"; before: TokenId; after: TokenId }
+
+  // infix
+  | { kind: "InfixListMissing"; infix: TokenId }
+  | { kind: "InfixListBrackets"; infix: TokenId; wrong: TokenId }
+  | { kind: "InfixOpMissing"; infix: TokenId }
+  | { kind: "InfixOpWrong"; infix: TokenId; wrong: TokenId }
+
+  // infix precedence
+  | { kind: "InfixPrecWrong"; before: TokenId; wrong: TokenId }
+  | { kind: "InfixCommaMissing"; before: TokenId; after: TokenId };
 
 export class ParseError extends Error {
   data: ErrorData;
@@ -168,10 +178,10 @@ export const toplevel = (
 };
 
 const leaf = (
-  tokens: Token[],
-  tree: Tree,
   pred: (token: Token) => boolean,
   wrong: (id: TokenId) => ErrorData,
+  tokens: Token[],
+  tree: Tree,
 ): TokenId => {
   if (tree.kind !== NodeKind.Leaf) throw new ParseError(wrong(tree.left));
   const { id } = tree;
@@ -179,41 +189,44 @@ const leaf = (
   return id;
 };
 
+const parseLeafList =
+  (
+    pred: (token: Token) => boolean,
+    item: (before: TokenId) => (id: TokenId) => ErrorData,
+    comma: (before: TokenId) => (id: TokenId) => ErrorData,
+  ) =>
+  (tokens: Token[], trees: Tree[], left: TokenId): TokenId[] => {
+    const names: TokenId[] = [];
+    let before = left;
+    let i = 0;
+    while (i < trees.length) {
+      before = leaf(pred, item(before), tokens, trees[i]);
+      names.push(before);
+
+      const j = i + 1;
+      if (j >= trees.length) break;
+      before = leaf(
+        ({ text }) => text === ",",
+        comma(before),
+        tokens,
+        trees[j],
+      );
+      i = j + 1;
+    }
+    return names;
+  };
+
 export interface Use {
   pub: TokenId | undefined;
   names: TokenId[];
   module: TokenId;
 }
 
-const parseUseList = (
-  tokens: Token[],
-  trees: Tree[],
-  left: TokenId,
-): TokenId[] => {
-  const names: TokenId[] = [];
-  let before = left;
-  let i = 0;
-  while (i < trees.length) {
-    before = leaf(
-      tokens,
-      trees[i],
-      ({ type }) => type === "op" || type === "id",
-      (wrong) => ({ kind: "UseItemWrong", before, wrong }),
-    );
-    names.push(before);
-
-    const j = i + 1;
-    if (j >= trees.length) break;
-    before = leaf(
-      tokens,
-      trees[j],
-      ({ text }) => text === ",",
-      (after) => ({ kind: "UseCommaMissing", before, after }),
-    );
-    i = j + 1;
-  }
-  return names;
-};
+const parseUseList = parseLeafList(
+  ({ type }) => type === "op" || type === "id",
+  (before) => (wrong) => ({ kind: "UseItemWrong", before, wrong }),
+  (before) => (after) => ({ kind: "UseCommaMissing", before, after }),
+);
 
 export const parseUse = (tokens: Token[], trees: Tree[], id: TreeId): Use => {
   const first = trees[id];
@@ -240,21 +253,86 @@ export const parseUse = (tokens: Token[], trees: Tree[], id: TreeId): Use => {
   if (third === undefined)
     throw new ParseError({ kind: "UseFromMissing", use, brace: list.right });
   const from = leaf(
-    tokens,
-    third,
     ({ text }) => text === "from",
     (wrong) => ({ kind: "UseFromWrong", use, wrong }),
+    tokens,
+    third,
   );
 
   const str = trees[id + 3];
   if (str === undefined)
     throw new ParseError({ kind: "UseModuleMissing", use, from });
   const module = leaf(
-    tokens,
-    str,
     ({ type }) => type === "str",
     (wrong) => ({ kind: "UseModuleWrong", use, wrong }),
+    tokens,
+    str,
   );
 
   return { pub, names, module };
+};
+
+export interface Infix {
+  pub: TokenId | undefined;
+  assoc: TokenId;
+  prec: TokenId[];
+  op: TokenId;
+}
+
+const parseInfixList = parseLeafList(
+  ({ type }) => type === "num",
+  (before) => (wrong) => ({ kind: "InfixPrecWrong", before, wrong }),
+  (before) => (after) => ({ kind: "InfixCommaMissing", before, after }),
+);
+
+export const parseInfix = (
+  tokens: Token[],
+  trees: Tree[],
+  id: TreeId,
+): Infix => {
+  const first = trees[id];
+  if (first.kind !== NodeKind.Leaf) throw Error("impossible");
+  const infix = first.id;
+
+  let pub = undefined;
+  const before = trees[id - 1];
+  if (before?.kind === NodeKind.Leaf && tokens[before.id].text === "pub")
+    pub = before.id;
+
+  const list = trees[id + 1];
+  if (list === undefined)
+    throw new ParseError({ kind: "InfixListMissing", infix });
+  switch (list.kind) {
+    case NodeKind.Leaf:
+      throw new ParseError({
+        kind: "InfixListBrackets",
+        infix,
+        wrong: list.id,
+      });
+    case NodeKind.Paren:
+    case NodeKind.Brace:
+      throw new ParseError({
+        kind: "InfixListBrackets",
+        infix,
+        wrong: list.left,
+      });
+  }
+  const prec = parseInfixList(tokens, list.children, list.left);
+
+  let i = id + 2;
+  while (i < trees.length) {
+    const tree = trees[i];
+    if (tree.kind === NodeKind.Leaf && tokens[tree.id].text === ":") break;
+    ++i;
+  }
+  if (i >= trees.length)
+    throw new ParseError({ kind: "InfixOpMissing", infix });
+  const op = leaf(
+    ({ type }) => type === "op",
+    (wrong) => ({ kind: "InfixOpWrong", infix, wrong }),
+    tokens,
+    trees[i - 2],
+  );
+
+  return { pub, assoc: infix, prec, op };
 };
