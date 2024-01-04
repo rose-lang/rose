@@ -3,6 +3,152 @@ import { Token } from "moo";
 /** Index of a token in the original token array. */
 export type TokenId = number;
 
+export interface Module {
+  use: Use[];
+  class: Classdef[];
+  instance: Instance[];
+  type: Typedef[];
+  infix: Infix[];
+  def: Def[];
+  val: Val[];
+}
+
+export interface Use {
+  pub: TokenId | undefined;
+  names: TokenId[];
+  module: TokenId;
+}
+
+export interface Classdef {
+  pub: TokenId | undefined;
+  name: TokenId;
+  param: TokenId[];
+  type: TokenId[];
+  val: Val[];
+}
+
+export interface Instance {
+  generic: Generic;
+  class: TokenId;
+  arg: Type[];
+  type: Typedef[];
+  def: Def[];
+}
+
+export interface Typedef {
+  pub: TokenId | undefined;
+  name: TokenId;
+  def: Type;
+}
+
+export interface Infix {
+  pub: TokenId | undefined;
+  assoc: TokenId;
+  prec: TokenId[];
+  generic: Generic;
+  left: Param;
+  op: TokenId;
+  right: Param;
+  type: Type;
+  body: Expr;
+}
+
+export interface Def {
+  pub: TokenId | undefined;
+  generic: Generic;
+  prefix: TokenId | undefined;
+  name: TokenId;
+  param: Param[];
+  type: Type | undefined;
+  body: Expr;
+}
+
+export interface Val {
+  pub: TokenId | undefined;
+  generic: Generic;
+  name: TokenId;
+  type: Type | undefined;
+}
+
+export interface Generic {
+  type: TokenId[];
+  class: Class[];
+}
+
+export interface Class {
+  name: TokenId;
+  arg: Type[];
+}
+
+export enum TypeKind {
+  Name,
+  Class,
+  Array,
+  Tuple,
+  Sum,
+  Function,
+}
+
+export type Type =
+  | { kind: TypeKind.Name; name: TokenId }
+  | { kind: TypeKind.Class; class: Class; name: TokenId }
+  | { kind: TypeKind.Array; elem: Type }
+  | { kind: TypeKind.Tuple; member: Type[] }
+  | { kind: TypeKind.Sum; left: Type; right: Type }
+  | { kind: TypeKind.Function; dom: Type; cod: Type };
+
+export interface Param {
+  bind: Bind;
+  type: Type | undefined;
+}
+
+export enum BindKind {
+  Name,
+  Tuple,
+}
+
+export type Bind =
+  | { kind: BindKind.Name; name: TokenId }
+  | { kind: BindKind.Tuple; member: Bind[] };
+
+export enum ExprKind {
+  Name,
+  Num,
+  Array,
+  Tuple,
+  Inl,
+  Inr,
+  Lambda,
+  Access,
+  App,
+  Op,
+  Let,
+  If,
+  Match,
+  Return,
+}
+
+export type Expr =
+  | { kind: ExprKind.Name; name: TokenId }
+  | { kind: ExprKind.Num; num: TokenId }
+  | { kind: ExprKind.Array; elem: Expr[] }
+  | { kind: ExprKind.Tuple; member: Expr[] }
+  | { kind: ExprKind.Inl; val: Expr }
+  | { kind: ExprKind.Inr; val: Expr }
+  | { kind: ExprKind.Lambda; param: Param; body: Expr }
+  | { kind: ExprKind.Access; struct: Expr; member: TokenId }
+  | { kind: ExprKind.App; func: Expr; arg: Expr }
+  | { kind: ExprKind.Op; left: Expr; op: TokenId; right: Expr }
+  | { kind: ExprKind.Let; lhs: Param; rhs: Expr; body: Expr }
+  | { kind: ExprKind.If; if: Expr; then: Expr; else: Expr }
+  | { kind: ExprKind.Match; val: Expr; inl: Case; inr: Case }
+  | { kind: ExprKind.Return; val: Expr };
+
+export interface Case {
+  bind: Bind;
+  body: Expr;
+}
+
 export type ErrorData =
   // token trees
   | { kind: "Unmatched"; left: TokenId }
@@ -216,12 +362,6 @@ const parseLeafList =
     return names;
   };
 
-export interface Use {
-  pub: TokenId | undefined;
-  names: TokenId[];
-  module: TokenId;
-}
-
 const parseUseList = parseLeafList(
   ({ type }) => type === "op" || type === "id",
   (before) => (wrong) => ({ kind: "UseItemWrong", before, wrong }),
@@ -272,7 +412,7 @@ export const parseUse = (tokens: Token[], trees: Tree[], id: TreeId): Use => {
   return { pub, names, module };
 };
 
-export interface Infix {
+export interface InfixHead {
   pub: TokenId | undefined;
   assoc: TokenId;
   prec: TokenId[];
@@ -289,7 +429,7 @@ export const parseInfix = (
   tokens: Token[],
   trees: Tree[],
   id: TreeId,
-): Infix => {
+): InfixHead => {
   const first = trees[id];
   if (first.kind !== NodeKind.Leaf) throw Error("impossible");
   const infix = first.id;
