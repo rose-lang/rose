@@ -532,7 +532,7 @@ export const fn = <const P extends readonly any[], const R>(
 };
 
 /** Construct an opaque function whose implementation runs `f`. */
-export const opaque = <const P extends readonly Reals[], const R extends Reals>(
+export const opaque = <const P extends readonly any[], const R>(
   params: P,
   ret: R,
   f: (...args: JsArgs<SymbolicParams<P>>) => ToJs<Value<R>>,
@@ -604,6 +604,8 @@ type ToJs<T> = [T] extends [Null]
   ? number
   : [T] extends [Nat]
   ? number
+  : [T] extends [Vec<infer V>]
+  ? ToJs<V>[]
   : { [K in keyof T]: ToJs<T[K]> };
 
 /** Map from an abstract value type array to a concrete argument type array. */

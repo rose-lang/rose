@@ -948,7 +948,7 @@ describe("valid", () => {
 
     const sortWithIndices = opaque(
       [Vec(n, Real)],
-      Vec(n, { x: Real, i: n }),
+      Vec(n, struct({ x: Real, i: n })),
       (v) => v.map((x, i) => ({ x, i })).sort((a, b) => a.x - b.x),
     );
     sortWithIndices.jvp = fn([Vec(n, Dual)], Vec(n, { x: Dual, i: n }), (v) => {
