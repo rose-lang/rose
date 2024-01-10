@@ -27,19 +27,19 @@ instance AD u64 {
 }
 
 instance AD f32 {
-  type D = (f32, f32)
+  type D = f32, f32
 }
 
 instance AD f64 {
-  type D = (f64, f64)
+  type D = f64, f64
 }
 
 instance T (AD T) => AD []T {
-  type D = []((AD T).D)
+  type D = [](AD T).D
 }
 
 instance A B (AD A) (AD B) => AD (A, B) {
-  type D = ((AD A).D, (AD B).D)
+  type D = (AD A).D, (AD B).D
 }
 
 instance A B (AD A) (AD B) => AD (A | B) {

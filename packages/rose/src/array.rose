@@ -19,12 +19,12 @@ def linearize do_for = do_for
 
 pub def T => new (n : u32) (f : u32 -> T) : []T =
   let xs = init n
-  let _ = do_for (n, \i => set xs i (f i))
+  let _ = do_for (n, i => set xs i (f i))
   in xs
 
-def transpose do_for ((n, f) : (u32, u32 -> ())) : ((), () -> ()) =
+def transpose do_for ((n, f) : (u32, u32 -> ())) : (), () -> () =
   let g : u32 -> ((), () -> ()) = transpose f
-  let hs : [](() -> ()) = new n (\i => let (_, h) = g i in h)
-  in ((), \() => do_for (n, \i => hs i ()))
+  let hs : [](() -> ()) = new n i => let _, h = g i in h
+  in (), () => do_for (n, i => hs i ())
 
-pub def A B => map (f : A -> B) (xs : []A) : []B = new (len xs) (\i => f (xs i))
+pub def A B => map (f : A -> B) (xs : []A) : []B = new (len xs) i => f (xs i)

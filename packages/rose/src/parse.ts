@@ -81,19 +81,21 @@ export interface Class {
 }
 
 export enum TypeKind {
+  Unit,
   Name,
   Class,
   Array,
-  Tuple,
+  Pair,
   Sum,
   Function,
 }
 
 export type Type =
+  | { kind: TypeKind.Unit }
   | { kind: TypeKind.Name; name: TokenId }
   | { kind: TypeKind.Class; class: Class; name: TokenId }
   | { kind: TypeKind.Array; elem: Type }
-  | { kind: TypeKind.Tuple; member: Type[] }
+  | { kind: TypeKind.Pair; left: Type; right: Type }
   | { kind: TypeKind.Sum; left: Type; right: Type }
   | { kind: TypeKind.Function; dom: Type; cod: Type };
 
@@ -103,19 +105,23 @@ export interface Param {
 }
 
 export enum BindKind {
+  Unit,
   Name,
-  Tuple,
+  Pair,
 }
 
 export type Bind =
+  | { kind: BindKind.Unit }
   | { kind: BindKind.Name; name: TokenId }
-  | { kind: BindKind.Tuple; member: Bind[] };
+  | { kind: BindKind.Pair; left: Bind; right: Bind };
 
 export enum ExprKind {
   Name,
+  Unit,
+  Str,
   Num,
   Array,
-  Tuple,
+  Pair,
   Inl,
   Inr,
   Lambda,
@@ -130,9 +136,11 @@ export enum ExprKind {
 
 export type Expr =
   | { kind: ExprKind.Name; name: TokenId }
+  | { kind: ExprKind.Unit }
+  | { kind: ExprKind.Str; str: TokenId }
   | { kind: ExprKind.Num; num: TokenId }
   | { kind: ExprKind.Array; elem: Expr[] }
-  | { kind: ExprKind.Tuple; member: Expr[] }
+  | { kind: ExprKind.Pair; left: Expr; right: Expr }
   | { kind: ExprKind.Inl; val: Expr }
   | { kind: ExprKind.Inr; val: Expr }
   | { kind: ExprKind.Lambda; param: Param; body: Expr }
