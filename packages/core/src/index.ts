@@ -26,6 +26,7 @@ export {
   fn,
   geq,
   gt,
+  iadd,
   ieq,
   iff,
   igeq,

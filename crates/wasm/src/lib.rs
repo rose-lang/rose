@@ -788,6 +788,7 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                             Binop::IEq => self.wasm.instruction(&Instruction::I32Eq),
                             Binop::IGt => self.wasm.instruction(&Instruction::I32GtU),
                             Binop::IGeq => self.wasm.instruction(&Instruction::I32GeU),
+                            Binop::IAdd => self.wasm.instruction(&Instruction::I32Add),
                             Binop::Neq => self.wasm.instruction(&Instruction::F64Ne),
                             Binop::Lt => self.wasm.instruction(&Instruction::F64Lt),
                             Binop::Leq => self.wasm.instruction(&Instruction::F64Le),

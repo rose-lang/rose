@@ -177,6 +177,7 @@ impl<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>> Function<'a, '_, O, T> {
                 Binop::IEq => writeln!(f, "x{} == x{}", left.var(), right.var())?,
                 Binop::IGt => writeln!(f, "x{} > x{}", left.var(), right.var())?,
                 Binop::IGeq => writeln!(f, "x{} >= x{}", left.var(), right.var())?,
+                Binop::IAdd => writeln!(f, "x{} + x{}", left.var(), right.var())?,
                 Binop::Neq => writeln!(f, "x{} != x{}", left.var(), right.var())?,
                 Binop::Lt => writeln!(f, "x{} < x{}", left.var(), right.var())?,
                 Binop::Leq => writeln!(f, "x{} <= x{}", left.var(), right.var())?,

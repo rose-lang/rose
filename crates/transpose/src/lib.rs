@@ -636,6 +636,7 @@ impl<'a> Transpose<'a> {
                             | Binop::IEq
                             | Binop::IGt
                             | Binop::IGeq
+                            | Binop::IAdd
                             | Binop::Neq
                             | Binop::Lt
                             | Binop::Leq
@@ -719,7 +720,8 @@ impl<'a> Transpose<'a> {
                             | Binop::ILeq
                             | Binop::IEq
                             | Binop::IGt
-                            | Binop::IGeq => (left, right),
+                            | Binop::IGeq
+                            | Binop::IAdd => (left, right),
                             Binop::Neq
                             | Binop::Lt
                             | Binop::Leq

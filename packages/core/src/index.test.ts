@@ -14,6 +14,7 @@ import {
   floor,
   fn,
   gt,
+  iadd,
   ieq,
   iff,
   igeq,
@@ -1030,5 +1031,25 @@ describe("valid", () => {
       gt: false,
       geq: true,
     });
+  });
+
+  test("index addition", async () => {
+    const f = fn([3, 3], 3, (i, j) => iadd(3, i, j));
+
+    let g = interp(f);
+    expect(g(0, 0)).toBe(0);
+    expect(g(0, 1)).toBe(1);
+    expect(g(0, 2)).toBe(2);
+    expect(g(1, 0)).toBe(1);
+    expect(g(1, 1)).toBe(2);
+    expect(g(2, 0)).toBe(2);
+
+    g = await compile(f);
+    expect(g(0, 0)).toBe(0);
+    expect(g(0, 1)).toBe(1);
+    expect(g(0, 2)).toBe(2);
+    expect(g(1, 0)).toBe(1);
+    expect(g(1, 1)).toBe(2);
+    expect(g(2, 0)).toBe(2);
   });
 });

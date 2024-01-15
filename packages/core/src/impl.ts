@@ -996,6 +996,14 @@ export const igeq = (ty: Nats, i: Nat, j: Nat): Bool => {
   return newVar(ctx.block.igeq(ctx.func, valId(ctx, t, i), valId(ctx, t, j)));
 };
 
+/** Return the abstract index `i` plus the abstract index `y`. */
+export const iadd = (ty: Nats, i: Nat, j: Nat): Nat => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  const k = ctx.block.iadd(ctx.func, t, valId(ctx, t, i), valId(ctx, t, j));
+  return idVal(ctx, t, k) as Nat;
+};
+
 /** Return an abstract value selecting between `then` and `els` via `cond`. */
 export const select = <const T>(
   cond: Bool,

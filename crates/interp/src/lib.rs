@@ -243,6 +243,8 @@ impl<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> Interpreter<'a, 'b, O, T> {
                     Binop::IGt => Val::Bool(x.fin() > y.fin()),
                     Binop::IGeq => Val::Bool(x.fin() >= y.fin()),
 
+                    Binop::IAdd => Val::Fin(x.fin() + y.fin()),
+
                     Binop::Neq => Val::Bool(x.f64() != y.f64()),
                     Binop::Lt => Val::Bool(x.f64() < y.f64()),
                     Binop::Leq => Val::Bool(x.f64() <= y.f64()),

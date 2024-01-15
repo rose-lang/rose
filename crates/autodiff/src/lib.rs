@@ -249,7 +249,8 @@ impl Autodiff<'_> {
                 | Binop::ILeq
                 | Binop::IEq
                 | Binop::IGt
-                | Binop::IGeq => self.code.push(Instr {
+                | Binop::IGeq
+                | Binop::IAdd => self.code.push(Instr {
                     var,
                     expr: Expr::Binary { op, left, right },
                 }),
