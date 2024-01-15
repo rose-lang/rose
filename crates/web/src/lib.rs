@@ -1318,6 +1318,86 @@ impl Block {
         self.instr(f, t, expr)
     }
 
+    /// Return the variable ID for a new "integer not equal" instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have the same `Fin` type.
+    pub fn ineq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::INeq,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(f, t, expr)
+    }
+
+    /// Return the variable ID for a new "integer less than" instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have the same `Fin` type.
+    pub fn ilt(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::ILt,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(f, t, expr)
+    }
+
+    /// Return the variable ID for a new "integer less than or equal" instruction on `left` and
+    /// `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have the same `Fin` type.
+    pub fn ileq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::ILeq,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(f, t, expr)
+    }
+
+    /// Return the variable ID for a new "integer equal" instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have the same `Fin` type.
+    pub fn ieq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::IEq,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(f, t, expr)
+    }
+
+    /// Return the variable ID for a new "integer greater than" instruction on `left` and `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have the same `Fin` type.
+    pub fn igt(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::IGt,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(f, t, expr)
+    }
+
+    /// Return the variable ID for a new "integer greater than or equal" instruction on `left` and
+    /// `right`.
+    ///
+    /// Assumes `left` and `right` are defined, in scope, and have the same `Fin` type.
+    pub fn igeq(&mut self, f: &mut FuncBuilder, left: usize, right: usize) -> usize {
+        let t = id::ty(f.ty_bool());
+        let expr = rose::Expr::Binary {
+            op: rose::Binop::IGeq,
+            left: id::var(left),
+            right: id::var(right),
+        };
+        self.instr(f, t, expr)
+    }
+
     /// Return the variable ID for a new "not equal" instruction on `left` and `right`.
     ///
     /// Assumes `left` and `right` are defined, in scope, and have 64-bit floating point type.

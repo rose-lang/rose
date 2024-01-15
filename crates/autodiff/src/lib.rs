@@ -240,7 +240,16 @@ impl Autodiff<'_> {
             },
             &Expr::Binary { op, left, right } => match op {
                 // boring cases
-                Binop::And | Binop::Or | Binop::Iff | Binop::Xor => self.code.push(Instr {
+                Binop::And
+                | Binop::Or
+                | Binop::Iff
+                | Binop::Xor
+                | Binop::INeq
+                | Binop::ILt
+                | Binop::ILeq
+                | Binop::IEq
+                | Binop::IGt
+                | Binop::IGeq => self.code.push(Instr {
                     var,
                     expr: Expr::Binary { op, left, right },
                 }),

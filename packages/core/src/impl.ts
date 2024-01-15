@@ -954,6 +954,48 @@ export const xor = (p: Bool, q: Bool): Bool => {
   return newVar(ctx.block.xor(ctx.func, boolId(ctx, p), boolId(ctx, q)));
 };
 
+/** Return an abstract boolean for if `i` is not equal to `j`. */
+export const ineq = (ty: Nats, i: Nat, j: Nat): Bool => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  return newVar(ctx.block.ineq(ctx.func, valId(ctx, t, i), valId(ctx, t, j)));
+};
+
+/** Return an abstract boolean for if `i` is less than `j`. */
+export const ilt = (ty: Nats, i: Nat, j: Nat): Bool => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  return newVar(ctx.block.ilt(ctx.func, valId(ctx, t, i), valId(ctx, t, j)));
+};
+
+/** Return an abstract boolean for if `i` is less than or equal to `j`. */
+export const ileq = (ty: Nats, i: Nat, j: Nat): Bool => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  return newVar(ctx.block.ileq(ctx.func, valId(ctx, t, i), valId(ctx, t, j)));
+};
+
+/** Return an abstract boolean for if `i` is equal to `j`. */
+export const ieq = (ty: Nats, i: Nat, j: Nat): Bool => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  return newVar(ctx.block.ieq(ctx.func, valId(ctx, t, i), valId(ctx, t, j)));
+};
+
+/** Return an abstract boolean for if `i` is greater than `j`. */
+export const igt = (ty: Nats, i: Nat, j: Nat): Bool => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  return newVar(ctx.block.igt(ctx.func, valId(ctx, t, i), valId(ctx, t, j)));
+};
+
+/** Return an abstract boolean for if `i` is greater than or equal to `j`. */
+export const igeq = (ty: Nats, i: Nat, j: Nat): Bool => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  return newVar(ctx.block.igeq(ctx.func, valId(ctx, t, i), valId(ctx, t, j)));
+};
+
 /** Return an abstract value selecting between `then` and `els` via `cond`. */
 export const select = <const T>(
   cond: Bool,

@@ -210,6 +210,14 @@ pub enum Binop {
     Iff,
     Xor,
 
+    // `Fin` -> `Fin` -> `Bool`
+    INeq,
+    ILt,
+    ILeq,
+    IEq,
+    IGt,
+    IGeq,
+
     // `F64` -> `F64` -> `Bool`
     Neq,
     Lt,

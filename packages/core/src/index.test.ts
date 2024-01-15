@@ -14,7 +14,13 @@ import {
   floor,
   fn,
   gt,
+  ieq,
   iff,
+  igeq,
+  igt,
+  ileq,
+  ilt,
+  ineq,
   interp,
   jvp,
   mul,
@@ -941,5 +947,88 @@ describe("valid", () => {
     const g = fn([T], T, (x) => vjp(f)(x).grad(1));
     const h = await compile(g);
     expect(h({ v: [2], i: 0 })).toEqual({ v: [1], i: 0 });
+  });
+
+  test("index comparison", async () => {
+    const f = fn(
+      [2, 2],
+      { neq: Bool, lt: Bool, leq: Bool, eq: Bool, gt: Bool, geq: Bool },
+      (i, j) => ({
+        neq: ineq(2, i, j),
+        lt: ilt(2, i, j),
+        leq: ileq(2, i, j),
+        eq: ieq(2, i, j),
+        gt: igt(2, i, j),
+        geq: igeq(2, i, j),
+      }),
+    );
+
+    let g = interp(f);
+    expect(g(0, 0)).toEqual({
+      neq: false,
+      lt: false,
+      leq: true,
+      eq: true,
+      gt: false,
+      geq: true,
+    });
+    expect(g(0, 1)).toEqual({
+      neq: true,
+      lt: true,
+      leq: true,
+      eq: false,
+      gt: false,
+      geq: false,
+    });
+    expect(g(1, 0)).toEqual({
+      neq: true,
+      lt: false,
+      leq: false,
+      eq: false,
+      gt: true,
+      geq: true,
+    });
+    expect(g(1, 1)).toEqual({
+      neq: false,
+      lt: false,
+      leq: true,
+      eq: true,
+      gt: false,
+      geq: true,
+    });
+
+    g = await compile(f);
+    expect(g(0, 0)).toEqual({
+      neq: false,
+      lt: false,
+      leq: true,
+      eq: true,
+      gt: false,
+      geq: true,
+    });
+    expect(g(0, 1)).toEqual({
+      neq: true,
+      lt: true,
+      leq: true,
+      eq: false,
+      gt: false,
+      geq: false,
+    });
+    expect(g(1, 0)).toEqual({
+      neq: true,
+      lt: false,
+      leq: false,
+      eq: false,
+      gt: true,
+      geq: true,
+    });
+    expect(g(1, 1)).toEqual({
+      neq: false,
+      lt: false,
+      leq: true,
+      eq: true,
+      gt: false,
+      geq: true,
+    });
   });
 });
