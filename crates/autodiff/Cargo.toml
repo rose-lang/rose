@@ -1,6 +1,6 @@
 [package]
 name = "rose-autodiff"
-version = "0.4.5"
+version = "0.4.6"
 publish = false
 edition = "2021"
 
