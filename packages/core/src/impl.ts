@@ -90,7 +90,7 @@ type Zero = typeof zeroSymbol;
 export type Tan = Zero | Var;
 
 /** An abstract natural number, which can be used to index into a vector. */
-type Nat = number | symbol;
+export type Nat = number | symbol;
 
 /** The portion of an abstract vector that can be directly indexed. */
 interface VecIndex<T> {
@@ -952,6 +952,56 @@ export const iff = (p: Bool, q: Bool): Bool => {
 export const xor = (p: Bool, q: Bool): Bool => {
   const ctx = getCtx();
   return newVar(ctx.block.xor(ctx.func, boolId(ctx, p), boolId(ctx, q)));
+};
+
+/** Return an abstract boolean for if `i` is not equal to `j`. */
+export const ineq = (ty: Nats, i: Nat, j: Nat): Bool => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  return newVar(ctx.block.ineq(ctx.func, valId(ctx, t, i), valId(ctx, t, j)));
+};
+
+/** Return an abstract boolean for if `i` is less than `j`. */
+export const ilt = (ty: Nats, i: Nat, j: Nat): Bool => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  return newVar(ctx.block.ilt(ctx.func, valId(ctx, t, i), valId(ctx, t, j)));
+};
+
+/** Return an abstract boolean for if `i` is less than or equal to `j`. */
+export const ileq = (ty: Nats, i: Nat, j: Nat): Bool => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  return newVar(ctx.block.ileq(ctx.func, valId(ctx, t, i), valId(ctx, t, j)));
+};
+
+/** Return an abstract boolean for if `i` is equal to `j`. */
+export const ieq = (ty: Nats, i: Nat, j: Nat): Bool => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  return newVar(ctx.block.ieq(ctx.func, valId(ctx, t, i), valId(ctx, t, j)));
+};
+
+/** Return an abstract boolean for if `i` is greater than `j`. */
+export const igt = (ty: Nats, i: Nat, j: Nat): Bool => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  return newVar(ctx.block.igt(ctx.func, valId(ctx, t, i), valId(ctx, t, j)));
+};
+
+/** Return an abstract boolean for if `i` is greater than or equal to `j`. */
+export const igeq = (ty: Nats, i: Nat, j: Nat): Bool => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  return newVar(ctx.block.igeq(ctx.func, valId(ctx, t, i), valId(ctx, t, j)));
+};
+
+/** Return the abstract index `i` plus the abstract index `y`. */
+export const iadd = (ty: Nats, i: Nat, j: Nat): Nat => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  const k = ctx.block.iadd(ctx.func, t, valId(ctx, t, i), valId(ctx, t, j));
+  return idVal(ctx, t, k) as Nat;
 };
 
 /** Return an abstract value selecting between `then` and `els` via `cond`. */

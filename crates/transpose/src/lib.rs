@@ -630,6 +630,13 @@ impl<'a> Transpose<'a> {
                             | Binop::Or
                             | Binop::Iff
                             | Binop::Xor
+                            | Binop::INeq
+                            | Binop::ILt
+                            | Binop::ILeq
+                            | Binop::IEq
+                            | Binop::IGt
+                            | Binop::IGeq
+                            | Binop::IAdd
                             | Binop::Neq
                             | Binop::Lt
                             | Binop::Leq
@@ -704,7 +711,17 @@ impl<'a> Transpose<'a> {
                     }
                     _ => {
                         let (a, b) = match op {
-                            Binop::And | Binop::Or | Binop::Iff | Binop::Xor => (left, right),
+                            Binop::And
+                            | Binop::Or
+                            | Binop::Iff
+                            | Binop::Xor
+                            | Binop::INeq
+                            | Binop::ILt
+                            | Binop::ILeq
+                            | Binop::IEq
+                            | Binop::IGt
+                            | Binop::IGeq
+                            | Binop::IAdd => (left, right),
                             Binop::Neq
                             | Binop::Lt
                             | Binop::Leq

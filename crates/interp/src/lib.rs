@@ -236,6 +236,15 @@ impl<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> Interpreter<'a, 'b, O, T> {
                     Binop::Iff => Val::Bool(x.bool() == y.bool()),
                     Binop::Xor => Val::Bool(x.bool() != y.bool()),
 
+                    Binop::INeq => Val::Bool(x.fin() != y.fin()),
+                    Binop::ILt => Val::Bool(x.fin() < y.fin()),
+                    Binop::ILeq => Val::Bool(x.fin() <= y.fin()),
+                    Binop::IEq => Val::Bool(x.fin() == y.fin()),
+                    Binop::IGt => Val::Bool(x.fin() > y.fin()),
+                    Binop::IGeq => Val::Bool(x.fin() >= y.fin()),
+
+                    Binop::IAdd => Val::Fin(x.fin() + y.fin()),
+
                     Binop::Neq => Val::Bool(x.f64() != y.f64()),
                     Binop::Lt => Val::Bool(x.f64() < y.f64()),
                     Binop::Leq => Val::Bool(x.f64() <= y.f64()),
