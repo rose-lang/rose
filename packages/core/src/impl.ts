@@ -90,7 +90,7 @@ type Zero = typeof zeroSymbol;
 export type Tan = Zero | Var;
 
 /** An abstract natural number, which can be used to index into a vector. */
-type Nat = number | symbol;
+export type Nat = number | symbol;
 
 /** The portion of an abstract vector that can be directly indexed. */
 interface VecIndex<T> {

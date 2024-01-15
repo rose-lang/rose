@@ -3,6 +3,7 @@ export {
   Bools,
   Dual,
   Fn,
+  Nat,
   Nats,
   Null,
   Nulls,
