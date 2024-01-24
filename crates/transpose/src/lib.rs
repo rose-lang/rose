@@ -572,6 +572,7 @@ impl<'a> Transpose<'a> {
                 match self.f.vars[var.var()] {
                     DUAL => match op {
                         Unop::Not
+                        | Unop::IMod
                         | Unop::Abs
                         | Unop::Sign
                         | Unop::Ceil
@@ -601,7 +602,7 @@ impl<'a> Transpose<'a> {
                     },
                     _ => {
                         let x = match op {
-                            Unop::Not => arg,
+                            Unop::Not | Unop::IMod => arg,
                             Unop::Neg
                             | Unop::Abs
                             | Unop::Sign

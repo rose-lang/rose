@@ -21,6 +21,7 @@ import {
   igt,
   ileq,
   ilt,
+  imod,
   ineq,
   interp,
   jvp,
@@ -81,10 +82,6 @@ describe("invalid", () => {
     expect(() => fn([], Vec(2, Real), () => [1, 2, 3])).toThrow(
       "wrong array size",
     );
-  });
-
-  test("out of bounds index", () => {
-    expect(() => fn([Vec(2, Real)], Real, (v) => v[2])).toThrow("out of range");
   });
 
   test("access index out of scope", () => {
@@ -1051,5 +1048,16 @@ describe("valid", () => {
     expect(g(1, 0)).toBe(1);
     expect(g(1, 1)).toBe(2);
     expect(g(2, 0)).toBe(2);
+  });
+
+  test("index modulus", async () => {
+    const f = fn([], Vec(7, 3), () => {
+      const v = [];
+      for (let i = 0; i < 7; ++i) v.push(imod(3, i));
+      return v;
+    });
+    const expected = [0, 1, 2, 0, 1, 2, 0];
+    expect(interp(f)()).toEqual(expected);
+    expect((await compile(f))()).toEqual(expected);
   });
 });

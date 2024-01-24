@@ -930,6 +930,14 @@ export const not = (p: Bool): Bool => {
   return newVar(ctx.block.not(ctx.func, boolId(ctx, p)));
 };
 
+/** Return the modulus of the abstract index `i`. */
+export const imod = (ty: Nats, i: Nat): Nat => {
+  const ctx = getCtx();
+  const t = tyId(ctx, ty);
+  const j = ctx.block.imod(ctx.func, t, valId(ctx, t, i));
+  return idVal(ctx, t, j) as Nat;
+};
+
 /** Return the conjunction of the abstract booleans `p` and `q`. */
 export const and = (p: Bool, q: Bool): Bool => {
   const ctx = getCtx();

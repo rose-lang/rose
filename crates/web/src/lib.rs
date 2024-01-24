@@ -947,12 +947,10 @@ impl FuncBuilder {
     pub fn num(&mut self, t: usize, x: f64) -> Result<usize, JsError> {
         match self.ty(t)? {
             Ty::F64 | Ty::T64 => Ok(self.constant(t, rose::Expr::F64 { val: x })),
-            &Ty::Fin { size } => {
+            &Ty::Fin { .. } => {
                 let y = x as usize;
                 if y as f64 != x {
                     Err(JsError::new("can't be represented by an unsigned integer"))
-                } else if y >= size {
-                    Err(JsError::new("out of range"))
                 } else {
                     Ok(self.constant(t, rose::Expr::Fin { val: y }))
                 }
@@ -1192,6 +1190,17 @@ impl Block {
             arg: id::var(arg),
         };
         self.instr(f, t, expr)
+    }
+
+    /// Return the variable ID for a new index modulus instruction on `arg`.
+    ///
+    /// Assumes `arg` is defined, in scope, and has boolean type.
+    pub fn imod(&mut self, f: &mut FuncBuilder, t: usize, arg: usize) -> usize {
+        let expr = rose::Expr::Unary {
+            op: rose::Unop::IMod,
+            arg: id::var(arg),
+        };
+        self.instr(f, id::ty(t), expr)
     }
 
     /// Return the variable ID for a new absolute value instruction on `arg`.

@@ -33,6 +33,7 @@ export {
   igt,
   ileq,
   ilt,
+  imod,
   ineq,
   interp,
   jvp,

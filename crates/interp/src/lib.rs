@@ -218,6 +218,14 @@ impl<'a, 'b, O: Opaque, T: Refs<'a, Opaque = O>> Interpreter<'a, 'b, O, T> {
                 match op {
                     Unop::Not => Val::Bool(!x.bool()),
 
+                    Unop::IMod => {
+                        let n = match self.typemap[self.types[self.def.vars[arg.var()].ty()].ty()] {
+                            Ty::Fin { size } => size,
+                            _ => unreachable!(),
+                        };
+                        Val::Fin(x.fin() % n)
+                    }
+
                     Unop::Neg => val_f64(-x.f64()),
                     Unop::Abs => val_f64(x.f64().abs()),
                     Unop::Sign => val_f64(x.f64().signum()),

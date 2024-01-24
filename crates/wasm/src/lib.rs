@@ -737,6 +737,15 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
                                 self.get(arg);
                                 self.wasm.instruction(&Instruction::I32Eqz);
                             }
+                            Unop::IMod => {
+                                let n = match self.def.types[self.def.vars[instr.var.var()].ty()] {
+                                    Ty::Fin { size } => size,
+                                    _ => unreachable!(),
+                                };
+                                self.get(arg);
+                                self.wasm.instruction(&Instruction::I32Const(n as i32));
+                                self.wasm.instruction(&Instruction::I32RemU);
+                            }
                             Unop::Neg => {
                                 self.get(arg);
                                 self.wasm.instruction(&Instruction::F64Neg);

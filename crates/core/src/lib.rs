@@ -192,6 +192,9 @@ pub enum Unop {
     // `Bool` -> `Bool`
     Not,
 
+    // `Fin` -> `Fin`
+    IMod,
+
     // `F64` -> `F64`
     Neg,
     Abs,

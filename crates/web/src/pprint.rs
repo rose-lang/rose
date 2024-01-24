@@ -158,6 +158,7 @@ impl<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>> Function<'a, '_, O, T> {
             Expr::Field { tuple, member } => writeln!(f, "&x{}[{}]", tuple.var(), member.member())?,
             Expr::Unary { op, arg } => match op {
                 Unop::Not => writeln!(f, "not x{}", arg.var())?,
+                Unop::IMod => writeln!(f, "x{} mod T{}", arg.var(), self.def.vars[x].ty())?,
                 Unop::Neg => writeln!(f, "-x{}", arg.var())?,
                 Unop::Abs => writeln!(f, "|x{}|", arg.var())?,
                 Unop::Sign => writeln!(f, "sign(x{})", arg.var())?,

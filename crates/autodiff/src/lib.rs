@@ -177,10 +177,17 @@ impl Autodiff<'_> {
                 self.pack(var, x, dx)
             }
             &Expr::Unary { op, arg } => match op {
-                // boring case
+                // boring cases
                 Unop::Not => self.code.push(Instr {
                     var,
                     expr: Expr::Unary { op: Unop::Not, arg },
+                }),
+                Unop::IMod => self.code.push(Instr {
+                    var,
+                    expr: Expr::Unary {
+                        op: Unop::IMod,
+                        arg,
+                    },
                 }),
 
                 // interesting cases
