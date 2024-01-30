@@ -1,103 +1,31 @@
-import { Token } from "moo";
+import { Lexer, Token } from "moo";
+import { unreachable, unwrap } from "./util.js";
 
 /** Index of a token in the original token array. */
 export type TokenId = number;
 
 export interface Module {
-  use: Use[];
-  class: Classdef[];
-  instance: Instance[];
-  type: Typedef[];
-  infix: Infix[];
   def: Def[];
-  val: Val[];
-}
-
-export interface Use {
-  pub: TokenId | undefined;
-  names: TokenId[];
-  module: TokenId;
-}
-
-export interface Classdef {
-  pub: TokenId | undefined;
-  name: TokenId;
-  param: TokenId[];
-  type: TokenId[];
-  val: Val[];
-}
-
-export interface Instance {
-  generic: Generic;
-  class: TokenId;
-  arg: Type[];
-  type: Typedef[];
-  def: Def[];
-}
-
-export interface Typedef {
-  pub: TokenId | undefined;
-  name: TokenId;
-  def: Type;
-}
-
-export interface Infix {
-  pub: TokenId | undefined;
-  assoc: TokenId;
-  prec: TokenId[];
-  generic: Generic;
-  left: Param;
-  op: TokenId;
-  right: Param;
-  type: Type;
-  body: Expr;
 }
 
 export interface Def {
   pub: TokenId | undefined;
-  generic: Generic;
-  prefix: TokenId | undefined;
   name: TokenId;
-  param: Param[];
+  param: Param;
   type: Type | undefined;
   body: Expr;
-}
-
-export interface Val {
-  pub: TokenId | undefined;
-  generic: Generic;
-  name: TokenId;
-  type: Type | undefined;
-}
-
-export interface Generic {
-  type: TokenId[];
-  class: Class[];
-}
-
-export interface Class {
-  name: TokenId;
-  arg: Type[];
 }
 
 export enum TypeKind {
   Unit,
   Name,
-  Class,
-  Array,
   Pair,
-  Sum,
-  Function,
 }
 
 export type Type =
   | { kind: TypeKind.Unit }
   | { kind: TypeKind.Name; name: TokenId }
-  | { kind: TypeKind.Class; class: Class; name: TokenId }
-  | { kind: TypeKind.Array; elem: Type }
-  | { kind: TypeKind.Pair; left: Type; right: Type }
-  | { kind: TypeKind.Sum; left: Type; right: Type }
-  | { kind: TypeKind.Function; dom: Type; cod: Type };
+  | { kind: TypeKind.Pair; left: Type; right: Type };
 
 export interface Param {
   bind: Bind;
@@ -113,49 +41,18 @@ export enum BindKind {
 export type Bind =
   | { kind: BindKind.Unit }
   | { kind: BindKind.Name; name: TokenId }
-  | { kind: BindKind.Pair; left: Bind; right: Bind };
+  | { kind: BindKind.Pair; left: Param; right: Param };
 
 export enum ExprKind {
   Name,
   Unit,
-  Str,
-  Num,
-  Array,
-  Pair,
-  Inl,
-  Inr,
-  Lambda,
-  Access,
-  App,
-  Op,
-  Let,
-  If,
-  Match,
-  Return,
+  Add,
 }
 
 export type Expr =
   | { kind: ExprKind.Name; name: TokenId }
   | { kind: ExprKind.Unit }
-  | { kind: ExprKind.Str; str: TokenId }
-  | { kind: ExprKind.Num; num: TokenId }
-  | { kind: ExprKind.Array; elem: Expr[] }
-  | { kind: ExprKind.Pair; left: Expr; right: Expr }
-  | { kind: ExprKind.Inl; val: Expr }
-  | { kind: ExprKind.Inr; val: Expr }
-  | { kind: ExprKind.Lambda; param: Param; body: Expr }
-  | { kind: ExprKind.Access; struct: Expr; member: TokenId }
-  | { kind: ExprKind.App; func: Expr; arg: Expr }
-  | { kind: ExprKind.Op; left: Expr; op: TokenId; right: Expr }
-  | { kind: ExprKind.Let; lhs: Param; rhs: Expr; body: Expr }
-  | { kind: ExprKind.If; if: Expr; then: Expr; else: Expr }
-  | { kind: ExprKind.Match; val: Expr; inl: Case; inr: Case }
-  | { kind: ExprKind.Return; val: Expr };
-
-export interface Case {
-  bind: Bind;
-  body: Expr;
-}
+  | { kind: ExprKind.Add; left: Expr; right: Expr };
 
 export type ErrorData =
   // token trees
@@ -163,27 +60,41 @@ export type ErrorData =
   | { kind: "Mismatched"; left: TokenId; right: TokenId }
   | { kind: "Extra"; right: TokenId }
 
-  // `use`
-  | { kind: "UseListMissing"; use: TokenId }
-  | { kind: "UseListBraces"; use: TokenId; wrong: TokenId }
-  | { kind: "UseFromMissing"; use: TokenId; brace: TokenId }
-  | { kind: "UseFromWrong"; use: TokenId; wrong: TokenId }
-  | { kind: "UseModuleMissing"; use: TokenId; from: TokenId }
-  | { kind: "UseModuleWrong"; use: TokenId; wrong: TokenId }
+  // top-level
+  | { kind: "ToplevelMissing"; pub: TokenId }
+  | { kind: "ToplevelWrong"; wrong: TokenId }
 
-  // `use` items
-  | { kind: "UseItemWrong"; before: TokenId; wrong: TokenId }
-  | { kind: "UseCommaMissing"; before: TokenId; after: TokenId }
+  // `def`
+  | { kind: "DefNameMissing"; def: TokenId }
+  | { kind: "DefNameWrong"; wrong: TokenId }
+  | { kind: "DefParamMissing"; name: TokenId }
+  | { kind: "DefParamBracketWrong"; name: TokenId }
+  | { kind: "DefTypeMissing"; colon: TokenId }
+  | { kind: "DefEqualMissing"; name: TokenId }
+  | { kind: "DefEqualWrong"; wrong: TokenId }
+  | { kind: "DefBodyMissing"; equal: TokenId }
 
-  // infix
-  | { kind: "InfixListMissing"; infix: TokenId }
-  | { kind: "InfixListBrackets"; infix: TokenId; wrong: TokenId }
-  | { kind: "InfixOpMissing"; infix: TokenId }
-  | { kind: "InfixOpWrong"; infix: TokenId; wrong: TokenId }
+  // type
+  | { kind: "TypeNameWrong"; wrong: TokenId }
+  | { kind: "TypeBracketWrong"; wrong: TokenId }
+  | { kind: "TypeExtra"; extra: TokenId }
+  | { kind: "TypePairRightMissing"; comma: TokenId }
 
-  // infix precedence
-  | { kind: "InfixPrecWrong"; before: TokenId; wrong: TokenId }
-  | { kind: "InfixCommaMissing"; before: TokenId; after: TokenId };
+  // param
+  | { kind: "ParamTypeMissing"; colon: TokenId }
+  | { kind: "ParamPairRightMissing"; comma: TokenId }
+
+  // bind
+  | { kind: "BindNameWrong"; wrong: TokenId }
+  | { kind: "BindBracketWrong"; wrong: TokenId }
+  | { kind: "BindExtra"; extra: TokenId }
+  | { kind: "BindPairRightMissing"; right: TokenId }
+
+  // expr
+  | { kind: "ExprNameWrong"; wrong: TokenId }
+  | { kind: "ExprBracketWrong"; wrong: TokenId }
+  | { kind: "ExprExtra"; extra: TokenId }
+  | { kind: "ExprAddRightMissing"; op: TokenId };
 
 export class ParseError extends Error {
   data: ErrorData;
@@ -286,201 +197,261 @@ export const filter = (tokens: Token[], trees: Tree[]): Tree[] => {
   return filtered;
 };
 
-/** Index of a tree in the outermost array returned by `forest`. */
+/** Index of a `Tree`. */
 export type TreeId = number;
 
-const toplevelObj = {
-  class: undefined,
-  def: undefined,
-  infix: undefined,
-  infixl: undefined,
-  infixr: undefined,
-  instance: undefined,
-  type: undefined,
-  use: undefined,
-  val: undefined,
-};
+export class Parser {
+  tokens: Token[];
+  trees: Tree[];
+  i: TreeId;
 
-export type ToplevelKind = keyof typeof toplevelObj;
+  constructor(tokens: Token[], trees: Tree[]) {
+    this.tokens = tokens;
+    this.trees = trees;
+    this.i = 0;
+  }
 
-const toplevelKinds = new Set(Object.keys(toplevelObj));
+  peek({ missing }: { missing: () => ErrorData }): Tree {
+    if (this.i < this.trees.length) return this.trees[this.i];
+    throw new ParseError(missing());
+  }
 
-const isToplevelKind = (text: string): text is ToplevelKind =>
-  toplevelKinds.has(text);
+  pop({ missing }: { missing: () => ErrorData }): Tree {
+    const tree = this.peek({ missing });
+    ++this.i;
+    return tree;
+  }
 
-export const toplevel = (
-  tokens: Token[],
-  trees: Tree[],
-): Map<ToplevelKind, TreeId[]> => {
-  const toplevels = new Map<ToplevelKind, TreeId[]>();
-  for (let i = 0; i < trees.length; ++i) {
-    const tree = trees[i];
-    const { kind } = tree;
-    if (kind === NodeKind.Leaf) {
-      const { text } = tokens[tree.id];
-      if (isToplevelKind(text)) {
-        let ids = toplevels.get(text);
-        if (ids === undefined) {
-          ids = [];
-          toplevels.set(text, ids);
-        }
-        ids.push(i);
-      }
+  leaf({
+    pred,
+    missing,
+    wrong,
+  }: {
+    pred: (token: Token) => boolean;
+    missing: () => ErrorData;
+    wrong: (id: TokenId) => ErrorData;
+  }): TokenId {
+    const tree = this.pop({ missing });
+    if (tree.kind !== NodeKind.Leaf) throw new ParseError(wrong(tree.left));
+    const { id } = tree;
+    if (!pred(this.tokens[id])) throw new ParseError(wrong(id));
+    return id;
+  }
+
+  maybe(text: string): TokenId | undefined {
+    if (this.i >= this.trees.length) return undefined;
+    const tree = this.trees[this.i];
+    if (tree.kind !== NodeKind.Leaf) return undefined;
+    const { id } = tree;
+    if (this.tokens[id].text === text) {
+      ++this.i;
+      return id;
     }
   }
-  return toplevels;
-};
 
-const leaf = (
-  pred: (token: Token) => boolean,
-  wrong: (id: TokenId) => ErrorData,
-  tokens: Token[],
-  tree: Tree,
-): TokenId => {
-  if (tree.kind !== NodeKind.Leaf) throw new ParseError(wrong(tree.left));
-  const { id } = tree;
-  if (!pred(tokens[id])) throw new ParseError(wrong(id));
-  return id;
-};
-
-const parseLeafList =
-  (
-    pred: (token: Token) => boolean,
-    item: (before: TokenId) => (id: TokenId) => ErrorData,
-    comma: (before: TokenId) => (id: TokenId) => ErrorData,
-  ) =>
-  (tokens: Token[], trees: Tree[], left: TokenId): TokenId[] => {
-    const names: TokenId[] = [];
-    let before = left;
-    let i = 0;
-    while (i < trees.length) {
-      before = leaf(pred, item(before), tokens, trees[i]);
-      names.push(before);
-
-      const j = i + 1;
-      if (j >= trees.length) break;
-      before = leaf(
-        ({ text }) => text === ",",
-        comma(before),
-        tokens,
-        trees[j],
+  end({ extra }: { extra: (id: TokenId) => ErrorData }): undefined {
+    if (this.i < this.trees.length) {
+      const tree = this.peek({ missing: unreachable });
+      throw new ParseError(
+        extra(tree.kind === NodeKind.Leaf ? tree.id : tree.left),
       );
-      i = j + 1;
     }
-    return names;
-  };
-
-const parseUseList = parseLeafList(
-  ({ type }) => type === "op" || type === "id",
-  (before) => (wrong) => ({ kind: "UseItemWrong", before, wrong }),
-  (before) => (after) => ({ kind: "UseCommaMissing", before, after }),
-);
-
-export const parseUse = (tokens: Token[], trees: Tree[], id: TreeId): Use => {
-  const first = trees[id];
-  if (first.kind !== NodeKind.Leaf) throw Error("impossible");
-  const use = first.id;
-
-  let pub = undefined;
-  const before = trees[id - 1];
-  if (before?.kind === NodeKind.Leaf && tokens[before.id].text === "pub")
-    pub = before.id;
-
-  const list = trees[id + 1];
-  if (list === undefined) throw new ParseError({ kind: "UseListMissing", use });
-  switch (list.kind) {
-    case NodeKind.Leaf:
-      throw new ParseError({ kind: "UseListBraces", use, wrong: list.id });
-    case NodeKind.Paren:
-    case NodeKind.Bracket:
-      throw new ParseError({ kind: "UseListBraces", use, wrong: list.left });
   }
-  const names = parseUseList(tokens, list.children, list.left);
 
-  const third = trees[id + 2];
-  if (third === undefined)
-    throw new ParseError({ kind: "UseFromMissing", use, brace: list.right });
-  const from = leaf(
-    ({ text }) => text === "from",
-    (wrong) => ({ kind: "UseFromWrong", use, wrong }),
-    tokens,
-    third,
-  );
+  pub(): TokenId | undefined {
+    return this.maybe("pub");
+  }
 
-  const str = trees[id + 3];
-  if (str === undefined)
-    throw new ParseError({ kind: "UseModuleMissing", use, from });
-  const module = leaf(
-    ({ type }) => type === "str",
-    (wrong) => ({ kind: "UseModuleWrong", use, wrong }),
-    tokens,
-    str,
-  );
+  comma(): TokenId | undefined {
+    return this.maybe(",");
+  }
 
-  return { pub, names, module };
-};
+  colon(): TokenId | undefined {
+    return this.maybe(":");
+  }
 
-export interface InfixHead {
-  pub: TokenId | undefined;
-  assoc: TokenId;
-  prec: TokenId[];
-  op: TokenId;
+  plus(): TokenId | undefined {
+    return this.maybe("+");
+  }
+
+  bindAtom({ missing }: { missing: () => ErrorData }): Bind {
+    const tree = this.pop({ missing });
+    if (tree.kind === NodeKind.Leaf) {
+      const { id } = tree;
+      if (this.tokens[id].type !== "id")
+        throw new ParseError({ kind: "BindNameWrong", wrong: id });
+      return { kind: BindKind.Name, name: id };
+    }
+    if (tree.kind !== NodeKind.Paren)
+      throw new ParseError({ kind: "BindBracketWrong", wrong: tree.left });
+    if (tree.children.length === 0) return { kind: BindKind.Unit };
+    const parser = new Parser(this.tokens, tree.children);
+    const { bind, type } = parser.param({ missing: unreachable });
+    parser.end({ extra: (id) => ({ kind: "BindExtra", extra: id }) });
+    if (type !== undefined)
+      throw new ParseError({ kind: "BindPairRightMissing", right: tree.right });
+    return bind;
+  }
+
+  bindElem({ missing }: { missing: () => ErrorData }): Bind {
+    return this.bindAtom({ missing });
+  }
+
+  typeAtom({ missing }: { missing: () => ErrorData }): Type {
+    const tree = this.pop({ missing });
+    if (tree.kind === NodeKind.Leaf) {
+      const { id } = tree;
+      if (this.tokens[id].type !== "id")
+        throw new ParseError({ kind: "TypeNameWrong", wrong: id });
+      return { kind: TypeKind.Name, name: id };
+    }
+    if (tree.kind !== NodeKind.Paren)
+      throw new ParseError({ kind: "TypeBracketWrong", wrong: tree.left });
+    if (tree.children.length === 0) return { kind: TypeKind.Unit };
+    const parser = new Parser(this.tokens, tree.children);
+    const type = parser.type({ missing: unreachable });
+    parser.end({ extra: (id) => ({ kind: "TypeExtra", extra: id }) });
+    return type;
+  }
+
+  typeElem({ missing }: { missing: () => ErrorData }): Type {
+    return this.typeAtom({ missing });
+  }
+
+  type({ missing }: { missing: () => ErrorData }): Type {
+    const types = [this.typeElem({ missing })];
+    let sep = this.comma();
+    while (sep !== undefined) {
+      const comma = sep;
+      types.push(
+        this.typeElem({
+          missing: () => ({ kind: "TypePairRightMissing", comma }),
+        }),
+      );
+      sep = this.comma();
+    }
+    return types.reduceRight((right, left) => {
+      return { kind: TypeKind.Pair, left, right };
+    });
+  }
+
+  paramElem({ missing }: { missing: () => ErrorData }): Param {
+    const bind = this.bindElem({ missing });
+    const colon = this.colon();
+    const type =
+      colon === undefined
+        ? undefined
+        : this.typeElem({
+            missing: () => ({ kind: "ParamTypeMissing", colon }),
+          });
+    return { bind, type };
+  }
+
+  param({ missing }: { missing: () => ErrorData }): Param {
+    const params = [this.paramElem({ missing })];
+    let sep = this.comma();
+    while (sep !== undefined) {
+      const comma = sep;
+      params.push(
+        this.paramElem({
+          missing: () => ({ kind: "ParamPairRightMissing", comma }),
+        }),
+      );
+      sep = this.comma();
+    }
+    return params.reduceRight((right, left) => {
+      return { bind: { kind: BindKind.Pair, left, right }, type: undefined };
+    });
+  }
+
+  exprAtom({ missing }: { missing: () => ErrorData }): Expr {
+    const tree = this.pop({ missing });
+    if (tree.kind === NodeKind.Leaf) {
+      const { id } = tree;
+      if (this.tokens[id].type !== "id")
+        throw new ParseError({ kind: "ExprNameWrong", wrong: id });
+      return { kind: ExprKind.Name, name: id };
+    }
+    if (tree.kind !== NodeKind.Paren)
+      throw new ParseError({ kind: "ExprBracketWrong", wrong: tree.left });
+    if (tree.children.length === 0) return { kind: ExprKind.Unit };
+    const parser = new Parser(this.tokens, tree.children);
+    const expr = parser.expr({ missing: unreachable });
+    parser.end({ extra: (id) => ({ kind: "ExprExtra", extra: id }) });
+    return expr;
+  }
+
+  exprTerm({ missing }: { missing: () => ErrorData }): Expr {
+    return this.exprAtom({ missing });
+  }
+
+  expr({ missing }: { missing: () => ErrorData }): Expr {
+    let expr = this.exprTerm({ missing });
+    let plus = this.plus();
+    while (plus !== undefined) {
+      const op = plus;
+      const right = this.exprTerm({
+        missing: () => ({ kind: "ExprAddRightMissing", op }),
+      });
+      expr = { kind: ExprKind.Add, left: expr, right };
+      plus = this.plus();
+    }
+    return expr;
+  }
+
+  def(): Def {
+    const pub = this.pub();
+
+    const def = this.leaf({
+      pred: ({ text }) => text === "def",
+      missing: () => ({ kind: "ToplevelMissing", pub: unwrap(pub) }),
+      wrong: (id) => ({ kind: "ToplevelWrong", wrong: id }),
+    });
+    const name = this.leaf({
+      pred: ({ type }) => type === "id",
+      missing: () => ({ kind: "DefNameMissing", def }),
+      wrong: (id) => ({ kind: "DefNameWrong", wrong: id }),
+    });
+
+    const tree = this.pop({
+      missing: () => ({ kind: "DefParamMissing", name }),
+    });
+    if (tree.kind !== NodeKind.Paren)
+      throw new ParseError({ kind: "DefParamBracketWrong", name });
+    let param: Param = { bind: { kind: BindKind.Unit }, type: undefined };
+    if (tree.children.length > 0) {
+      const parser = new Parser(this.tokens, tree.children);
+      param = parser.param({ missing: unreachable });
+    }
+
+    const colon = this.colon();
+    const type =
+      colon === undefined
+        ? undefined
+        : this.type({ missing: () => ({ kind: "DefTypeMissing", colon }) });
+
+    const equal = this.leaf({
+      pred: ({ text }) => text === "=",
+      missing: () => ({ kind: "DefEqualMissing", name: name }),
+      wrong: (id) => ({ kind: "DefEqualWrong", wrong: id }),
+    });
+    const body = this.expr({
+      missing: () => ({ kind: "DefBodyMissing", equal }),
+    });
+
+    return { pub, name, param, type, body };
+  }
+
+  module(): Module {
+    const def: Def[] = [];
+    while (this.i < this.trees.length) def.push(this.def());
+    return { def };
+  }
 }
 
-const parseInfixList = parseLeafList(
-  ({ type }) => type === "num",
-  (before) => (wrong) => ({ kind: "InfixPrecWrong", before, wrong }),
-  (before) => (after) => ({ kind: "InfixCommaMissing", before, after }),
-);
-
-export const parseInfix = (
-  tokens: Token[],
-  trees: Tree[],
-  id: TreeId,
-): InfixHead => {
-  const first = trees[id];
-  if (first.kind !== NodeKind.Leaf) throw Error("impossible");
-  const infix = first.id;
-
-  let pub = undefined;
-  const before = trees[id - 1];
-  if (before?.kind === NodeKind.Leaf && tokens[before.id].text === "pub")
-    pub = before.id;
-
-  const list = trees[id + 1];
-  if (list === undefined)
-    throw new ParseError({ kind: "InfixListMissing", infix });
-  switch (list.kind) {
-    case NodeKind.Leaf:
-      throw new ParseError({
-        kind: "InfixListBrackets",
-        infix,
-        wrong: list.id,
-      });
-    case NodeKind.Paren:
-    case NodeKind.Brace:
-      throw new ParseError({
-        kind: "InfixListBrackets",
-        infix,
-        wrong: list.left,
-      });
-  }
-  const prec = parseInfixList(tokens, list.children, list.left);
-
-  let i = id + 2;
-  while (i < trees.length) {
-    const tree = trees[i];
-    if (tree.kind === NodeKind.Leaf && tokens[tree.id].text === ":") break;
-    ++i;
-  }
-  if (i >= trees.length)
-    throw new ParseError({ kind: "InfixOpMissing", infix });
-  const op = leaf(
-    ({ type }) => type === "op",
-    (wrong) => ({ kind: "InfixOpWrong", infix, wrong }),
-    tokens,
-    trees[i - 2],
-  );
-
-  return { pub, assoc: infix, prec, op };
+export const parse = (lex: Lexer, source: string): Module => {
+  lex.reset(source);
+  const tokens = [...lex];
+  const trees = filter(tokens, forest(tokens));
+  return new Parser(tokens, trees).module();
 };

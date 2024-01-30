@@ -26,8 +26,8 @@
     "comments": {
       "patterns": [
         {
-          "name": "comment.line.double-slash.rose",
-          "match": "//.*$"
+          "name": "comment.line.number-sign.rose",
+          "match": "#.*$"
         }
       ]
     },
@@ -35,11 +35,15 @@
       "patterns": [
         {
           "name": "keyword.control.rose",
-          "match": "\\b(break|continue|else|if|loop|match|return|while)\\b"
+          "match": "\\b(else|from|if|pub|return|then|use)\\b"
         },
         {
           "name": "keyword.other.rose",
-          "match": "\\b(Self|as|enum|fn|for|impl|let|mut|pub|self|struct|trait|type|typeof|use|where|while)\\b"
+          "match": "\\b(and|in|or)\\b"
+        },
+        {
+          "name": "storage.type.rose",
+          "match": "\\b(class|def|infix|infixl|infixr|instance|let|type|val)\\b"
         }
       ]
     },
@@ -51,11 +55,11 @@
           "end": "\""
         },
         {
-          "name": "constant.numeric.decimal.rose",
+          "name": "constant.numeric.rose",
           "match": "\\b\\d+(\\.\\d+)?\\b"
         },
         {
-          "name": "constant.language.boolean.rose",
+          "name": "constant.language.rose",
           "match": "\\b(false|true)\\b"
         }
       ]
@@ -80,7 +84,7 @@
       "patterns": [
         {
           "name": "punctuation.rose",
-          "match": "[,;\\{\\}\\[\\]\\(\\)]"
+          "match": "[\\(\\)\\[\\]\\{\\},\\.]"
         }
       ]
     },
@@ -88,11 +92,7 @@
       "patterns": [
         {
           "name": "keyword.operator.rose",
-          "match": "&&|\\|\\||==|!=|>=|<=|::|->|=>"
-        },
-        {
-          "name": "keyword.operator.rose",
-          "match": "[+\\-*/!|=><.:]"
+          "match": "[^\\s#\\w\"\\(\\)\\[\\]\\{\\},\\.]+"
         }
       ]
     }
