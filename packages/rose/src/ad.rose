@@ -1,56 +1,72 @@
-pub class AD T {
-  type D
+use "./fn.js"::Fn;
+
+pub trait AD {
+    type Tan;
 }
 
-instance AD () {
-  type D = ()
+impl AD for () {
+    type Tan = ();
 }
 
-instance AD bool {
-  type D = bool
+impl AD for bool {
+    type Tan = ();
 }
 
-instance AD i32 {
-  type D = i32
+impl AD for f32 {
+    type Tan = f32;
 }
 
-instance AD u32 {
-  type D = u32
+impl AD for f64 {
+    type Tan = f64;
 }
 
-instance AD i64 {
-  type D = i64
+impl AD for i32 {
+    type Tan = ();
 }
 
-instance AD u64 {
-  type D = u64
+impl AD for i64 {
+    type Tan = ();
 }
 
-instance AD f32 {
-  type D = f32, f32
+impl AD for u32 {
+    type Tan = ();
 }
 
-instance AD f64 {
-  type D = f64, f64
+impl AD for u64 {
+    type Tan = ();
 }
 
-instance T (AD T) => AD []T {
-  type D = [](AD T).D
+impl<A: AD, B: AD> AD for (A, B) {
+    type Tan = (A::Tan, B::Tan);
 }
 
-instance A B (AD A) (AD B) => AD (A, B) {
-  type D = (AD A).D, (AD B).D
+pub struct Dual<T: AD> {
+    pub re: T,
+    pub du: T::Tan,
 }
 
-instance A B (AD A) (AD B) => AD (A | B) {
-  type D = (AD A).D | (AD B).D
+impl<T: AD> AD for Dual<T> {
+    type Tan = T::Tan;
 }
 
-instance A B (AD A) (AD B) => AD (A -> B) {
-  type D = (AD A).D -> (AD B).D
+pub trait Diff<Args: AD>: Fn<Args>
+where
+    Self::Output: AD,
+{
+    type Jvp: Linear<Args, Out = Self::Output>;
+
+    fn linearize(self) -> Self::Jvp;
 }
 
-pub val A B (AD A) (AD B) => linearize : (A -> B) -> (AD A).D -> (AD B).D
+pub trait Linear<Args: AD>:
+    Fn<(Dual<Args>,), Output = Dual<Self::Out>>
+{
+    type Out: AD;
+    type Bwd: Fn<
+        (Args, Self::Out, Args::Tan, <Self::Out as AD>::Tan),
+        Output = Args::Tan,
+    >;
+    type Fwd: Fn<Args, Output = (Self::Out, Args::Tan, Self::Bwd)>;
 
-pub val A B (AD A) (AD B) =>
-  transpose : ((AD A).D -> (AD B).D) -> (AD A).D -> ((AD B).D, () -> ())
+    fn transpose(self) -> Self::Fwd;
+}

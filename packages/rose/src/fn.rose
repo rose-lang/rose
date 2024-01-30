@@ -1,0 +1,5 @@
+pub trait Fn<Args> {
+    type Output;
+
+    fn call(self, args: Args) -> Self::Output;
+}

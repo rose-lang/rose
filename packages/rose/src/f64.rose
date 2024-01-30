@@ -1,0 +1,97 @@
+use "./ad.js"::{AD, Diff, Dual, Linear};
+use "./fn.js"::Fn;
+
+type Pair = (f64, f64);
+
+pub struct Add;
+
+impl Fn<Pair> for Add {
+    type Output = f64;
+
+    fn call(self, (x, y): Pair) -> f64 {
+        x + y
+    }
+}
+
+struct AddJvp;
+
+impl Fn<(Dual<Pair>,)> for AddJvp {
+    type Output = Dual<f64>;
+
+    fn call(self, args: Dual<Pair>) -> Dual<f64> {
+        let (x, y) = args.re;
+        let (dx, dy) = args.du;
+        Dual { re: Add(x, y), du: Add(dx, dy) }
+    }
+}
+
+impl Diff<Pair> for Add {
+    type Jvp = AddJvp;
+
+    fn linearize(self) -> AddJvp {
+        AddJvp
+    }
+}
+
+struct AddBwd;
+
+impl Fn<(Pair, f64, Pair, f64)> for AddBwd {
+    type Output = Pair;
+
+    fn call(self, (_, _, (dx, dy), dz): (Pair, f64, Pair, f64)) -> Pair {
+        (Add(dx, dz), Add(dy, dz))
+    }
+}
+
+struct AddFwd;
+
+impl Fn<Pair> for AddFwd {
+    type Output = (f64, Pair, AddBwd);
+
+    fn call(self, (x, y): Pair) -> (f64, Pair, AddBwd) {
+        (Add(x, y), (0., 0.), AddBwd)
+    }
+}
+
+impl Linear<Pair> for AddJvp {
+    type Out = f64;
+    type Bwd = AddBwd;
+    type Fwd = AddFwd;
+
+    fn transpose(self) -> AddFwd {
+        AddFwd
+    }
+}
+
+fn mul(x: f64, y: f64) -> f64 {
+    x * y
+}
+
+fn mul_jvp(args: Dual<Pair>) -> Dual<f64> {
+    let (x, y) = args.re;
+    let (dx, dy) = args.du;
+    Dual { re: mul(x, y), du: Add(mul(dx, y), mul(dy, x)) }
+}
+
+impl Diff<Pair> for typeof mul {
+    type Jvp = typeof mul_jvp;
+
+    fn linearize(self) -> Self::Jvp {
+        mul_jvp
+    }
+}
+
+impl Linear<Pair> for typeof mul_jvp {
+    type Out = f64;
+    type Bwd = impl Fn<(Pair, f64, Pair, f64), Output = Pair>;
+    type Fwd = impl Fn<Pair, Output = (f64, Pair, Self::Bwd)>;
+
+    fn transpose(self) -> Self::Fwd {
+        |x, y| {
+            let bwd = |(x, y), _, (dx, dy), dz| {
+                (Add(dx, mul(dz, y)), Add(dy, mul(dz, x)))
+            };
+            (mul(x, y), (0., 0.), bwd)
+        }
+    }
+}

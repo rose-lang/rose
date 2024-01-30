@@ -1,6 +1,0 @@
-pub use { len, map, new } from "./array.js"
-pub use { +, -, *, / } from "./num.js"
-
-pub def true = bool.true
-
-pub def false = bool.false

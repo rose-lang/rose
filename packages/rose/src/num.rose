@@ -1,186 +1,29 @@
-pub class Neg A {
-  type T
-  val neg : A -> T
+use "./f64.js" as f64;
+
+pub trait Add<Rhs = Self> {
+    type Output;
+
+    fn add(self, rhs: Rhs) -> Self::Output;
 }
 
-pub class Add A B {
-  type T
-  val add : A -> B -> T
+impl Add for f64 {
+    type Output = f64;
+
+    fn add(self, rhs: f64) -> f64 {
+        f64::Add(self, rhs)
+    }
 }
 
-pub class Sub A B {
-  type T
-  val sub : A -> B -> T
+pub trait Mul<Rhs = Self> {
+    type Output;
+
+    fn mul(self, rhs: Rhs) -> Self::Output;
 }
 
-pub class Mul A B {
-  type T
-  val mul : A -> B -> T
-}
+impl Mul for f64 {
+    type Output = f64;
 
-pub class Div A B {
-  type T
-  val div : A -> B -> T
-}
-
-pub def A (Neg A) => - (x : A) : (Neg A).T = Neg.neg x
-
-pub infixl [0] A B (Add A B) => (x : A) + (y : B) : (Add A B).T = Add.add x y
-
-pub infixl [0] A B (Sub A B) => (x : A) - (y : B) : (Sub A B).T = Sub.sub x y
-
-pub infixl [1] A B (Mul A B) => (x : A) * (y : B) : (Mul A B).T = Mul.mul x y
-
-pub infixl [1] A B (Div A B) => (x : A) / (y : B) : (Div A B).T = Div.div x y
-
-# i32
-
-instance Neg i32 {
-  type T = i32
-  def neg (x : i32) : i32 = i32.sub 0 x
-}
-
-instance Add i32 i32 {
-  type T = i32
-  def add = i32.add
-}
-
-instance Sub i32 i32 {
-  type T = i32
-  def sub = i32.sub
-}
-
-instance Mul i32 i32 {
-  type T = i32
-  def mul = i32.mul
-}
-
-instance Div i32 i32 {
-  type T = i32
-  def div = i32.div
-}
-
-# u32
-
-instance Add u32 u32 {
-  type T = u32
-  def add = u32.add
-}
-
-instance Sub u32 u32 {
-  type T = u32
-  def sub = u32.sub
-}
-
-instance Mul u32 u32 {
-  type T = u32
-  def mul = u32.mul
-}
-
-instance Div u32 u32 {
-  type T = u32
-  def div = u32.div
-}
-
-# i64
-
-instance Neg i64 {
-  type T = i64
-  def neg (x : i64) : i64 = i64.sub 0 x
-}
-
-instance Add i64 i64 {
-  type T = i64
-  def add = i64.add
-}
-
-instance Sub i64 i64 {
-  type T = i64
-  def sub = i64.sub
-}
-
-instance Mul i64 i64 {
-  type T = i64
-  def mul = i64.mul
-}
-
-instance Div i64 i64 {
-  type T = i64
-  def div = i64.div
-}
-
-# u64
-
-instance Add u64 u64 {
-  type T = u64
-  def add = u64.add
-}
-
-instance Sub u64 u64 {
-  type T = u64
-  def sub = u64.sub
-}
-
-instance Mul u64 u64 {
-  type T = u64
-  def mul = u64.mul
-}
-
-instance Div u64 u64 {
-  type T = u64
-  def div = u64.div
-}
-
-# f32
-
-instance Neg f32 {
-  type T = f32
-  def neg = f32.neg
-}
-
-instance Add f32 f32 {
-  type T = f32
-  def add = f32.add
-}
-
-instance Sub f32 f32 {
-  type T = f32
-  def sub = f32.sub
-}
-
-instance Mul f32 f32 {
-  type T = f32
-  def mul = f32.mul
-}
-
-instance Div f32 f32 {
-  type T = f32
-  def div = f32.div
-}
-
-# f64
-
-instance Neg f64 {
-  type T = f64
-  def neg = f64.neg
-}
-
-instance Add f64 f64 {
-  type T = f64
-  def add = f64.add
-}
-
-instance Sub f64 f64 {
-  type T = f64
-  def sub = f64.sub
-}
-
-instance Mul f64 f64 {
-  type T = f64
-  def mul = f64.mul
-}
-
-instance Div f64 f64 {
-  type T = f64
-  def div = f64.div
+    fn mul(self, rhs: f64) -> f64 {
+        f64::mul(self, rhs)
+    }
 }
