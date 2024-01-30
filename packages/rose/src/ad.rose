@@ -1,0 +1,72 @@
+use "./fn.js"::Fn;
+
+pub trait AD {
+    type Tan;
+}
+
+impl AD for () {
+    type Tan = ();
+}
+
+impl AD for bool {
+    type Tan = ();
+}
+
+impl AD for f32 {
+    type Tan = f32;
+}
+
+impl AD for f64 {
+    type Tan = f64;
+}
+
+impl AD for i32 {
+    type Tan = ();
+}
+
+impl AD for i64 {
+    type Tan = ();
+}
+
+impl AD for u32 {
+    type Tan = ();
+}
+
+impl AD for u64 {
+    type Tan = ();
+}
+
+impl<A: AD, B: AD> AD for (A, B) {
+    type Tan = (A::Tan, B::Tan);
+}
+
+pub struct Dual<T: AD> {
+    pub re: T,
+    pub du: T::Tan,
+}
+
+impl<T: AD> AD for Dual<T> {
+    type Tan = T::Tan;
+}
+
+pub trait Diff<Args: AD>: Fn<Args>
+where
+    Self::Output: AD,
+{
+    type Jvp: Linear<Args, Out = Self::Output>;
+
+    fn linearize(self) -> Self::Jvp;
+}
+
+pub trait Linear<Args: AD>:
+    Fn<(Dual<Args>,), Output = Dual<Self::Out>>
+{
+    type Out: AD;
+    type Bwd: Fn<
+        (Args, Self::Out, Args::Tan, <Self::Out as AD>::Tan),
+        Output = Args::Tan,
+    >;
+    type Fwd: Fn<Args, Output = (Self::Out, Args::Tan, Self::Bwd)>;
+
+    fn transpose(self) -> Self::Fwd;
+}

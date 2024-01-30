@@ -1,0 +1,29 @@
+{
+  "name": "rose",
+  "version": "0.5.0",
+  "license": "MIT",
+  "repository": "rose-lang/rose",
+  "type": "module",
+  "bin": {
+    "rose": "./bin/rose.js"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./ad": "./dist/ad.js",
+    "./fn": "./dist/fn.js",
+    "./num": "./dist/num.js",
+    "./prelude": "./dist/prelude.js"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "dependencies": {
+    "moo": "^0.5",
+    "yargs": "^17"
+  },
+  "scripts": {
+    "build": "tsc && rose build",
+    "test": "vitest"
+  }
+}

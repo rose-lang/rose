@@ -1,8 +1,0 @@
-[package]
-name = "rose"
-version = "0.4.7"
-publish = false
-edition = "2021"
-
-[dependencies]
-enumset = "1"

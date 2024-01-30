@@ -1,8 +1,1 @@
-{
-  "recommendations": [
-    "esbenp.prettier-vscode",
-    "rust-lang.rust-analyzer",
-    "tamasfe.even-better-toml",
-    "timonwong.shellcheck"
-  ]
-}
+{ "recommendations": ["esbenp.prettier-vscode", "timonwong.shellcheck"] }

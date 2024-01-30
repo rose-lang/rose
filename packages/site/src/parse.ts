@@ -1,69 +1,32 @@
-import {
-  Real,
-  abs,
-  add,
-  ceil,
-  div,
-  floor,
-  mul,
-  neg,
-  sign,
-  sqrt,
-  sub,
-  trunc,
-} from "rose";
-import {
-  acos,
-  acosh,
-  asin,
-  asinh,
-  atan,
-  atanh,
-  cbrt,
-  cos,
-  cosh,
-  exp,
-  expm1,
-  log,
-  log10,
-  log1p,
-  log2,
-  pow,
-  sin,
-  sinh,
-  tan,
-  tanh,
-} from "./math.js";
-
 const unaries = {
-  abs,
-  acos,
-  acosh,
-  asin,
-  asinh,
-  atan,
-  atanh,
-  cbrt,
-  ceil,
-  cos,
-  cosh,
-  exp,
-  expm1,
-  floor,
-  log,
-  log10,
-  log1p,
-  log2,
-  sign,
-  sin,
-  sinh,
-  sqrt,
-  tan,
-  tanh,
-  trunc,
+  abs: Math.abs,
+  acos: Math.acos,
+  acosh: Math.acosh,
+  asin: Math.asin,
+  asinh: Math.asinh,
+  atan: Math.atan,
+  atanh: Math.atanh,
+  cbrt: Math.cbrt,
+  ceil: Math.ceil,
+  cos: Math.cos,
+  cosh: Math.cosh,
+  exp: Math.exp,
+  expm1: Math.expm1,
+  floor: Math.floor,
+  log: Math.log,
+  log10: Math.log10,
+  log1p: Math.log1p,
+  log2: Math.log2,
+  sign: Math.sign,
+  sin: Math.sin,
+  sinh: Math.sinh,
+  sqrt: Math.sqrt,
+  tan: Math.tan,
+  tanh: Math.tanh,
+  trunc: Math.trunc,
 };
 
-const unary = (name: string): ((x: Real) => Real) => {
+const unary = (name: string): ((x: number) => number) => {
   if (name in unaries) return unaries[name as keyof typeof unaries];
   throw Error(`unknown unary function: ${name}`);
 };
@@ -127,8 +90,13 @@ function* lex(s: string) {
 export type Expr =
   | { kind: "const"; val: number }
   | { kind: "var"; idx: number }
-  | { kind: "unary"; f: (x: Real) => Real; arg: Expr }
-  | { kind: "binary"; f: (x: Real, y: Real) => Real; lhs: Expr; rhs: Expr };
+  | { kind: "unary"; f: (x: number) => number; arg: Expr }
+  | {
+      kind: "binary";
+      f: (x: number, y: number) => number;
+      lhs: Expr;
+      rhs: Expr;
+    };
 
 class Parser {
   tokens: Token[];
@@ -173,12 +141,12 @@ class Parser {
   parseFactor(): Expr {
     if (this.peek().kind === "-") {
       this.pop();
-      return { kind: "unary", f: neg, arg: this.parseFactor() };
+      return { kind: "unary", f: (a) => -a, arg: this.parseFactor() };
     }
     const x = this.parseAtom();
     if (this.peek().kind === "^") {
       this.pop();
-      return { kind: "binary", f: pow, lhs: x, rhs: this.parseFactor() };
+      return { kind: "binary", f: Math.pow, lhs: x, rhs: this.parseFactor() };
     }
     return x;
   }
@@ -188,7 +156,10 @@ class Parser {
     let tok = this.peek();
     while (tok.kind === "*" || tok.kind === "/") {
       this.pop();
-      const f = { "*": mul, "/": div }[tok.kind];
+      const f = {
+        "*": (a: number, b: number) => a * b,
+        "/": (a: number, b: number) => a / b,
+      }[tok.kind];
       x = { kind: "binary", f, lhs: x, rhs: this.parseFactor() };
       tok = this.peek();
     }
@@ -200,7 +171,10 @@ class Parser {
     let tok = this.peek();
     while (tok.kind === "+" || tok.kind === "-") {
       this.pop();
-      const f = { "+": add, "-": sub }[tok.kind];
+      const f = {
+        "+": (a: number, b: number) => a + b,
+        "-": (a: number, b: number) => a - b,
+      }[tok.kind];
       x = { kind: "binary", f, lhs: x, rhs: this.parseTerm() };
       tok = this.peek();
     }

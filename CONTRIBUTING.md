@@ -7,7 +7,6 @@ Make sure to have these tools installed:
 - [Git][]
 - [Make][]
 - [Node][]
-- [Rust][]
 
 ## Setup
 
@@ -61,9 +60,8 @@ Sometimes old build artifacts can hide errors. To clean your build:
 make clean
 ```
 
-This doesn't clean everything; it keeps around downloaded files and Rust's
-`target` directory. You should be able to run `make all` right after it without
-an Internet connection.
+This doesn't clean everything; it keeps around downloaded files. You should be
+able to run `make all` right after it without an Internet connection.
 
 ## Site
 
@@ -79,7 +77,18 @@ Or, if you want to host on your local network, e.g. to test on your phone:
 make site-deps && npm run --workspace=@rose-lang/site dev -- --host
 ```
 
+## VS Code
+
+The VS Code extension is built as part of `make` or `make all`, but you can also
+just build it by itself:
+
+```sh
+make vscode
+```
+
+Then `packages/vscode` will contain a `*.vsix` file that you can install in VS
+Code by right-clicking it and clicking the **Install Extension VSIX** button.
+
 [git]: https://git-scm.com/downloads
 [make]: https://en.wikipedia.org/wiki/Make_(software)
 [node]: https://nodejs.org/en/download
-[rust]: https://www.rust-lang.org/tools/install

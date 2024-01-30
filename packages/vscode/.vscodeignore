@@ -1,0 +1,10 @@
+../../**
+../**
+**
+!encircled-rose.png
+!language-configuration.json
+!LICENSE
+!package.json
+!plain-rose.png
+!README.md
+!syntaxes/

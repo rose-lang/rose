@@ -1,0 +1,29 @@
+use "./f64.js" as f64;
+
+pub trait Add<Rhs = Self> {
+    type Output;
+
+    fn add(self, rhs: Rhs) -> Self::Output;
+}
+
+impl Add for f64 {
+    type Output = f64;
+
+    fn add(self, rhs: f64) -> f64 {
+        f64::Add(self, rhs)
+    }
+}
+
+pub trait Mul<Rhs = Self> {
+    type Output;
+
+    fn mul(self, rhs: Rhs) -> Self::Output;
+}
+
+impl Mul for f64 {
+    type Output = f64;
+
+    fn mul(self, rhs: f64) -> f64 {
+        f64::mul(self, rhs)
+    }
+}
