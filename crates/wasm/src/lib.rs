@@ -7,7 +7,7 @@ use std::{
 };
 use wasm_encoder::{
     BlockType, CodeSection, EntityType, ExportSection, Function, FunctionSection, ImportSection,
-    Instruction, MemArg, MemorySection, MemoryType, Module, TypeSection, ValType,
+    Instruction, MemArg, MemoryType, Module, TypeSection, ValType,
 };
 
 /// Resolve `ty` via `generics` and `types`, then return its ID in `typemap`, inserting if need be.
@@ -976,17 +976,22 @@ impl<'a, 'b, O: Eq + Hash, T: Refs<'a, Opaque = O>> Codegen<'a, 'b, O, T> {
 
 /// A WebAssembly module for a graph of functions.
 ///
-/// The module exports its memory with name `"m"` and its entrypoint function with name `"f"`. The
-/// function takes one parameter in addition to its original parameters, which must be an
-/// 8-byte-aligned pointer to the start of the memory region it can use for allocation. The memory
-/// is the exact number of pages necessary to accommodate the function's own memory allocation as
-/// well as memory allocation for all of its parameters, with each node in each parameter's memory
-/// allocation tree being 8-byte aligned. That is, the function's last argument should be just large
-/// enough to accommodate those allocations for all the parameters; in that case, no memory will be
+/// The module exports its entrypoint function with name `"f"`. The function takes one parameter in
+/// addition to its original parameters, which must be an 8-byte-aligned pointer to the start of the
+/// memory region it can use for allocation.
+///
+/// Under module name `"m"`, the module imports a memory whose minimum number of pages is the exact
+/// number of pages necessary to accommodate the function's own memory allocation as well as memory
+/// allocation for all of its parameters, with each node in each parameter's memory allocation tree
+/// being 8-byte aligned. That is, the function's last argument should be just large enough to
+/// accommodate those allocations for all the parameters; in that case, no memory will be
 /// incorrectly overwritten and no out-of-bounds memory accesses will occur.
 pub struct Wasm<O> {
     /// The bytes of the WebAssembly module binary.
     pub bytes: Vec<u8>,
+
+    /// The minimum number of pages required by the imported memory.
+    pub pages: u64,
 
     /// All the opaque functions that the WebAssembly module must import, in order.
     ///
@@ -1390,7 +1395,6 @@ pub fn compile<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
         type_section.function(params.into_vec(), results.into_vec());
     }
 
-    let mut memory_section = MemorySection::new();
     let page_size = 65536; // https://webassembly.github.io/spec/core/exec/runtime.html#page-size
     let cost = funcs.last().map_or(0, |((def, _), (_, def_types, _))| {
         def.params
@@ -1400,12 +1404,16 @@ pub fn compile<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
             .sum()
     }) + costs.last().unwrap_or(&0);
     let pages = ((cost + page_size - 1) / page_size).into(); // round up to a whole number of pages
-    memory_section.memory(MemoryType {
-        minimum: pages,
-        maximum: Some(pages),
-        memory64: false,
-        shared: false,
-    });
+    import_section.import(
+        "m",
+        "",
+        MemoryType {
+            minimum: pages,
+            maximum: None,
+            memory64: false,
+            shared: false,
+        },
+    );
 
     let mut export_section = ExportSection::new();
     export_section.export(
@@ -1419,11 +1427,11 @@ pub fn compile<'a, O: Eq + Hash, T: Refs<'a, Opaque = O>>(f: Node<'a, O, T>) -> 
     module.section(&type_section);
     module.section(&import_section);
     module.section(&function_section);
-    module.section(&memory_section);
     module.section(&export_section);
     module.section(&code_section);
     Wasm {
         bytes: module.finish(),
+        pages,
         imports,
     }
 }

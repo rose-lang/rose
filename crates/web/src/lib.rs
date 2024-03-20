@@ -330,9 +330,14 @@ impl Func {
 
     /// Compile the call graph subtended by this function to WebAssembly.
     pub fn compile(&self) -> Wasm {
-        let rose_wasm::Wasm { bytes, imports } = rose_wasm::compile(self.node());
+        let rose_wasm::Wasm {
+            bytes,
+            pages,
+            imports,
+        } = rose_wasm::compile(self.node());
         Wasm {
             bytes: Some(bytes),
+            pages,
             imports: Some(
                 imports
                     .into_keys()
@@ -488,6 +493,7 @@ impl Func {
 #[wasm_bindgen]
 pub struct Wasm {
     bytes: Option<Vec<u8>>,
+    pub pages: u64,
     imports: Option<Vec<js_sys::Function>>,
 }
 
