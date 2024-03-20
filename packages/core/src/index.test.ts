@@ -656,12 +656,12 @@ describe("valid", () => {
     expect(memory.buffer.byteLength).toBeGreaterThan(pageSize);
     const a = [];
     const b = [];
-    for (let i = 0; i < n; ++i) {
+    for (let i = 1; i <= n; ++i) {
       a.push(i);
       b.push(1 / i);
     }
     const c = gCompiled(a, b);
-    for (let i = 0; i < n; ++i) expect(c[i]).toBe(1);
+    for (let i = 0; i < n; ++i) expect(c[i]).toBeCloseTo(1);
   });
 
   test("compile opaque function", async () => {

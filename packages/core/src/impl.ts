@@ -814,19 +814,39 @@ const getMeta = (
   } else return undefined;
 };
 
-/** Concretize the abstract function `f` using the compiler. */
+interface CompileOptions {
+  memory?: WebAssembly.Memory;
+}
+
+/**
+ * Concretize the abstract function `f` using the compiler.
+ *
+ * Creates a new memory if `opts.memory` is not provided, otherwise attempts to
+ * grow the provided memory to be large enough.
+ */
 export const compile = async <const A extends readonly any[], const R>(
   f: Fn & ((...args: A) => R),
+  opts?: CompileOptions,
 ): Promise<(...args: JsArgs<A>) => ToJs<R>> => {
   const func = f[inner];
   const res = func.compile();
   const bytes = res.bytes()!;
+  const pages = Number(res.pages);
   const imports = res.imports()!;
   res.free();
-  const instance = await WebAssembly.instantiate(
-    await WebAssembly.compile(bytes),
-    { "": Object.fromEntries(imports.map((g, i) => [i.toString(), g])) },
-  );
+  let memory = opts?.memory;
+  if (memory === undefined) memory = new WebAssembly.Memory({ initial: pages });
+  else {
+    // https://webassembly.github.io/spec/core/exec/runtime.html#page-size
+    const pageSize = 65536;
+    const delta = pages - memory.buffer.byteLength / pageSize;
+    if (delta > 0) memory.grow(delta);
+  }
+  const mod = await WebAssembly.compile(bytes);
+  const instance = await WebAssembly.instantiate(mod, {
+    m: { "": memory },
+    "": Object.fromEntries(imports.map((g, i) => [i.toString(), g])),
+  });
   const { f: g, m } = instance.exports;
   const metas: (Meta | undefined)[] = [];
   const n = func.numTypes();
