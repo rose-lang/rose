@@ -636,6 +636,34 @@ describe("valid", () => {
     expect(g(2, 3)).toBeCloseTo(-0.7785390719815313);
   });
 
+  test("compile with shared memory", async () => {
+    // https://webassembly.github.io/spec/core/exec/runtime.html#page-size
+    const pageSize = 65536;
+
+    const memory = new WebAssembly.Memory({ initial: 0 });
+    expect(memory.buffer.byteLength).toBe(0);
+
+    const f = fn([Vec(2, Real)], Real, ([x, y]) => mul(x, y));
+    const fCompiled = await compile(f, { memory });
+    expect(memory.buffer.byteLength).toBe(pageSize);
+    expect(fCompiled([2, 3])).toBe(6);
+
+    const n = 10000;
+    const g = fn([Vec(n, Real), Vec(n, Real)], Vec(n, Real), (a, b) =>
+      vec(n, Real, (i) => mul(a[i], b[i])),
+    );
+    const gCompiled = await compile(g, { memory });
+    expect(memory.buffer.byteLength).toBeGreaterThan(pageSize);
+    const a = [];
+    const b = [];
+    for (let i = 0; i < n; ++i) {
+      a.push(i);
+      b.push(1 / i);
+    }
+    const c = gCompiled(a, b);
+    for (let i = 0; i < n; ++i) expect(c[i]).toBe(1);
+  });
+
   test("compile opaque function", async () => {
     const f = opaque([Real], Real, Math.sin);
     const g = await compile(f);
