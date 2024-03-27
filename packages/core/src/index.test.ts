@@ -643,10 +643,9 @@ describe("valid", () => {
     const memory = new WebAssembly.Memory({ initial: 0 });
     expect(memory.buffer.byteLength).toBe(0);
 
-    const f = fn([Vec(2, Real)], Real, ([x, y]) => mul(x, y));
+    const f = fn([Vec(2, Real)], Vec(2, Real), ([x, y]) => [y, x]);
     const fCompiled = await compile(f, { memory });
     expect(memory.buffer.byteLength).toBe(pageSize);
-    expect(fCompiled([2, 3])).toBe(6);
 
     const n = 10000;
     const g = fn([Vec(n, Real), Vec(n, Real)], Vec(n, Real), (a, b) =>
@@ -654,6 +653,9 @@ describe("valid", () => {
     );
     const gCompiled = await compile(g, { memory });
     expect(memory.buffer.byteLength).toBeGreaterThan(pageSize);
+
+    expect(fCompiled([2, 3])).toEqual([3, 2]);
+
     const a = [];
     const b = [];
     for (let i = 1; i <= n; ++i) {
