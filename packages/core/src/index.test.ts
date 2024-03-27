@@ -654,7 +654,7 @@ describe("valid", () => {
     const gCompiled = await compile(g, { memory });
     expect(memory.buffer.byteLength).toBeGreaterThan(pageSize);
 
-    expect(fCompiled([2, 3])).toBe([3, 2]);
+    expect(fCompiled([2, 3])).toEqual([3, 2]);
 
     const a = [];
     const b = [];
