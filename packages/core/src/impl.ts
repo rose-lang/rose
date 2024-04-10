@@ -1160,6 +1160,19 @@ export const vec = <const I, const T>(
   return idVal(ctx, t, id) as Vec<Symbolic<T>>;
 };
 
+/** Return the sum after computing each number via `f`. */
+export const sum = <const I>(index: I, f: (i: Symbolic<I>) => Real): Real => {
+  const ctx = getCtx();
+  const reals = ctx.func.tyF64();
+  const acc = ctx.block.accum(ctx.func, ctx.func.tyRef(reals), realId(ctx, 0));
+  vec(index, Null, (i) => {
+    const x = realId(ctx, f(i));
+    const t = ctx.func.tyUnit();
+    return idVal(ctx, t, ctx.block.addTo(ctx.func, acc, x)) as Null;
+  });
+  return idVal(ctx, reals, ctx.block.resolve(ctx.func, reals, acc)) as Real;
+};
+
 /** Return the variable ID for the abstract number or tangent `x`. */
 const numId = (ctx: Context, x: Real | Tan): number => {
   if (typeof x === "object") return (x as any)[variable];

@@ -35,6 +35,7 @@ import {
   sqrt,
   struct,
   sub,
+  sum,
   trunc,
   vec,
   vjp,
@@ -233,12 +234,7 @@ describe("valid", () => {
 
   test("dot product", () => {
     const R3 = Vec(3, Real);
-    const dot = fn([R3, R3], Real, (u, v) => {
-      const x = mul(u[0], v[0]);
-      const y = mul(u[1], v[1]);
-      const z = mul(u[2], v[2]);
-      return add(add(x, y), z);
-    });
+    const dot = fn([R3, R3], Real, (u, v) => sum(3, (i) => mul(u[i], v[i])));
     const f = interp(dot);
     expect(f([1, 3, -5], [4, -2, -1])).toBe(3);
   });
@@ -280,16 +276,7 @@ describe("valid", () => {
 
     const Rn = Vec(n, Real);
 
-    const dot = fn([Rn, Rn], Real, (u, v) => {
-      const w = vec(n, Real, (i) => mul(u[i], v[i]));
-      let s = w[0];
-      s = add(s, w[1]);
-      s = add(s, w[2]);
-      s = add(s, w[3]);
-      s = add(s, w[4]);
-      s = add(s, w[5]);
-      return s;
-    });
+    const dot = fn([Rn, Rn], Real, (u, v) => sum(n, (i) => mul(u[i], v[i])));
 
     const m = 5;
     const p = 7;

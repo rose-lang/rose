@@ -50,6 +50,7 @@ export {
   sqrt,
   struct,
   sub,
+  sum,
   trunc,
   vec,
   vjp,

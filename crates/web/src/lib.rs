@@ -1586,6 +1586,19 @@ impl Block {
         self.instr(f, id::ty(t), expr)
     }
 
+    /// Return the variable ID for a new instruction accumulating `addend` into `accum`.
+    ///
+    /// Assumes `accum` and `addend` are defined and in scope.
+    #[wasm_bindgen(js_name = "addTo")]
+    pub fn add_to(&mut self, f: &mut FuncBuilder, accum: usize, addend: usize) -> usize {
+        let t = id::ty(f.ty_unit());
+        let expr = rose::Expr::Add {
+            accum: id::var(accum),
+            addend: id::var(addend),
+        };
+        self.instr(f, t, expr)
+    }
+
     /// Return the variable ID for a new instruction resolving the given accumulator `var`.
     ///
     /// Assumes `var` is defined and in scope, and that `t` is the inner type of the reference type
