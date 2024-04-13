@@ -5,10 +5,10 @@ use std::mem::{replace, swap, take};
 /// By convention, the first type in a function to be transposed must be the nonlinear `F64`.
 const REAL: id::Ty = id::ty(0);
 
-/// By convention, the first type in a function to be transposed must be the linear `F64`.
+/// By convention, the second type in a function to be transposed must be the linear `F64`.
 const DUAL: id::Ty = id::ty(1);
 
-/// Return true iff `t` is the type ID of a linear type in a function to be transposed.
+/// Return true iff `t` is the type ID of a primitive type in a function to be transposed.
 ///
 /// In this module, "primitive" specifically means a linear or nonlinear `F64` type, and
 /// specifically excludes other types that might be considered primitive, such as `Unit` or `Bool`.
@@ -25,7 +25,7 @@ const RE: id::Member = id::member(1);
 /// The source of a primitive variable or a component of a dual number variable.
 ///
 /// The value `None` means that this is the original source, whereas `Some` means that it is an
-/// alias of a the given primitive variable or a component of the given dual number variable.
+/// alias of the given primitive variable or a component of the given dual number variable.
 #[derive(Clone, Copy)]
 struct Src(Option<id::Var>);
 
