@@ -4,6 +4,7 @@
 <p align="center"><a href="https://www.npmjs.com/package/rose"><img src="https://img.shields.io/npm/v/rose" alt="npm" /></a> <a href="LICENSE"><img src="https://img.shields.io/github/license/rose-lang/rose" alt="license" /></a> <a href="https://github.com/rose-lang/rose/actions/workflows/build.yml"><img src="https://github.com/rose-lang/rose/actions/workflows/build.yml/badge.svg" alt="Build" /></a></p>
 
 Rose is an automatic differentiation engine for the web, inspired by [JAX][].
+Read more in our [paper][]!
 
 ## Installation
 
@@ -100,6 +101,7 @@ Rose is licensed under the [MIT License][].
 [JAX]: http://jax.readthedocs.io/
 [MIT License]: https://github.com/rose-lang/rose/blob/main/LICENSE
 [npm]: https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
+[paper]: https://arxiv.org/abs/2402.17743
 [pnpm]: https://pnpm.io/installation
 [top-level `await`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/await#top_level_await
 [vite-plugin-top-level-await]: https://www.npmjs.com/package/vite-plugin-top-level-await
