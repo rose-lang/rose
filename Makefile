@@ -80,5 +80,6 @@ test-site: site-deps
 
 # build
 wasm: npm bindings wbg
+	npx wasm-opt packages/wasm/dist/wbg/rose_web_bg.wasm -Oz -o packages/wasm/dist/wbg/rose_web_bg.wasm
 	npm run --workspace=@rose-lang/wasm build
 	node bindings.js
